@@ -261,10 +261,10 @@
         } else {
           this.currentPage = 'list';
         }
-        this.render();
+        await this.render();
       }
 
-      render() {
+      async render() {
         const app = document.getElementById('app');
         if (!app) return;
 
@@ -282,7 +282,7 @@
             this.addEditEventListeners();
             break;
           case 'quick-edit':
-            app.innerHTML = this.renderQuickEditPage();
+            app.innerHTML = await this.renderQuickEditPage();
             this.addQuickEditEventListeners();
             break;
           case 'detail':
@@ -621,8 +621,19 @@
         return h;
       }
 
-      renderQuickEditPage() {
-        const asset = this.assets.find(a => a.id === this.currentAssetId);
+      async renderQuickEditPage() {
+        let asset = this.assets.find(a => a.id === this.currentAssetId);
+        
+        // 如果资产不存在，尝试从Gist重新加载数据
+        if (!asset && this.config.useGist) {
+          const gistAssets = await this.loadAssetsFromGist();
+          if (gistAssets) {
+            this.assets = gistAssets;
+            localStorage.setItem('asset_assets', JSON.stringify(gistAssets));
+            asset = this.assets.find(a => a.id === this.currentAssetId);
+          }
+        }
+        
         if (!asset) return '<div class="min-h-screen bg-gray-50 flex items-center justify-center"><div class="bg-white p-6 rounded-lg shadow-sm"><p class="text-gray-600">资产不存在</p><button id="back-btn" class="mt-4 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">返回</button></div></div>';
 
         let h = '<div class="min-h-screen bg-gray-50">';
@@ -772,35 +783,35 @@
       }
 
       addListEventListeners() {
-        document.getElementById('search-input')?.addEventListener('input', (e) => {
+        document.getElementById('search-input')?.addEventListener('input', async (e) => {
           this.searchTerm = e.target.value;
-          this.render();
+          await this.render();
         });
 
-        document.getElementById('department-filter')?.addEventListener('change', (e) => {
+        document.getElementById('department-filter')?.addEventListener('change', async (e) => {
           this.departmentFilter = e.target.value;
-          this.render();
+          await this.render();
         });
 
-        document.getElementById('status-filter')?.addEventListener('change', (e) => {
+        document.getElementById('status-filter')?.addEventListener('change', async (e) => {
           this.statusFilter = e.target.value;
-          this.render();
+          await this.render();
         });
 
-        document.getElementById('add-btn')?.addEventListener('click', () => {
+        document.getElementById('add-btn')?.addEventListener('click', async () => {
           this.currentPage = 'add';
-          this.render();
+          await this.render();
         });
 
-        document.getElementById('login-btn')?.addEventListener('click', () => {
+        document.getElementById('login-btn')?.addEventListener('click', async () => {
           this.currentPage = 'login';
-          this.render();
+          await this.render();
         });
 
-        document.getElementById('logout-btn')?.addEventListener('click', () => {
+        document.getElementById('logout-btn')?.addEventListener('click', async () => {
           this.currentUser = null;
           this.saveCurrentUser(null);
-          this.render();
+          await this.render();
         });
 
         document.getElementById('settings-btn')?.addEventListener('click', () => {
