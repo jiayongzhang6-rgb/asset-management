@@ -1395,7 +1395,7 @@
           document.body.removeChild(modal);
         });
 
-        document.getElementById('import-btn').addEventListener('click', () => {
+        document.getElementById('import-btn').addEventListener('click', async () => {
           const fileInput = document.getElementById('import-file');
           const file = fileInput.files[0];
           if (!file) {
@@ -1404,7 +1404,7 @@
           }
 
           const reader = new FileReader();
-          reader.onload = (e) => {
+          reader.onload = async (e) => {
             try {
               const data = new Uint8Array(e.target.result);
               const workbook = XLSX.read(data, { type: 'array' });
@@ -1459,7 +1459,7 @@
                 }
               });
               
-              this.saveAssets();
+              await this.saveAssets();
               document.body.removeChild(modal);
               alert('导入成功！\n新增：' + added + ' 个资产\n更新：' + updated + ' 个资产');
               this.render();
