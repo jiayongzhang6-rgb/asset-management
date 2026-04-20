@@ -822,12 +822,12 @@
           this.renderImportModal();
         });
 
-        document.getElementById('batch-delete-btn')?.addEventListener('click', () => {
+        document.getElementById('batch-delete-btn')?.addEventListener('click', async () => {
           if (confirm('确定要删除选中的 ' + this.selectedIds.length + ' 个资产吗？')) {
             this.assets = this.assets.filter(a => !this.selectedIds.includes(a.id));
-            this.saveAssets();
+            await this.saveAssets();
             this.selectedIds = [];
-            this.render();
+            await this.render();
           }
         });
 
@@ -891,12 +891,12 @@
         });
 
         document.querySelectorAll('.delete-btn')?.forEach(btn => {
-          btn.addEventListener('click', (e) => {
+          btn.addEventListener('click', async (e) => {
             const assetId = e.currentTarget.dataset.id;
             if (confirm('确定要删除这个资产吗？')) {
               this.assets = this.assets.filter(a => a.id !== assetId);
-              this.saveAssets();
-              this.render();
+              await this.saveAssets();
+              await this.render();
             }
           });
         });
