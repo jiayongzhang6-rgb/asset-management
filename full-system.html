@@ -243,13 +243,24 @@
       async init() {
         // 加载配置
         this.config = this.loadConfig();
+        
+        // 从URL参数中读取Gist配置信息（用于扫码访问）
+        const urlParams = new URLSearchParams(window.location.search);
+        const gistId = urlParams.get('gistId');
+        const githubToken = urlParams.get('githubToken');
+        
+        if (gistId && githubToken) {
+          this.config.gistId = gistId;
+          this.config.githubToken = githubToken;
+          this.saveConfig();
+        }
+        
         // 加载用户
         this.users = this.loadUsers();
         this.currentUser = this.loadCurrentUser();
         // 异步加载资产
         this.assets = await this.loadAssets();
         
-        const urlParams = new URLSearchParams(window.location.search);
         const action = urlParams.get('action');
         const assetId = urlParams.get('id');
         
@@ -1585,7 +1596,13 @@
         if (qrcodeContainer) {
           qrcodeContainer.innerHTML = '';
           const appUrl = this.getAppUrl();
-          const qrData = appUrl + '?action=edit&id=' + asset.id;
+          let qrData = appUrl + '?action=edit&id=' + asset.id;
+          
+          // 在二维码中包含Gist配置信息
+          if (this.config.gistId && this.config.githubToken) {
+            qrData += '&gistId=' + encodeURIComponent(this.config.gistId);
+            qrData += '&githubToken=' + encodeURIComponent(this.config.githubToken);
+          }
           
           try {
             if (typeof QRCode !== 'undefined') {
