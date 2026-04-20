@@ -96,8 +96,8 @@
         // 保存到localStorage
         localStorage.setItem('asset_assets', JSON.stringify(this.assets));
         
-        // 保存到Gist
-        if (this.config.useGist) {
+        // 保存到Gist（只要配置了Gist就同步）
+        if (this.config.gistId && this.config.githubToken) {
           await this.saveAssetsToGist(this.assets);
         }
       }
@@ -142,7 +142,7 @@
       
       // GitHub Gist 数据存储方法
       async loadAssetsFromGist() {
-        if (!this.config.useGist || !this.config.gistId || !this.config.githubToken) {
+        if (!this.config.gistId || !this.config.githubToken) {
           return null;
         }
         
@@ -583,8 +583,9 @@
       async renderEditPage() {
         let asset = this.assets.find(a => a.id === this.currentAssetId);
         
-        // 如果资产不存在，尝试从Gist重新加载数据
-        if (!asset && this.config.useGist) {
+        // 如果资产不存在，尝试从Gist重新加载数据（即使useGist未启用）
+        if (!asset) {
+          // 尝试从Gist加载数据，即使useGist未启用
           const gistAssets = await this.loadAssetsFromGist();
           if (gistAssets && gistAssets.length > 0) {
             this.assets = gistAssets;
