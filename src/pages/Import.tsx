@@ -37,7 +37,7 @@ export default function Import() {
 
   const parseExcel = (file: File) => {
     const reader = new FileReader()
-    reader.onload = (e) => {
+    reader.onload = () => {
       try {
         // 这里简化处理，实际项目中需要使用xlsx库解析Excel文件
         // 这里模拟解析结果
