@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IT资产管理系统</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+    .status-badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 12px; font-weight: 500; }
+    .status-active { background: #e6f7ee; color: #00a870; border: 1px solid #b7ebc9; }
+    .status-idle { background: #fff7e6; color: #fa8c16; border: 1px solid #ffd591; }
+    .status-maintenance { background: #fff1f0; color: #ff4d4f; border: 1px solid #ffccc7; }
+  </style>
+</head>
+<body class="bg-gray-50">
+  <div id="app"></div>
+  <script>
+    class AssetManagementSystem {
+      constructor() {
+        this.config = { deployedUrl: window.location.origin };
+        this.assets = [];
+        this.currentPage = 'list';
+        this.currentAssetId = null;
+        this.searchTerm = '';
+        this.currentUser = null;
+        this.departmentFilter = '全部部门';
+        this.statusFilter = '全部状态';
+        this.init();
+      }
+
+      async init() {
+        await this.loadData();
+        const params = new URLSearchParams(window.location.search);
+        const action = params.get('action');
+        const assetId = params.get('id');
+        if (action === 'edit' && assetId) {
+          this.currentAssetId = assetId;
+          this.currentPage = 'quick-edit';
+        }
+        this.render();
+      }
+
+      async loadData() {
+        try {
+          const res = await fetch('/api/assets');
+          this.assets = await res.json();
+        } catch (err) { console.error('Failed to load:', err); }
+      }
+
+      async saveAsset(asset) {
+        try {
+          const method = asset.id ? 'PUT' : 'POST';
+          const url = asset.id ? `/api/assets/${asset.id}` : '/api/assets';
+          await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(asset) });
+          await this.loadData();
+          return true;
+        } catch (err) { return false; }
+      }
+
+      async deleteAsset(id) {
+        try {
+          await fetch(`/api/assets/${id}`, { method: 'DELETE' });
+          await this.loadData();
+          return true;
+        } catch (err) { return false; }
+      }
+
+      async batchDelete(ids) {
+        try {
+          await fetch('/api/assets/batch-delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids }) });
+          await this.loadData();
+          return true;
+        } catch (err) { return false; }
+      }
+
+      async login(email, password) {
+        try {
+          const res = await fetch('/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password }) });
+          const data = await res.json();
+          if (data.success) { this.currentUser = data.user; return true; }
+          return false;
+        } catch (err) { return false; }
+      }
+
+      getAppUrl() { return this.config.deployedUrl + '/index.html'; }
+
+      render() {
+        const app = document.getElementById('app');
+        if (!app) return;
+        switch (this.currentPage) {
+          case 'list': app.innerHTML = this.renderListPage(); this.addListEventListeners(); break;
+          case 'add': app.innerHTML = this.renderAddPage(); this.addAddEventListeners(); break;
+          case 'edit': app.innerHTML = this.renderEditPage(); this.addEditEventListeners(); break;
+          case 'detail': app.innerHTML = this.renderDetailPage(); this.addDetailEventListeners(); setTimeout(() => this.generateQRCode(), 100); break;
+          case 'quick-edit': app.innerHTML = this.renderQuickEditPage(); this.addQuickEditEventListeners(); break;
+          case 'login': app.innerHTML = this.renderLoginPage(); this.addLoginEventListeners(); break;
+          case 'register': app.innerHTML = this.renderRegisterPage(); this.addRegisterEventListeners(); break;
+          default: app.innerHTML = this.renderListPage(); this.addListEventListeners();
+        }
+      }
+
+      renderListPage() {
+        const filtered = this.assets.filter(a => {
+          const s = this.searchTerm.toLowerCase();
+          const match = a.asset_code.toLowerCase().includes(s) || a.brand.toLowerCase().includes(s) || a.user_name.toLowerCase().includes(s);
+          const dept = this.departmentFilter === '全部部门' || a.department === this.departmentFilter;
+          const st = this.statusFilter === '全部状态' || (this.statusFilter === '使用中' && a.status === 'active') || (this.statusFilter === '闲置' && a.status === 'idle') || (this.statusFilter === '维修中' && a.status === 'maintenance');
+          return match && dept && st;
+        });
+        const depts = [...new Set(this.assets.map(a => a.department))];
+        let h = '<header class="bg-white shadow-sm border-b sticky top-0 z-10"><div class="container mx-auto px-4 py-3 flex justify-between items-center">';
+        h += '<div class="flex items-center gap-2"><div class="w-8 h-8 bg-blue-500 rounded flex items-center justify-center text-white font-bold">IT</div><h1 class="text-lg font-semibold">IT资产管理系统</h1></div>';
+        h += '<div class="flex items-center gap-3">';
+        if (this.currentUser) {
+          const roleLabel = this.currentUser.role === 'admin' ? '<span class="px-2 py-1 bg-red-100 text-red-600 text-xs rounded ml-2">管理员</span>' : '<span class="px-2 py-1 bg-blue-100 text-blue-600 text-xs rounded ml-2">普通用户</span>';
+          h += '<span class="text-sm text-gray-600">' + (this.currentUser.email || this.currentUser.username) + roleLabel + '</span>';
+          if (this.currentUser.role === 'admin') {
+            h += '<button id="batch-import-btn" class="px-3 py-1 bg-gray-200 rounded text-sm hover:bg-gray-300">批量导入</button>';
+            h += '<button id="add-btn" class="px-3 py-1 bg-green-500 text-white rounded text-sm hover:bg-green-600">+ 新增</button>';
+          }
+          h += '<button id="logout-btn" class="px-3 py-1 bg-gray-200 rounded text-sm hover:bg-gray-300">退出</button>';
+        } else {
+          h += '<button id="login-btn" class="px-3 py-1 bg-blue-500 text-white rounded text-sm hover:bg-blue-600">登录</button>';
+        }
+        h += '</div></div></header>';
+        h += '<div class="container mx-auto px-4 py-4"><div class="grid grid-cols-2 md:grid-cols-4 gap-4">';
+        h += '<div class="bg-white rounded p-4 shadow-sm"><p class="text-gray-500 text-sm">总数</p><p class="text-2xl font-bold">' + this.assets.length + '</p></div>';
+        h += '<div class="bg-white rounded p-4 shadow-sm"><p class="text-gray-500 text-sm">使用中</p><p class="text-2xl font-bold text-green-600">' + this.assets.filter(a => a.status === 'active').length + '</p></div>';
+        h += '<div class="bg-white rounded p-4 shadow-sm"><p class="text-gray-500 text-sm">闲置</p><p class="text-2xl font-bold text-orange-600">' + this.assets.filter(a => a.status === 'idle').length + '</p></div>';
+        h += '<div class="bg-white rounded p-4 shadow-sm"><p class="text-gray-500 text-sm">维修中</p><p class="text-2xl font-bold text-red-600">' + this.assets.filter(a => a.status === 'maintenance').length + '</p></div>';
+        h += '</div></div>';
+        h += '<div class="container mx-auto px-4 py-4"><div class="bg-white rounded p-4 shadow-sm flex flex-col md:flex-row gap-4 items-center">';
+        h += '<input type="text" id="search-input" placeholder="搜索..." value="' + this.searchTerm + '" class="flex-1 px-4 py-2 border rounded">';
+        h += '<select id="dept-filter" class="px-3 py-2 border rounded"><option value="全部部门"' + (this.departmentFilter === '全部部门' ? ' selected' : '') + '>全部部门</option>';
+        depts.forEach(d => { h += '<option value="' + d + '"' + (this.departmentFilter === d ? ' selected' : '') + '>' + d + '</option>'; });
+        h += '</select>';
+        h += '<select id="status-filter" class="px-3 py-2 border rounded"><option value="全部状态"' + (this.statusFilter === '全部状态' ? ' selected' : '') + '>全部状态</option><option value="使用中"' + (this.statusFilter === '使用中' ? ' selected' : '') + '>使用中</option><option value="闲置"' + (this.statusFilter === '闲置' ? ' selected' : '') + '>闲置</option><option value="维修中"' + (this.statusFilter === '维修中' ? ' selected' : '') + '>维修中</option></select>';
+        h += '<span class="text-gray-500 text-sm">共 ' + filtered.length + ' 条</span></div></div>';
+        h += '<div class="container mx-auto px-4 pb-8"><div class="bg-white rounded shadow-sm overflow-x-auto">';
+        h += '<table class="min-w-full divide-y divide-gray-200"><thead class="bg-gray-50"><tr>';
+        if (this.currentUser) h += '<th class="px-4 py-3 text-left text-xs"><input type="checkbox" id="select-all"></th>';
+        h += '<th class="px-4 py-3 text-left text-xs font-medium text-gray-500">编码</th><th class="px-4 py-3 text-left text-xs font-medium text-gray-500">品牌/型号</th><th class="px-4 py-3 text-left text-xs font-medium text-gray-500">CPU</th><th class="px-4 py-3 text-left text-xs font-medium text-gray-500">内存</th><th class="px-4 py-3 text-left text-xs font-medium text-gray-500">硬盘</th><th class="px-4 py-3 text-left text-xs font-medium text-gray-500">使用人</th><th class="px-4 py-3 text-left text-xs font-medium text-gray-500">部门</th><th class="px-4 py-3 text-left text-xs font-medium text-gray-500">位置</th><th class="px-4 py-3 text-left text-xs font-medium text-gray-500">状态</th><th class="px-4 py-3 text-left text-xs font-medium text-gray-500">操作</th></tr></thead><tbody class="divide-y">';
+        filtered.forEach(a => {
+          h += '<tr class="hover:bg-gray-50 cursor-pointer" data-id="' + a.id + '">';
+          if (this.currentUser) h += '<td class="px-4 py-3" onclick="event.stopPropagation()"><input type="checkbox" class="cb" value="' + a.id + '"></td>';
+          h += '<td class="px-4 py-3 text-sm font-medium text-blue-600">' + a.asset_code + '</td>';
+          h += '<td class="px-4 py-3 text-sm">' + a.brand + (a.model ? ' ' + a.model : '') + '</td>';
+          h += '<td class="px-4 py-3 text-sm">' + a.cpu + '</td>';
+          h += '<td class="px-4 py-3 text-sm">' + a.ram + '</td>';
+          h += '<td class="px-4 py-3 text-sm">' + a.storage + '</td>';
+          h += '<td class="px-4 py-3 text-sm">' + a.user_name + '</td>';
+          h += '<td class="px-4 py-3 text-sm">' + a.department + '</td>';
+          h += '<td class="px-4 py-3 text-sm">' + a.location + '</td>';
+          h += '<td class="px-4 py-3 text-sm">' + this.getBadge(a.status) + '</td>';
+          h += '<td class="px-4 py-3 text-sm" onclick="event.stopPropagation()">';
+          h += '<a href="#" class="detail-btn text-blue-500 hover:underline" data-id="' + a.id + '">详情</a>';
+          if (this.currentUser && this.currentUser.role === 'admin') h += ' <a href="#" class="edit-btn text-green-500 hover:underline" data-id="' + a.id + '">编辑</a> <a href="#" class="delete-btn text-red-500 hover:underline" data-id="' + a.id + '">删除</a>';
+          h += '</td></tr>';
+        });
+        h += '</tbody></table>';
+        if (filtered.length === 0) h += '<div class="text-center py-8 text-gray-500">没有找到资产</div>';
+        h += '</div></div>';
+        return h;
+      }
+
+      addListEventListeners() {
+        document.getElementById('search-input')?.addEventListener('input', e => { this.searchTerm = e.target.value; this.render(); });
+        document.getElementById('dept-filter')?.addEventListener('change', e => { this.departmentFilter = e.target.value; this.render(); });
+        document.getElementById('status-filter')?.addEventListener('change', e => { this.statusFilter = e.target.value; this.render(); });
+        document.getElementById('login-btn')?.addEventListener('click', () => { this.currentPage = 'login'; this.render(); });
+        document.getElementById('logout-btn')?.addEventListener('click', () => { this.currentUser = null; this.render(); });
+        document.getElementById('add-btn')?.addEventListener('click', () => { this.currentPage = 'add'; this.render(); });
+        document.querySelectorAll('.detail-btn').forEach(btn => btn.addEventListener('click', e => { e.preventDefault(); this.currentAssetId = btn.dataset.id; this.currentPage = 'detail'; this.render(); }));
+        document.querySelectorAll('.edit-btn').forEach(btn => btn.addEventListener('click', e => { e.preventDefault(); this.currentAssetId = btn.dataset.id; this.currentPage = 'edit'; this.render(); }));
+        document.querySelectorAll('.delete-btn').forEach(btn => btn.addEventListener('click', async e => { e.preventDefault(); if (confirm('确定删除?')) { await this.deleteAsset(btn.dataset.id); this.render(); } }));
+        document.querySelectorAll('tr[data-id]').forEach(row => row.addEventListener('click', () => { this.currentAssetId = row.dataset.id; this.currentPage = 'detail'; this.render(); }));
+      }
+
+      renderAddPage() {
+        return '<div class="min-h-screen bg-gray-50"><header class="bg-white shadow-sm"><div class="container mx-auto px-4 py-3 flex justify-between"><div class="flex items-center gap-2"><div class="w-8 h-8 bg-blue-500 rounded flex items-center justify-center text-white font-bold">IT</div><h1 class="text-lg font-semibold">IT资产管理系统</h1></div><button id="back-btn" class="px-3 py-1 bg-gray-200 rounded">返回</button></div></header><main class="container mx-auto px-4 py-8"><div class="bg-white rounded shadow-sm p-6 max-w-3xl mx-auto"><h2 class="text-lg font-semibold mb-6">新增设备</h2><form id="add-form" class="grid grid-cols-1 md:grid-cols-2 gap-4"><div><label class="block text-sm mb-2">品牌</label><input type="text" name="brand" class="w-full px-4 py-2 border rounded" required></div><div><label class="block text-sm mb-2">型号</label><input type="text" name="model" class="w-full px-4 py-2 border rounded"></div><div><label class="block text-sm mb-2">CPU</label><input type="text" name="cpu" class="w-full px-4 py-2 border rounded" required></div><div><label class="block text-sm mb-2">内存</label><input type="text" name="ram" class="w-full px-4 py-2 border rounded" required></div><div><label class="block text-sm mb-2">存储</label><input type="text" name="storage" class="w-full px-4 py-2 border rounded" required></div><div><label class="block text-sm mb-2">显卡</label><input type="text" name="gpu" class="w-full px-4 py-2 border rounded"></div><div><label class="block text-sm mb-2">操作系统</label><input type="text" name="os" class="w-full px-4 py-2 border rounded"></div><div><label class="block text-sm mb-2">部门</label><input type="text" name="department" class="w-full px-4 py-2 border rounded" required></div><div><label class="block text-sm mb-2">使用人</label><input type="text" name="user_name" class="w-full px-4 py-2 border rounded" required></div><div><label class="block text-sm mb-2">位置</label><input type="text" name="location" class="w-full px-4 py-2 border rounded" required></div><div><label class="block text-sm mb-2">资产编码</label><input type="text" name="asset_code" class="w-full px-4 py-2 border rounded" required></div><div><label class="block text-sm mb-2">状态</label><select name="status" class="w-full px-4 py-2 border rounded"><option value="active">使用中</option><option value="idle">闲置</option><option value="maintenance">维修中</option></select></div><div class="md:col-span-2"><label class="block text-sm mb-2">备注</label><textarea name="notes" rows="3" class="w-full px-4 py-2 border rounded"></textarea></div><div class="md:col-span-2 flex gap-2 mt-4"><button type="submit" class="px-6 py-2 bg-green-500 text-white rounded hover:bg-green-600">保存</button><button type="button" id="cancel-btn" class="px-6 py-2 bg-gray-200 rounded">取消</button></div></form></div></main></div>';
+      }
+
+      addAddEventListeners() {
+        document.getElementById('add-form')?.addEventListener('submit', async e => {
+          e.preventDefault();
+          const fd = new FormData(e.target);
+          await this.saveAsset({ asset_code: fd.get('asset_code'), brand: fd.get('brand'), model: fd.get('model'), cpu: fd.get('cpu'), ram: fd.get('ram'), storage: fd.get('storage'), gpu: fd.get('gpu'), os: fd.get('os'), department: fd.get('department'), user_name: fd.get('user_name'), location: fd.get('location'), status: fd.get('status'), notes: fd.get('notes') });
+          this.currentPage = 'list';
+          this.render();
+        });
+        document.getElementById('cancel-btn')?.addEventListener('click', () => { this.currentPage = 'list'; this.render(); });
+        document.getElementById('back-btn')?.addEventListener('click', () => { this.currentPage = 'list'; this.render(); });
+      }
+
+      renderEditPage() {
+        const a = this.assets.find(x => x.id === this.currentAssetId);
+        if (!a) { this.currentPage = 'list'; this.render(); return ''; }
+        return '<div class="min-h-screen bg-gray-50"><header class="bg-white shadow-sm"><div class="container mx-auto px-4 py-3 flex justify-between"><div class="flex items-center gap-2"><div class="w-8 h-8 bg-blue-500 rounded flex items-center justify-center text-white font-bold">IT</div><h1 class="text-lg font-semibold">IT资产管理系统</h1></div><button id="back-btn" class="px-3 py-1 bg-gray-200 rounded">返回</button></div></header><main class="container mx-auto px-4 py-8"><div class="bg-white rounded shadow-sm p-6 max-w-3xl mx-auto"><h2 class="text-lg font-semibold mb-6">编辑设备</h2><form id="edit-form" class="grid grid-cols-1 md:grid-cols-2 gap-4"><div><label class="block text-sm mb-2">品牌</label><input type="text" name="brand" value="' + a.brand + '" class="w-full px-4 py-2 border rounded" required></div><div><label class="block text-sm mb-2">型号</label><input type="text" name="model" value="' + (a.model || '') + '" class="w-full px-4 py-2 border rounded"></div><div><label class="block text-sm mb-2">CPU</label><input type="text" name="cpu" value="' + a.cpu + '" class="w-full px-4 py-2 border rounded" required></div><div><label class="block text-sm mb-2">内存</label><input type="text" name="ram" value="' + a.ram + '" class="w-full px-4 py-2 border rounded" required></div><div><label class="block text-sm mb-2">存储</label><input type="text" name="storage" value="' + a.storage + '" class="w-full px-4 py-2 border rounded" required></div><div><label class="block text-sm mb-2">显卡</label><input type="text" name="gpu" value="' + (a.gpu || '') + '" class="w-full px-4 py-2 border rounded"></div><div><label class="block text-sm mb-2">操作系统</label><input type="text" name="os" value="' + (a.os || '') + '" class="w-full px-4 py-2 border rounded"></div><div><label class="block text-sm mb-2">部门</label><input type="text" name="department" value="' + a.department + '" class="w-full px-4 py-2 border rounded" required></div><div><label class="block text-sm mb-2">使用人</label><input type="text" name="user_name" value="' + a.user_name + '" class="w-full px-4 py-2 border rounded" required></div><div><label class="block text-sm mb-2">位置</label><input type="text" name="location" value="' + a.location + '" class="w-full px-4 py-2 border rounded" required></div><div><label class="block text-sm mb-2">资产编码</label><input type="text" name="asset_code" value="' + a.asset_code + '" class="w-full px-4 py-2 border rounded" required></div><div><label class="block text-sm mb-2">状态</label><select name="status" class="w-full px-4 py-2 border rounded"><option value="active"' + (a.status === 'active' ? ' selected' : '') + '>使用中</option><option value="idle"' + (a.status === 'idle' ? ' selected' : '') + '>闲置</option><option value="maintenance"' + (a.status === 'maintenance' ? ' selected' : '') + '>维修中</option></select></div><div class="md:col-span-2"><label class="block text-sm mb-2">备注</label><textarea name="notes" rows="3" class="w-full px-4 py-2 border rounded">' + (a.notes || '') + '</textarea></div><div class="md:col-span-2 flex gap-2 mt-4"><button type="submit" class="px-6 py-2 bg-green-500 text-white rounded hover:bg-green-600">保存</button><button type="button" id="cancel-btn" class="px-6 py-2 bg-gray-200 rounded">取消</button></div></form></div></main></div>';
+      }
+
+      addEditEventListeners() {
+        document.getElementById('edit-form')?.addEventListener('submit', async e => {
+          e.preventDefault();
+          const fd = new FormData(e.target);
+          const a = this.assets.find(x => x.id === this.currentAssetId);
+          await this.saveAsset({ ...a, asset_code: fd.get('asset_code'), brand: fd.get('brand'), model: fd.get('model'), cpu: fd.get('cpu'), ram: fd.get('ram'), storage: fd.get('storage'), gpu: fd.get('gpu'), os: fd.get('os'), department: fd.get('department'), user_name: fd.get('user_name'), location: fd.get('location'), status: fd.get('status'), notes: fd.get('notes') });
+          this.currentPage = 'list';
+          this.render();
+        });
+        document.getElementById('cancel-btn')?.addEventListener('click', () => { this.currentPage = 'list'; this.render(); });
+        document.getElementById('back-btn')?.addEventListener('click', () => { this.currentPage = 'list'; this.render(); });
+      }
+
+      renderDetailPage() {
+        const a = this.assets.find(x => x.id === this.currentAssetId);
+        if (!a) { this.currentPage = 'list'; this.render(); return ''; }
+        let h = '<div class="min-h-screen bg-gray-50"><header class="bg-white shadow-sm"><div class="container mx-auto px-4 py-3 flex justify-between"><div class="flex items-center gap-2"><div class="w-8 h-8 bg-blue-500 rounded flex items-center justify-center text-white font-bold">IT</div><h1 class="text-lg font-semibold">IT资产管理系统</h1></div><button id="back-btn" class="px-3 py-1 bg-gray-200 rounded">返回列表</button></div></header><main class="container mx-auto px-4 py-8"><div class="bg-white rounded shadow-sm overflow-hidden">';
+        h += '<div class="bg-gray-50 px-6 py-4 border-b"><h2 class="text-lg font-semibold">设备详情</h2></div>';
+        h += '<div class="p-6"><div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">';
+        h += '<div class="space-y-4"><div><p class="text-sm text-gray-500">资产编码</p><p class="font-medium">' + a.asset_code + '</p></div>';
+        h += '<div><p class="text-sm text-gray-500">品牌</p><p class="font-medium">' + a.brand + '</p></div>';
+        h += '<div><p class="text-sm text-gray-500">型号</p><p class="font-medium">' + (a.model || '-') + '</p></div>';
+        h += '<div><p class="text-sm text-gray-500">CPU</p><p class="font-medium">' + a.cpu + '</p></div>';
+        h += '<div><p class="text-sm text-gray-500">内存</p><p class="font-medium">' + a.ram + '</p></div>';
+        h += '<div><p class="text-sm text-gray-500">存储</p><p class="font-medium">' + a.storage + '</p></div>';
+        h += '<div><p class="text-sm text-gray-500">显卡</p><p class="font-medium">' + (a.gpu || '-') + '</p></div>';
+        h += '<div><p class="text-sm text-gray-500">操作系统</p><p class="font-medium">' + (a.os || '-') + '</p></div></div>';
+        h += '<div class="space-y-4"><div><p class="text-sm text-gray-500">部门</p><p class="font-medium">' + a.department + '</p></div>';
+        h += '<div><p class="text-sm text-gray-500">使用人</p><p class="font-medium">' + a.user_name + '</p></div>';
+        h += '<div><p class="text-sm text-gray-500">位置</p><p class="font-medium">' + a.location + '</p></div>';
+        h += '<div><p class="text-sm text-gray-500">状态</p><p>' + this.getBadge(a.status) + '</p></div>';
+        h += '<div><p class="text-sm text-gray-500">创建时间</p><p class="font-medium">' + a.created_at + '</p></div>';
+        h += '<div><p class="text-sm text-gray-500">更新时间</p><p class="font-medium">' + a.updated_at + '</p></div>';
+        h += '<div><p class="text-sm text-gray-500">备注</p><p class="font-medium">' + (a.notes || '-') + '</p></div></div></div>';
+        h += '<div class="border-t p-6"><h3 class="text-lg font-semibold mb-4">资产二维码</h3><div class="flex flex-col md:flex-row items-center gap-6"><div id="qrcode" class="border rounded p-4"></div>';
+        h += '<div><p class="text-gray-600 mb-2">微信扫码登录后可修改使用人、部门、位置信息</p><p class="text-sm text-gray-500">硬件信息仅展示，不可修改</p></div></div>';
+        h += '<div class="mt-6 flex gap-2 justify-end"><button id="download-qr-btn" class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">下载编码</button>';
+        if (this.currentUser && this.currentUser.role === 'admin') h += '<button id="edit-btn" class="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600">编辑</button><button id="delete-btn" class="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600">删除</button>';
+        h += '</div></div></div></main></div>';
+        return h;
+      }
+
+      addDetailEventListeners() {
+        document.getElementById('back-btn')?.addEventListener('click', () => { this.currentPage = 'list'; this.render(); });
+        document.getElementById('edit-btn')?.addEventListener('click', () => { this.currentPage = 'edit'; this.render(); });
+        document.getElementById('delete-btn')?.addEventListener('click', async () => { if (confirm('确定删除?')) { await this.deleteAsset(this.currentAssetId); this.currentPage = 'list'; this.render(); } });
+        document.getElementById('download-qr-btn')?.addEventListener('click', () => { const c = document.querySelector('#qrcode canvas'); if (c) { const l = document.createElement('a'); l.download = 'asset.png'; l.href = c.toDataURL(); l.click(); } });
+      }
+
+      renderQuickEditPage() {
+        const a = this.assets.find(x => x.id === this.currentAssetId);
+        if (!a) { this.currentPage = 'list'; this.render(); return ''; }
+        const logged = this.currentUser !== null;
+        let h = '<div class="min-h-screen bg-gray-50"><header class="bg-white shadow-sm"><div class="container mx-auto px-4 py-3 flex justify-between"><div class="flex items-center gap-2"><div class="w-8 h-8 bg-blue-500 rounded flex items-center justify-center text-white font-bold">IT</div><h1 class="text-lg font-semibold">IT资产管理系统</h1></div><button id="back-btn" class="px-3 py-1 bg-gray-200 rounded">返回列表</button></div></header><main class="container mx-auto px-4 py-8"><div class="bg-white rounded shadow-sm p-6 max-w-3xl mx-auto">';
+        if (logged) {
+          const roleLabel = this.currentUser.role === 'admin' ? '<span class="px-2 py-1 bg-red-100 text-red-600 text-xs rounded ml-2">管理员</span>' : '<span class="px-2 py-1 bg-blue-100 text-blue-600 text-xs rounded ml-2">普通用户</span>';
+          h += '<div class="bg-green-50 p-3 rounded mb-6 flex justify-between"><span class="text-green-700">已登录: ' + (this.currentUser.email || this.currentUser.username) + roleLabel + '</span><button id="logout-btn" class="text-red-500 text-sm hover:underline">退出</button></div>';
+        }
+        h += '<div class="mb-6"><h3 class="font-medium mb-3 border-b pb-2">硬件信息</h3><div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm"><div><p class="text-gray-500">编码</p><p class="font-medium">' + a.asset_code + '</p></div><div><p class="text-gray-500">品牌</p><p class="font-medium">' + a.brand + '</p></div><div><p class="text-gray-500">型号</p><p class="font-medium">' + (a.model || '-') + '</p></div><div><p class="text-gray-500">CPU</p><p class="font-medium">' + a.cpu + '</p></div><div><p class="text-gray-500">内存</p><p class="font-medium">' + a.ram + '</p></div><div><p class="text-gray-500">存储</p><p class="font-medium">' + a.storage + '</p></div><div><p class="text-gray-500">显卡</p><p class="font-medium">' + (a.gpu || '-') + '</p></div><div><p class="text-gray-500">系统</p><p class="font-medium">' + (a.os || '-') + '</p></div></div></div>';
+        h += '<div class="mb-6"><h3 class="font-medium mb-3 border-b pb-2">使用信息</h3><div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm"><div><p class="text-gray-500">使用人</p><p class="font-medium">' + a.user_name + '</p></div><div><p class="text-gray-500">部门</p><p class="font-medium">' + a.department + '</p></div><div><p class="text-gray-500">位置</p><p class="font-medium">' + a.location + '</p></div></div></div>';
+        if (logged) {
+          h += '<div class="border-t pt-6"><h3 class="font-medium mb-3">修改信息</h3><form id="edit-form" class="grid grid-cols-1 md:grid-cols-3 gap-4"><div><label class="block text-sm mb-2">使用人</label><input type="text" name="user_name" value="' + a.user_name + '" class="w-full px-4 py-2 border rounded"></div><div><label class="block text-sm mb-2">部门</label><input type="text" name="department" value="' + a.department + '" class="w-full px-4 py-2 border rounded"></div><div><label class="block text-sm mb-2">位置</label><input type="text" name="location" value="' + a.location + '" class="w-full px-4 py-2 border rounded"></div><div class="md:col-span-3 flex gap-2 mt-4"><button type="submit" class="px-6 py-2 bg-green-500 text-white rounded hover:bg-green-600">保存</button><button type="button" id="detail-btn" class="px-4 py-2 bg-gray-200 rounded">详情</button></div></form></div>';
+        } else {
+          h += '<div class="border-t pt-6 text-center"><div class="bg-blue-50 rounded p-6 inline-block"><i class="fa fa-lock text-3xl text-blue-400 mb-3"></i><p class="text-gray-600 mb-4">登录后可修改信息</p><a href="' + this.getAppUrl() + '?action=login&redirect=edit&id=' + a.id + '" class="px-6 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 inline-block">登录后修改</a></div></div>';
+        }
+        h += '</div></main></div>';
+        return h;
+      }
+
+      addQuickEditEventListeners() {
+        document.getElementById('back-btn')?.addEventListener('click', () => { this.currentPage = 'list'; this.render(); });
+        document.getElementById('detail-btn')?.addEventListener('click', () => { this.currentPage = 'detail'; this.render(); });
+        document.getElementById('logout-btn')?.addEventListener('click', () => { this.currentUser = null; this.render(); });
+        document.getElementById('edit-form')?.addEventListener('submit', async e => {
+          e.preventDefault();
+          const fd = new FormData(e.target);
+          const a = this.assets.find(x => x.id === this.currentAssetId);
+          await this.saveAsset({ ...a, user_name: fd.get('user_name'), department: fd.get('department'), location: fd.get('location') });
+          alert('修改成功');
+          window.location.href = this.getAppUrl() + '?action=detail&id=' + this.currentAssetId;
+        });
+      }
+
+      renderLoginPage() {
+        return '<div class="min-h-screen bg-gray-50 flex items-center justify-center"><div class="bg-white rounded shadow-sm p-8 w-full max-w-md"><div class="text-center mb-6"><div class="w-16 h-16 bg-blue-500 rounded-full flex items-center justify-center mx-auto mb-4"><i class="fa fa-user text-3xl text-white"></i></div><h2 class="text-xl font-semibold">邮箱登录</h2></div><form id="login-form" class="space-y-4"><div><label class="block text-sm mb-2">邮箱</label><input type="email" name="email" class="w-full px-4 py-2 border rounded" required></div><div><label class="block text-sm mb-2">密码</label><input type="password" name="password" class="w-full px-4 py-2 border rounded" required></div><button type="submit" class="w-full px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">登录</button></form><p class="text-center mt-4 text-sm text-gray-600">没有账号? <a href="#" id="to-register" class="text-blue-500 hover:underline">注册</a></p><div class="mt-6 p-4 bg-gray-50 rounded text-sm text-gray-600"><i class="fa fa-info-circle"></i> 需要管理员账号请联系：747227185@qq.com</div></div></div>';
+      }
+
+      addLoginEventListeners() {
+        document.getElementById('login-form')?.addEventListener('submit', async e => {
+          e.preventDefault();
+          const fd = new FormData(e.target);
+          if (await this.login(fd.get('email'), fd.get('password'))) {
+            const params = new URLSearchParams(window.location.search);
+            if (params.get('redirect') === 'edit' && params.get('id')) {
+              window.location.href = this.getAppUrl() + '?action=edit&id=' + params.get('id');
+            } else {
+              this.currentPage = 'list';
+              this.render();
+            }
+            alert('登录成功');
+          } else {
+            alert('邮箱或密码错误');
+          }
+        });
+        document.getElementById('to-register')?.addEventListener('click', e => { e.preventDefault(); this.currentPage = 'register'; this.render(); });
+      }
+
+      renderRegisterPage() {
+        return '<div class="min-h-screen bg-gray-50 flex items-center justify-center"><div class="bg-white rounded shadow-sm p-8 w-full max-w-md"><div class="text-center mb-6"><div class="w-16 h-16 bg-green-500 rounded-full flex items-center justify-center mx-auto mb-4"><i class="fa fa-user-plus text-3xl text-white"></i></div><h2 class="text-xl font-semibold">注册账号</h2></div><form id="register-form" class="space-y-4"><div><label class="block text-sm mb-2">用户名</label><input type="text" name="username" class="w-full px-4 py-2 border rounded" required></div><div><label class="block text-sm mb-2">密码</label><input type="password" name="password" class="w-full px-4 py-2 border rounded" required></div><div><label class="block text-sm mb-2">邮箱</label><input type="email" name="email" class="w-full px-4 py-2 border rounded"></div><button type="submit" class="w-full px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600">注册</button></form><p class="text-center mt-4 text-sm text-gray-600">已有账号? <a href="#" id="to-login" class="text-blue-500 hover:underline">登录</a></p></div></div>';
+      }
+
+      addRegisterEventListeners() {
+        document.getElementById('register-form')?.addEventListener('submit', async e => {
+          e.preventDefault();
+          const fd = new FormData(e.target);
+          try {
+            const res = await fetch('/api/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: fd.get('username'), password: fd.get('password'), email: fd.get('email') }) });
+            const data = await res.json();
+            if (data.success) { this.currentUser = data.user; this.currentPage = 'list'; this.render(); alert('注册成功'); } else { alert(data.error || '注册失败'); }
+          } catch { alert('注册失败'); }
+        });
+        document.getElementById('to-login')?.addEventListener('click', e => { e.preventDefault(); this.currentPage = 'login'; this.render(); });
+      }
+
+      getBadge(status) {
+        switch (status) {
+          case 'active': return '<span class="status-badge status-active">使用中</span>';
+          case 'idle': return '<span class="status-badge status-idle">闲置</span>';
+          case 'maintenance': return '<span class="status-badge status-maintenance">维修中</span>';
+          default: return '<span class="status-badge">' + status + '</span>';
+        }
+      }
+
+      generateQRCode() {
+        const a = this.assets.find(x => x.id === this.currentAssetId);
+        if (!a) return;
+        const container = document.getElementById('qrcode');
+        if (container) {
+          container.innerHTML = '';
+          try {
+            if (typeof QRCode !== 'undefined') {
+              new QRCode(container, { text: this.getAppUrl() + '?action=edit&id=' + a.id, width: 180, height: 180 });
+            }
+          } catch {}
+        }
+      }
+    }
+    document.addEventListener('DOMContentLoaded', () => new AssetManagementSystem());
+  </script>
+</body>
+</html>

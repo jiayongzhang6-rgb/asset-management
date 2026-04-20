@@ -1,0 +1,1395 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IT资产管理系统</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    }
+    .status-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 500;
+    }
+    .status-active {
+      background: #e6f7ee;
+      color: #00a870;
+      border: 1px solid #b7ebc9;
+    }
+    .status-idle {
+      background: #fff6e0;
+      color: #fa8c16;
+      border: 1px solid #ffd591;
+    }
+    .status-maintenance {
+      background: #fff1f0;
+      color: #f5222d;
+      border: 1px solid #ffccc7;
+    }
+    .nav-link {
+      position: relative;
+    }
+    .nav-link:hover::after {
+      content: '';
+      position: absolute;
+      bottom: -2px;
+      left: 0;
+      right: 0;
+      height: 2px;
+      background: #1890ff;
+    }
+  </style>
+</head>
+<body class="bg-gray-50">
+  <div id="app"></div>
+
+  <script>
+    class AssetManagementSystem {
+      constructor() {
+        this.config = this.loadConfig();
+        this.assets = this.loadAssets();
+        this.users = this.loadUsers();
+        this.selectedIds = [];
+        this.currentPage = 'list';
+        this.currentAssetId = null;
+        this.searchTerm = '';
+        this.currentUser = this.loadCurrentUser();
+        this.departmentFilter = '全部部门';
+        this.statusFilter = '全部状态';
+        this.init();
+      }
+
+      loadAssets() {
+        const saved = localStorage.getItem('asset_assets');
+        if (saved) return JSON.parse(saved);
+        return [
+          { id: '1', asset_code: 'PC-2026-0001', brand: 'Lenovo', model: 'ThinkPad X1', cpu: 'Intel Core i7-1165G7', ram: '16GB', storage: '512GB SSD', gpu: 'Intel Iris Xe', os: 'Windows 10 Pro', department: '研发部', user_name: '张伟', location: 'A座301室', status: 'active', notes: '用于开发工作', created_at: '2026-04-15', updated_at: '2026-04-15', history: [] },
+          { id: '2', asset_code: 'PC-2026-0002', brand: 'ASUS', model: 'ROG Strix', cpu: 'Intel Core i5-14600KF', ram: '32GB', storage: '1TB SSD', gpu: 'NVIDIA RTX 4070', os: 'Windows 11 Pro', department: '设计部', user_name: '李娜', location: 'B座201室', status: 'active', notes: '用于设计工作', created_at: '2026-04-15', updated_at: '2026-04-15', history: [] },
+          { id: '3', asset_code: 'PC-2026-0003', brand: 'MSI', model: 'GS66 Stealth', cpu: 'Intel Core i5-10400F', ram: '16GB', storage: '512GB SSD', gpu: 'NVIDIA RTX 3060', os: 'Windows 11 Pro', department: '市场部', user_name: '王芳', location: 'C座101室', status: 'idle', notes: '备用设备', created_at: '2026-04-15', updated_at: '2026-04-15', history: [] },
+          { id: '4', asset_code: 'PC-2026-0004', brand: 'HP', model: 'EliteBook 840 G8', cpu: 'Intel Core i5-1135G7', ram: '8GB', storage: '256GB SSD', gpu: 'Intel Iris Xe', os: 'Windows 10 Pro', department: '行政部', user_name: '赵强', location: 'D座101室', status: 'active', notes: '用于行政工作', created_at: '2026-04-15', updated_at: '2026-04-15', history: [] },
+          { id: '5', asset_code: 'PC-2026-0005', brand: 'Dell', model: 'XPS 13', cpu: 'Intel Core i7-1185G7', ram: '16GB', storage: '512GB SSD', gpu: 'Intel Iris Xe', os: 'Windows 11 Pro', department: '财务部', user_name: '陈明', location: 'E座101室', status: 'active', notes: '用于财务工作', created_at: '2026-04-15', updated_at: '2026-04-15', history: [] }
+        ];
+      }
+
+      saveAssets() {
+        localStorage.setItem('asset_assets', JSON.stringify(this.assets));
+      }
+
+      loadUsers() {
+        const saved = localStorage.getItem('asset_users');
+        if (saved) return JSON.parse(saved);
+        return [
+          { id: '1', username: 'admin', password: '747227185@qq.com', email: '747227185@qq.com', role: 'admin', created_at: '2026-04-15' }
+        ];
+      }
+
+      saveUsers() {
+        localStorage.setItem('asset_users', JSON.stringify(this.users));
+      }
+
+      loadCurrentUser() {
+        const saved = localStorage.getItem('asset_current_user');
+        if (saved) return JSON.parse(saved);
+        return null;
+      }
+
+      saveCurrentUser(user) {
+        if (user) localStorage.setItem('asset_current_user', JSON.stringify(user));
+        else localStorage.removeItem('asset_current_user');
+      }
+
+      loadConfig() {
+        const saved = localStorage.getItem('asset_config');
+        if (saved) return JSON.parse(saved);
+        return { deployedUrl: 'https://jiayongzhang6-rgb.github.io/asset-management/full-system.html' };
+      }
+
+      saveConfig() {
+        localStorage.setItem('asset_config', JSON.stringify(this.config));
+      }
+
+      init() {
+        const urlParams = new URLSearchParams(window.location.search);
+        const action = urlParams.get('action');
+        const assetId = urlParams.get('id');
+        
+        if (action === 'edit' && assetId) {
+          this.currentAssetId = assetId;
+          this.currentPage = 'quick-edit';
+        } else if (action === 'login') {
+          this.currentPage = 'login';
+        } else {
+          this.currentPage = 'list';
+        }
+        this.render();
+      }
+
+      render() {
+        const app = document.getElementById('app');
+        if (!app) return;
+
+        switch (this.currentPage) {
+          case 'list':
+            app.innerHTML = this.renderListPage();
+            this.addListEventListeners();
+            break;
+          case 'add':
+            app.innerHTML = this.renderAddPage();
+            this.addAddEventListeners();
+            break;
+          case 'edit':
+            app.innerHTML = this.renderEditPage();
+            this.addEditEventListeners();
+            break;
+          case 'quick-edit':
+            app.innerHTML = this.renderQuickEditPage();
+            this.addQuickEditEventListeners();
+            break;
+          case 'detail':
+            app.innerHTML = this.renderDetailPage();
+            this.addDetailEventListeners();
+            this.generateQRCode();
+            break;
+          case 'login':
+            app.innerHTML = this.renderLoginPage();
+            this.addLoginEventListeners();
+            break;
+          case 'register':
+            app.innerHTML = this.renderRegisterPage();
+            this.addRegisterEventListeners();
+            break;
+          default:
+            app.innerHTML = this.renderListPage();
+            this.addListEventListeners();
+        }
+      }
+
+      renderListPage() {
+        const filtered = this.assets.filter(a => {
+          const s = this.searchTerm.toLowerCase();
+          const matchesSearch = !s || 
+            a.asset_code.toLowerCase().includes(s) ||
+            a.brand.toLowerCase().includes(s) ||
+            a.model.toLowerCase().includes(s) ||
+            a.user_name.toLowerCase().includes(s) ||
+            a.department.toLowerCase().includes(s) ||
+            a.location.toLowerCase().includes(s);
+          const matchesDepartment = this.departmentFilter === '全部部门' || a.department === this.departmentFilter;
+          const matchesStatus = this.statusFilter === '全部状态' || a.status === this.statusFilter;
+          return matchesSearch && matchesDepartment && matchesStatus;
+        });
+
+        let h = '<div class="min-h-screen bg-gray-50">';
+        h += '<header class="bg-blue-600 text-white">';
+        h += '<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex justify-between items-center">';
+        h += '<h1 class="text-xl font-semibold">IT资产管理系统</h1>';
+        h += '<div class="flex items-center gap-3">';
+        if (this.currentUser) {
+          h += '<span class="text-sm">' + (this.currentUser.email || this.currentUser.username) + '</span>';
+          if (this.currentUser.role === 'admin') {
+            h += '<button id="batch-import-btn" class="px-3 py-1 bg-white text-blue-600 rounded text-sm hover:bg-gray-100">批量导入</button>';
+            h += '<button id="add-btn" class="px-3 py-1 bg-white text-blue-600 rounded text-sm hover:bg-gray-100">+ 新增设备</button>';
+            h += '<button id="settings-btn" class="px-3 py-1 bg-white text-blue-600 rounded text-sm hover:bg-gray-100"><i class="fa fa-cog"></i> 设置</button>';
+          }
+          h += '<button id="logout-btn" class="px-3 py-1 bg-white text-blue-600 rounded text-sm hover:bg-gray-100">退出</button>';
+        } else {
+          h += '<button id="login-btn" class="px-3 py-1 bg-white text-blue-600 rounded text-sm hover:bg-gray-100">登录</button>';
+        }
+        h += '</div>';
+        h += '</header>';
+        h += '<main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">';
+        
+        // 统计卡片
+        const totalAssets = this.assets.length;
+        const activeAssets = this.assets.filter(a => a.status === 'active').length;
+        const idleAssets = this.assets.filter(a => a.status === 'idle').length;
+        const scrapAssets = this.assets.filter(a => a.status === 'scrap').length;
+        
+        h += '<div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">';
+        h += '<div class="bg-white p-4 rounded-lg shadow-sm border border-gray-200">';
+        h += '<div class="flex items-center gap-2">';
+        h += '<div class="text-blue-600"><i class="fa fa-desktop text-2xl"></i></div>';
+        h += '<div>';
+        h += '<p class="text-sm text-gray-500">资产总数</p>';
+        h += '<p class="text-2xl font-bold text-gray-800">' + totalAssets + '</p>';
+        h += '</div>';
+        h += '</div>';
+        h += '</div>';
+        
+        h += '<div class="bg-white p-4 rounded-lg shadow-sm border border-gray-200">';
+        h += '<div class="flex items-center gap-2">';
+        h += '<div class="text-green-600"><i class="fa fa-check-circle text-2xl"></i></div>';
+        h += '<div>';
+        h += '<p class="text-sm text-gray-500">使用中</p>';
+        h += '<p class="text-2xl font-bold text-gray-800">' + activeAssets + '</p>';
+        h += '</div>';
+        h += '</div>';
+        h += '</div>';
+        
+        h += '<div class="bg-white p-4 rounded-lg shadow-sm border border-gray-200">';
+        h += '<div class="flex items-center gap-2">';
+        h += '<div class="text-yellow-600"><i class="fa fa-clock-o text-2xl"></i></div>';
+        h += '<div>';
+        h += '<p class="text-sm text-gray-500">闲置</p>';
+        h += '<p class="text-2xl font-bold text-gray-800">' + idleAssets + '</p>';
+        h += '</div>';
+        h += '</div>';
+        h += '</div>';
+        
+        h += '<div class="bg-white p-4 rounded-lg shadow-sm border border-gray-200">';
+        h += '<div class="flex items-center gap-2">';
+        h += '<div class="text-red-600"><i class="fa fa-trash text-2xl"></i></div>';
+        h += '<div>';
+        h += '<p class="text-sm text-gray-500">报废</p>';
+        h += '<p class="text-2xl font-bold text-gray-800">' + scrapAssets + '</p>';
+        h += '</div>';
+        h += '</div>';
+        h += '</div>';
+        h += '</div>';
+
+        h += '<div class="bg-white shadow-sm rounded-lg p-4">';
+        h += '<div class="flex flex-wrap gap-3 mb-4">';
+        h += '<div class="flex-grow">';
+        h += '<input type="text" id="search-input" placeholder="搜索资产编码、品牌、使用人..." value="' + this.searchTerm + '" class="w-full px-4 py-2 border rounded">';
+        h += '</div>';
+        h += '<select id="department-filter" class="px-4 py-2 border rounded">';
+        h += '<option value="全部部门" ' + (this.departmentFilter === '全部部门' ? 'selected' : '') + '>全部部门</option>';
+        const departments = [...new Set(this.assets.map(a => a.department))];
+        departments.forEach(dept => {
+          h += '<option value="' + dept + '" ' + (this.departmentFilter === dept ? 'selected' : '') + '>' + dept + '</option>';
+        });
+        h += '</select>';
+        h += '<select id="status-filter" class="px-4 py-2 border rounded">';
+        h += '<option value="全部状态" ' + (this.statusFilter === '全部状态' ? 'selected' : '') + '>全部状态</option>';
+        h += '<option value="active" ' + (this.statusFilter === 'active' ? 'selected' : '') + '>使用中</option>';
+        h += '<option value="idle" ' + (this.statusFilter === 'idle' ? 'selected' : '') + '>闲置</option>';
+        h += '<option value="maintenance" ' + (this.statusFilter === 'maintenance' ? 'selected' : '') + '>维修中</option>';
+        h += '</select>';
+        if (this.currentUser && this.currentUser.role === 'admin' && this.selectedIds.length > 0) {
+          h += '<button id="batch-delete-btn" class="px-3 py-2 bg-red-500 text-white rounded hover:bg-red-600">批量删除</button>';
+        }
+        h += '</div>';
+
+        h += '<div class="overflow-x-auto">';
+        h += '<table class="min-w-full border border-gray-200">';
+        h += '<thead class="bg-gray-50">';
+        h += '<tr>';
+        if (this.currentUser && this.currentUser.role === 'admin') {
+          const isAllSelected = this.assets.length > 0 && this.selectedIds.length === this.assets.length;
+          h += '<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-b"><input type="checkbox" id="select-all-checkbox" ' + (isAllSelected ? 'checked' : '') + '></th>';
+        }
+        h += '<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-b">资产编码</th>';
+        h += '<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-b">CPU</th>';
+        h += '<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-b">内存</th>';
+        h += '<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-b">硬盘</th>';
+        h += '<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-b">显卡</th>';
+        h += '<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-b">使用人</th>';
+        h += '<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-b">部门</th>';
+        h += '<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-b">位置</th>';
+        h += '<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-b">品牌/型号</th>';
+        h += '<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-b">状态</th>';
+        h += '<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-b">操作</th>';
+        h += '</tr>';
+        h += '</thead>';
+        h += '<tbody class="bg-white divide-y divide-gray-200">';
+
+        filtered.forEach(asset => {
+          h += '<tr class="cursor-pointer hover:bg-gray-50" data-id="' + asset.id + '">';
+          if (this.currentUser && this.currentUser.role === 'admin') {
+            h += '<td class="px-4 py-4 whitespace-nowrap border-b"><input type="checkbox" class="asset-checkbox" data-id="' + asset.id + '" ' + (this.selectedIds.includes(asset.id) ? 'checked' : '') + ' onclick="event.stopPropagation()"></td>';
+          }
+          h += '<td class="px-4 py-4 whitespace-nowrap border-b text-sm text-blue-600 font-medium">' + asset.asset_code + '</td>';
+          h += '<td class="px-4 py-4 whitespace-nowrap border-b text-sm text-gray-500">' + asset.cpu + '</td>';
+          h += '<td class="px-4 py-4 whitespace-nowrap border-b text-sm text-gray-500">' + this.formatStorage(asset.ram) + '</td>';
+          h += '<td class="px-4 py-4 whitespace-nowrap border-b text-sm text-gray-500">' + this.formatStorage(asset.storage) + '</td>';
+          h += '<td class="px-4 py-4 whitespace-nowrap border-b text-sm text-gray-500">' + (asset.gpu || '-') + '</td>';
+          h += '<td class="px-4 py-4 whitespace-nowrap border-b text-sm text-gray-500">' + asset.user_name + '</td>';
+          h += '<td class="px-4 py-4 whitespace-nowrap border-b text-sm text-gray-500">' + asset.department + '</td>';
+          h += '<td class="px-4 py-4 whitespace-nowrap border-b text-sm text-gray-500">' + asset.location + '</td>';
+          h += '<td class="px-4 py-4 border-b text-sm text-gray-900">' + asset.brand + ' ' + (asset.model || '') + '</td>';
+          h += '<td class="px-4 py-4 whitespace-nowrap border-b">' + this.getStatusBadge(asset.status) + '</td>';
+          h += '<td class="px-4 py-4 whitespace-nowrap text-sm font-medium border-b">';
+          if (this.currentUser && this.currentUser.role === 'admin') {
+            h += '<button class="text-green-600 hover:text-green-900 mr-2 edit-btn" data-id="' + asset.id + '" onclick="event.stopPropagation()"><i class="fa fa-pencil"></i> 编辑</button>';
+            h += '<button class="text-red-600 hover:text-red-900 delete-btn" data-id="' + asset.id + '" onclick="event.stopPropagation()"><i class="fa fa-trash"></i> 删除</button>';
+            h += '<button class="text-blue-600 hover:text-blue-900 view-btn" data-id="' + asset.id + '" onclick="event.stopPropagation()"><i class="fa fa-info-circle"></i> 详情</button>';
+          } else {
+            h += '<button class="text-green-600 hover:text-green-900 quick-edit-btn" data-id="' + asset.id + '" onclick="event.stopPropagation()"><i class="fa fa-pencil"></i> 编辑</button>';
+            h += '<button class="text-blue-600 hover:text-blue-900 view-btn" data-id="' + asset.id + '" onclick="event.stopPropagation()"><i class="fa fa-info-circle"></i> 详情</button>';
+          }
+          h += '</td>';
+          h += '</tr>';
+        });
+
+        h += '</tbody>';
+        h += '</table>';
+        h += '</div>';
+        h += '<div class="mt-4 text-sm text-gray-600">';
+        h += '共 ' + filtered.length + ' 条记录';
+        h += '</div>';
+        h += '</div>';
+        h += '</main>';
+        h += '</div>';
+        return h;
+      }
+
+      getStatusBadge(status) {
+        switch (status) {
+          case 'active': return '<span class="status-badge status-active">使用中</span>';
+          case 'idle': return '<span class="status-badge status-idle">闲置</span>';
+          case 'maintenance': return '<span class="status-badge status-maintenance">维修中</span>';
+          default: return '<span class="status-badge">' + status + '</span>';
+        }
+      }
+
+      renderAddPage() {
+        let h = '<div class="min-h-screen bg-gray-100">';
+        h += '<header class="bg-white shadow-sm">';
+        h += '<div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center">';
+        h += '<button id="back-btn" class="mr-4 text-gray-500 hover:text-gray-700"><i class="fa fa-arrow-left"></i></button>';
+        h += '<h1 class="text-xl font-semibold text-blue-600">+ 新增设备</h1>';
+        h += '</div>';
+        h += '</header>';
+
+        h += '<main class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6">';
+        h += '<div class="bg-white shadow-sm rounded-lg p-6">';
+        h += '<form id="add-form" class="space-y-4">';
+        h += '<div class="grid grid-cols-1 md:grid-cols-2 gap-6">';
+        
+        // 品牌和型号
+        h += '<div>';
+        h += '<label class="block text-sm font-medium text-gray-700 mb-2">品牌</label>';
+        h += '<input type="text" name="brand" placeholder="Dell / Lenovo / HP" required class="w-full px-4 py-2 border rounded">';
+        h += '</div>';
+        h += '<div>';
+        h += '<label class="block text-sm font-medium text-gray-700 mb-2">型号</label>';
+        h += '<input type="text" name="model" placeholder="ThinkPad X1 Carbon" required class="w-full px-4 py-2 border rounded">';
+        h += '</div>';
+        
+        // CPU和内存
+        h += '<div>';
+        h += '<label class="block text-sm font-medium text-gray-700 mb-2">CPU</label>';
+        h += '<input type="text" name="cpu" placeholder="Intel Core i7-10700" required class="w-full px-4 py-2 border rounded">';
+        h += '</div>';
+        h += '<div>';
+        h += '<label class="block text-sm font-medium text-gray-700 mb-2">内存</label>';
+        h += '<input type="text" name="ram" placeholder="16GB DDR4" required class="w-full px-4 py-2 border rounded">';
+        h += '</div>';
+        
+        // 硬盘和操作系统
+        h += '<div>';
+        h += '<label class="block text-sm font-medium text-gray-700 mb-2">硬盘</label>';
+        h += '<input type="text" name="storage" placeholder="512GB SSD" required class="w-full px-4 py-2 border rounded">';
+        h += '</div>';
+        h += '<div>';
+        h += '<label class="block text-sm font-medium text-gray-700 mb-2">操作系统</label>';
+        h += '<input type="text" name="os" placeholder="Windows 11 Pro" required class="w-full px-4 py-2 border rounded">';
+        h += '</div>';
+        
+        // 显卡和使用人
+        h += '<div>';
+        h += '<label class="block text-sm font-medium text-gray-700 mb-2">显卡</label>';
+        h += '<input type="text" name="gpu" placeholder="NVIDIA RTX 3060" required class="w-full px-4 py-2 border rounded">';
+        h += '</div>';
+        h += '<div>';
+        h += '<label class="block text-sm font-medium text-gray-700 mb-2">使用人</label>';
+        h += '<input type="text" name="user_name" placeholder="张三" required class="w-full px-4 py-2 border rounded">';
+        h += '</div>';
+        
+        // 所在部门和存放地点
+        h += '<div>';
+        h += '<label class="block text-sm font-medium text-gray-700 mb-2">所在部门</label>';
+        h += '<input type="text" name="department" placeholder="研发部" required class="w-full px-4 py-2 border rounded">';
+        h += '</div>';
+        h += '<div>';
+        h += '<label class="block text-sm font-medium text-gray-700 mb-2">存放地点</label>';
+        h += '<input type="text" name="location" placeholder="A栋3楼-301" required class="w-full px-4 py-2 border rounded">';
+        h += '</div>';
+        
+        // 状态
+        h += '<div class="md:col-span-2">';
+        h += '<label class="block text-sm font-medium text-gray-700 mb-2">状态</label>';
+        h += '<select name="status" required class="w-full px-4 py-2 border rounded">';
+        h += '<option value="active">使用中</option>';
+        h += '<option value="idle">闲置</option>';
+        h += '<option value="maintenance">维修中</option>';
+        h += '</select>';
+        h += '</div>';
+        
+        // 资产编码（隐藏字段，自动生成）
+        h += '<input type="hidden" name="asset_code" value="PC-' + new Date().getFullYear() + '-' + String(this.assets.length + 1).padStart(4, '0') + '">';
+        
+        h += '</div>';
+        
+        // 备注
+        h += '<div>';
+        h += '<label class="block text-sm font-medium text-gray-700 mb-2">备注</label>';
+        h += '<textarea name="notes" placeholder="其他说明..." class="w-full px-4 py-2 border rounded" rows="3"></textarea>';
+        h += '</div>';
+        
+        // 按钮
+        h += '<div class="flex justify-end gap-3">';
+        h += '<button type="button" id="cancel-add-btn" class="px-6 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300">取消</button>';
+        h += '<button type="submit" class="px-6 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">确认添加</button>';
+        h += '</div>';
+        
+        h += '</form>';
+        h += '</div>';
+        h += '</main>';
+        h += '</div>';
+        return h;
+      }
+
+      renderEditPage() {
+        const asset = this.assets.find(a => a.id === this.currentAssetId);
+        if (!asset) return '<div class="min-h-screen bg-gray-50 flex items-center justify-center"><div class="bg-white p-6 rounded-lg shadow-sm"><p class="text-gray-600">资产不存在</p><button id="back-btn" class="mt-4 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">返回</button></div></div>';
+
+        let h = '<div class="min-h-screen bg-gray-50">';
+        h += '<header class="bg-white shadow-sm">';
+        h += '<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center">';
+        h += '<button id="back-btn" class="mr-4 text-gray-500 hover:text-gray-700"><i class="fa fa-arrow-left"></i></button>';
+        h += '<h1 class="text-xl font-semibold text-gray-800">编辑资产</h1>';
+        h += '</div>';
+        h += '</header>';
+
+        h += '<main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">';
+        h += '<div class="bg-white shadow-sm rounded-lg p-6">';
+        h += '<form id="edit-form" class="space-y-4">';
+        h += '<div class="grid grid-cols-1 md:grid-cols-2 gap-4">';
+        h += '<div><label class="block text-sm font-medium text-gray-700 mb-1">资产编码</label><input type="text" name="asset_code" value="' + asset.asset_code + '" required class="w-full px-4 py-2 border rounded"></div>';
+        h += '<div><label class="block text-sm font-medium text-gray-700 mb-1">品牌</label><input type="text" name="brand" value="' + asset.brand + '" required class="w-full px-4 py-2 border rounded"></div>';
+        h += '<div><label class="block text-sm font-medium text-gray-700 mb-1">型号</label><input type="text" name="model" value="' + asset.model + '" required class="w-full px-4 py-2 border rounded"></div>';
+        h += '<div><label class="block text-sm font-medium text-gray-700 mb-1">CPU</label><input type="text" name="cpu" value="' + asset.cpu + '" required class="w-full px-4 py-2 border rounded"></div>';
+        h += '<div><label class="block text-sm font-medium text-gray-700 mb-1">内存</label><input type="text" name="ram" value="' + asset.ram + '" required class="w-full px-4 py-2 border rounded"></div>';
+        h += '<div><label class="block text-sm font-medium text-gray-700 mb-1">存储</label><input type="text" name="storage" value="' + asset.storage + '" required class="w-full px-4 py-2 border rounded"></div>';
+        h += '<div><label class="block text-sm font-medium text-gray-700 mb-1">显卡</label><input type="text" name="gpu" value="' + asset.gpu + '" required class="w-full px-4 py-2 border rounded"></div>';
+        h += '<div><label class="block text-sm font-medium text-gray-700 mb-1">操作系统</label><input type="text" name="os" value="' + asset.os + '" required class="w-full px-4 py-2 border rounded"></div>';
+        h += '<div><label class="block text-sm font-medium text-gray-700 mb-1">使用人</label><input type="text" name="user_name" value="' + asset.user_name + '" required class="w-full px-4 py-2 border rounded"></div>';
+        h += '<div><label class="block text-sm font-medium text-gray-700 mb-1">部门</label><input type="text" name="department" value="' + asset.department + '" required class="w-full px-4 py-2 border rounded"></div>';
+        h += '<div><label class="block text-sm font-medium text-gray-700 mb-1">位置</label><input type="text" name="location" value="' + asset.location + '" required class="w-full px-4 py-2 border rounded"></div>';
+        h += '<div><label class="block text-sm font-medium text-gray-700 mb-1">状态</label><select name="status" required class="w-full px-4 py-2 border rounded"><option value="active" ' + (asset.status === 'active' ? 'selected' : '') + '>使用中</option><option value="idle" ' + (asset.status === 'idle' ? 'selected' : '') + '>闲置</option><option value="maintenance" ' + (asset.status === 'maintenance' ? 'selected' : '') + '>维修中</option></select></div>';
+        h += '</div>';
+        h += '<div><label class="block text-sm font-medium text-gray-700 mb-1">备注</label><textarea name="notes" class="w-full px-4 py-2 border rounded" rows="3">' + (asset.notes || '') + '</textarea></div>';
+        h += '<div class="flex gap-2">';
+        h += '<button type="submit" class="px-6 py-2 bg-green-500 text-white rounded hover:bg-green-600">保存</button>';
+        h += '<button type="button" id="cancel-edit-btn" class="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300">取消</button>';
+        h += '</div>';
+        h += '</form>';
+        h += '</div>';
+        h += '</main>';
+        h += '</div>';
+        return h;
+      }
+
+      renderQuickEditPage() {
+        const asset = this.assets.find(a => a.id === this.currentAssetId);
+        if (!asset) return '<div class="min-h-screen bg-gray-50 flex items-center justify-center"><div class="bg-white p-6 rounded-lg shadow-sm"><p class="text-gray-600">资产不存在</p><button id="back-btn" class="mt-4 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">返回</button></div></div>';
+
+        let h = '<div class="min-h-screen bg-gray-50">';
+        h += '<header class="bg-white shadow-sm">';
+        h += '<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center">';
+        h += '<button id="back-btn" class="mr-4 text-gray-500 hover:text-gray-700"><i class="fa fa-arrow-left"></i></button>';
+        h += '<h1 class="text-xl font-semibold text-gray-800">修改使用信息</h1>';
+        h += '</div>';
+        h += '</header>';
+
+        h += '<main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">';
+        h += '<div class="bg-white shadow-sm rounded-lg p-6">';
+        h += '<div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">';
+        h += '<div><label class="block text-sm font-medium text-gray-700 mb-1">资产编码</label><input type="text" value="' + asset.asset_code + '" disabled class="w-full px-4 py-2 border rounded bg-gray-50"></div>';
+        h += '<div><label class="block text-sm font-medium text-gray-700 mb-1">品牌</label><input type="text" value="' + asset.brand + '" disabled class="w-full px-4 py-2 border rounded bg-gray-50"></div>';
+        h += '<div><label class="block text-sm font-medium text-gray-700 mb-1">型号</label><input type="text" value="' + asset.model + '" disabled class="w-full px-4 py-2 border rounded bg-gray-50"></div>';
+        h += '<div><label class="block text-sm font-medium text-gray-700 mb-1">CPU</label><input type="text" value="' + asset.cpu + '" disabled class="w-full px-4 py-2 border rounded bg-gray-50"></div>';
+        h += '<div><label class="block text-sm font-medium text-gray-700 mb-1">内存</label><input type="text" value="' + asset.ram + '" disabled class="w-full px-4 py-2 border rounded bg-gray-50"></div>';
+        h += '<div><label class="block text-sm font-medium text-gray-700 mb-1">存储</label><input type="text" value="' + asset.storage + '" disabled class="w-full px-4 py-2 border rounded bg-gray-50"></div>';
+        h += '<div><label class="block text-sm font-medium text-gray-700 mb-1">显卡</label><input type="text" value="' + asset.gpu + '" disabled class="w-full px-4 py-2 border rounded bg-gray-50"></div>';
+        h += '<div><label class="block text-sm font-medium text-gray-700 mb-1">操作系统</label><input type="text" value="' + asset.os + '" disabled class="w-full px-4 py-2 border rounded bg-gray-50"></div>';
+        h += '<div><label class="block text-sm font-medium text-gray-700 mb-1">状态</label><input type="text" value="' + (asset.status === 'active' ? '使用中' : asset.status === 'idle' ? '闲置' : '维修中') + '" disabled class="w-full px-4 py-2 border rounded bg-gray-50"></div>';
+        h += '</div>';
+
+        if (this.currentUser) {
+          h += '<div class="border-t pt-6"><h3 class="font-medium mb-3">修改信息</h3><form id="edit-form" class="grid grid-cols-1 md:grid-cols-3 gap-4"><div><label class="block text-sm mb-2">使用人</label><input type="text" name="user_name" value="' + asset.user_name + '" class="w-full px-4 py-2 border rounded"></div><div><label class="block text-sm mb-2">部门</label><input type="text" name="department" value="' + asset.department + '" class="w-full px-4 py-2 border rounded"></div><div><label class="block text-sm mb-2">位置</label><input type="text" name="location" value="' + asset.location + '" class="w-full px-4 py-2 border rounded"></div><div class="md:col-span-3 flex gap-2 mt-4"><button type="submit" class="px-6 py-2 bg-green-500 text-white rounded hover:bg-green-600">保存</button><button type="button" id="detail-btn" class="px-4 py-2 bg-gray-200 rounded">详情</button></div></form></div>';
+        } else {
+          h += '<div class="border-t pt-6 text-center"><div class="bg-blue-50 rounded p-6 inline-block"><i class="fa fa-lock text-3xl text-blue-400 mb-3"></i><p class="text-gray-600 mb-4">登录后可修改信息</p><a href="' + this.getAppUrl() + '?action=login&redirect=edit&id=' + asset.id + '" class="px-6 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 inline-block">登录后修改</a></div></div>';
+        }
+        h += '</div>';
+        h += '</main>';
+        h += '</div>';
+        return h;
+      }
+
+      renderDetailPage() {
+        const asset = this.assets.find(a => a.id === this.currentAssetId);
+        if (!asset) return '<div class="min-h-screen bg-gray-50 flex items-center justify-center"><div class="bg-white p-6 rounded-lg shadow-sm"><p class="text-gray-600">资产不存在</p><button id="back-btn" class="mt-4 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">返回</button></div></div>';
+
+        let h = '<div class="min-h-screen bg-gray-50">';
+        h += '<header class="bg-white shadow-sm">';
+        h += '<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center">';
+        h += '<button id="back-btn" class="mr-4 text-gray-500 hover:text-gray-700"><i class="fa fa-arrow-left"></i></button>';
+        h += '<h1 class="text-xl font-semibold text-gray-800">资产详情</h1>';
+        h += '</div>';
+        h += '</header>';
+
+        h += '<main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">';
+        h += '<div class="bg-white shadow-sm rounded-lg p-6">';
+        h += '<div class="flex flex-col md:flex-row md:items-start gap-6">';
+        h += '<div class="flex-grow">';
+        h += '<div class="grid grid-cols-1 md:grid-cols-2 gap-4">';
+        h += '<div><label class="block text-sm font-medium text-gray-700 mb-1">资产编码</label><input type="text" value="' + asset.asset_code + '" disabled class="w-full px-4 py-2 border rounded bg-gray-50"></div>';
+        h += '<div><label class="block text-sm font-medium text-gray-700 mb-1">品牌</label><input type="text" value="' + asset.brand + '" disabled class="w-full px-4 py-2 border rounded bg-gray-50"></div>';
+        h += '<div><label class="block text-sm font-medium text-gray-700 mb-1">型号</label><input type="text" value="' + asset.model + '" disabled class="w-full px-4 py-2 border rounded bg-gray-50"></div>';
+        h += '<div><label class="block text-sm font-medium text-gray-700 mb-1">CPU</label><input type="text" value="' + asset.cpu + '" disabled class="w-full px-4 py-2 border rounded bg-gray-50"></div>';
+        h += '<div><label class="block text-sm font-medium text-gray-700 mb-1">内存</label><input type="text" value="' + asset.ram + '" disabled class="w-full px-4 py-2 border rounded bg-gray-50"></div>';
+        h += '<div><label class="block text-sm font-medium text-gray-700 mb-1">存储</label><input type="text" value="' + asset.storage + '" disabled class="w-full px-4 py-2 border rounded bg-gray-50"></div>';
+        h += '<div><label class="block text-sm font-medium text-gray-700 mb-1">显卡</label><input type="text" value="' + asset.gpu + '" disabled class="w-full px-4 py-2 border rounded bg-gray-50"></div>';
+        h += '<div><label class="block text-sm font-medium text-gray-700 mb-1">操作系统</label><input type="text" value="' + asset.os + '" disabled class="w-full px-4 py-2 border rounded bg-gray-50"></div>';
+        h += '<div><label class="block text-sm font-medium text-gray-700 mb-1">使用人</label><input type="text" value="' + asset.user_name + '" disabled class="w-full px-4 py-2 border rounded bg-gray-50"></div>';
+        h += '<div><label class="block text-sm font-medium text-gray-700 mb-1">部门</label><input type="text" value="' + asset.department + '" disabled class="w-full px-4 py-2 border rounded bg-gray-50"></div>';
+        h += '<div><label class="block text-sm font-medium text-gray-700 mb-1">位置</label><input type="text" value="' + asset.location + '" disabled class="w-full px-4 py-2 border rounded bg-gray-50"></div>';
+        h += '<div><label class="block text-sm font-medium text-gray-700 mb-1">状态</label><input type="text" value="' + (asset.status === 'active' ? '使用中' : asset.status === 'idle' ? '闲置' : '维修中') + '" disabled class="w-full px-4 py-2 border rounded bg-gray-50"></div>';
+        h += '</div>';
+        h += '<div class="mt-4"><label class="block text-sm font-medium text-gray-700 mb-1">备注</label><textarea disabled class="w-full px-4 py-2 border rounded bg-gray-50" rows="3">' + (asset.notes || '') + '</textarea></div>';
+        h += '<div class="mt-6 flex gap-2">';
+        if (this.currentUser && this.currentUser.role === 'admin') {
+          h += '<button id="edit-btn" class="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600">编辑</button>';
+          h += '<button id="delete-btn" class="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600">删除</button>';
+        } else if (this.currentUser) {
+          h += '<button id="quick-edit-btn" class="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600">修改使用信息</button>';
+        } else {
+          h += '<a href="' + this.getAppUrl() + '?action=login&redirect=edit&id=' + asset.id + '" class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">登录后修改</a>';
+        }
+        h += '<button id="back-btn-detail" class="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300">返回</button>';
+        h += '</div>';
+        h += '</div>';
+        h += '<div class="md:w-48">';
+        h += '<div class="border rounded-lg p-4 text-center">';
+        h += '<h3 class="text-sm font-medium text-gray-700 mb-3">资产二维码</h3>';
+        h += '<div id="qrcode" class="mx-auto"></div>';
+        h += '<p class="text-xs text-gray-500 mt-3">扫描二维码快速访问</p>';
+        h += '</div>';
+        h += '</div>';
+        h += '</div>';
+        
+        // 操作历史记录（只有管理员可见）
+        if (this.currentUser && this.currentUser.role === 'admin' && asset.history && asset.history.length > 0) {
+          h += '<div class="mt-8">';
+          h += '<h3 class="text-lg font-semibold text-gray-800 mb-4">操作历史记录</h3>';
+          h += '<div class="overflow-x-auto">';
+          h += '<table class="min-w-full border border-gray-200">';
+          h += '<thead class="bg-gray-50">';
+          h += '<tr>';
+          h += '<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-b">操作人</th>';
+          h += '<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-b">操作时间</th>';
+          h += '<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-b">操作类型</th>';
+          h += '<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-b">变更内容</th>';
+          h += '</tr>';
+          h += '</thead>';
+          h += '<tbody class="bg-white divide-y divide-gray-200">';
+          
+          asset.history.forEach(record => {
+            const date = new Date(record.timestamp);
+            const formattedDate = date.toLocaleString('zh-CN', {
+              year: 'numeric',
+              month: '2-digit',
+              day: '2-digit',
+              hour: '2-digit',
+              minute: '2-digit',
+              second: '2-digit'
+            });
+            
+            h += '<tr>';
+            h += '<td class="px-4 py-3 whitespace-nowrap border-b text-sm text-gray-900">' + record.user + '</td>';
+            h += '<td class="px-4 py-3 whitespace-nowrap border-b text-sm text-gray-500">' + formattedDate + '</td>';
+            h += '<td class="px-4 py-3 whitespace-nowrap border-b text-sm text-gray-500">' + record.action + '</td>';
+            h += '<td class="px-4 py-3 border-b text-sm text-gray-500">';
+            h += '<ul class="list-disc list-inside">';
+            record.changes.forEach(change => {
+              h += '<li>' + change + '</li>';
+            });
+            h += '</ul>';
+            h += '</td>';
+            h += '</tr>';
+          });
+          
+          h += '</tbody>';
+          h += '</table>';
+          h += '</div>';
+          h += '</div>';
+        }
+        
+        h += '</div>';
+        h += '</main>';
+        h += '</div>';
+        return h;
+      }
+
+      renderLoginPage() {
+        return '<div class="min-h-screen bg-gray-50 flex items-center justify-center"><div class="bg-white rounded shadow-sm p-8 w-full max-w-md"><div class="text-center mb-6"><div class="w-16 h-16 bg-blue-500 rounded-full flex items-center justify-center mx-auto mb-4"><i class="fa fa-user text-3xl text-white"></i></div><h2 class="text-xl font-semibold">邮箱登录</h2></div><form id="login-form" class="space-y-4"><div><label class="block text-sm mb-2">邮箱</label><input type="email" name="email" class="w-full px-4 py-2 border rounded" required></div><div><label class="block text-sm mb-2">密码</label><input type="password" name="password" class="w-full px-4 py-2 border rounded" required></div><button type="submit" class="w-full px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">登录</button></form><p class="text-center mt-4 text-sm text-gray-600">没有账号? <a href="#" id="to-register" class="text-blue-500 hover:underline">注册</a></p><div class="mt-6 p-4 bg-gray-50 rounded text-sm text-gray-600"><i class="fa fa-info-circle"></i> 需要管理员账号请联系：747227185@qq.com</div></div></div>';
+      }
+
+      renderRegisterPage() {
+        return '<div class="min-h-screen bg-gray-50 flex items-center justify-center"><div class="bg-white rounded shadow-sm p-8 w-full max-w-md"><div class="text-center mb-6"><div class="w-16 h-16 bg-green-500 rounded-full flex items-center justify-center mx-auto mb-4"><i class="fa fa-user-plus text-3xl text-white"></i></div><h2 class="text-xl font-semibold">注册账号</h2></div><form id="register-form" class="space-y-4"><div><label class="block text-sm mb-2">用户名</label><input type="text" name="username" class="w-full px-4 py-2 border rounded" required></div><div><label class="block text-sm mb-2">邮箱</label><input type="email" name="email" class="w-full px-4 py-2 border rounded" required></div><div><label class="block text-sm mb-2">密码</label><input type="password" name="password" class="w-full px-4 py-2 border rounded" required></div><button type="submit" class="w-full px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600">注册</button></form><p class="text-center mt-4 text-sm text-gray-600">已有账号? <a href="#" id="to-login" class="text-blue-500 hover:underline">登录</a></p></div></div>';
+      }
+
+      addListEventListeners() {
+        document.getElementById('search-input')?.addEventListener('input', (e) => {
+          this.searchTerm = e.target.value;
+          this.render();
+        });
+
+        document.getElementById('department-filter')?.addEventListener('change', (e) => {
+          this.departmentFilter = e.target.value;
+          this.render();
+        });
+
+        document.getElementById('status-filter')?.addEventListener('change', (e) => {
+          this.statusFilter = e.target.value;
+          this.render();
+        });
+
+        document.getElementById('add-btn')?.addEventListener('click', () => {
+          this.currentPage = 'add';
+          this.render();
+        });
+
+        document.getElementById('login-btn')?.addEventListener('click', () => {
+          this.currentPage = 'login';
+          this.render();
+        });
+
+        document.getElementById('logout-btn')?.addEventListener('click', () => {
+          this.currentUser = null;
+          this.saveCurrentUser(null);
+          this.render();
+        });
+
+        document.getElementById('settings-btn')?.addEventListener('click', () => {
+          this.renderSettingsModal();
+        });
+
+        document.getElementById('batch-import-btn')?.addEventListener('click', () => {
+          this.renderImportModal();
+        });
+
+        document.getElementById('batch-delete-btn')?.addEventListener('click', () => {
+          if (confirm('确定要删除选中的 ' + this.selectedIds.length + ' 个资产吗？')) {
+            this.assets = this.assets.filter(a => !this.selectedIds.includes(a.id));
+            this.saveAssets();
+            this.selectedIds = [];
+            this.render();
+          }
+        });
+
+        document.getElementById('select-all-checkbox')?.addEventListener('change', (e) => {
+          if (e.target.checked) {
+            this.selectedIds = this.assets.map(a => a.id);
+          } else {
+            this.selectedIds = [];
+          }
+          this.render();
+        });
+
+        document.querySelectorAll('.asset-checkbox')?.forEach(checkbox => {
+          checkbox.addEventListener('change', (e) => {
+            const assetId = e.target.dataset.id;
+            if (e.target.checked) {
+              this.selectedIds.push(assetId);
+            } else {
+              this.selectedIds = this.selectedIds.filter(id => id !== assetId);
+            }
+            this.render();
+          });
+        });
+
+        document.querySelectorAll('.view-btn')?.forEach(btn => {
+          btn.addEventListener('click', (e) => {
+            this.currentAssetId = e.currentTarget.dataset.id;
+            this.currentPage = 'detail';
+            this.render();
+          });
+        });
+        
+        // 行点击事件
+        document.querySelectorAll('tr[data-id]')?.forEach(row => {
+          row.addEventListener('click', (e) => {
+            // 避免点击按钮和复选框时触发
+            if (e.target.tagName === 'BUTTON' || e.target.tagName === 'INPUT' || e.target.closest('button') || e.target.closest('input')) {
+              return;
+            }
+            const assetId = row.dataset.id;
+            this.currentAssetId = assetId;
+            this.currentPage = 'detail';
+            this.render();
+          });
+        });
+
+        document.querySelectorAll('.edit-btn')?.forEach(btn => {
+          btn.addEventListener('click', (e) => {
+            this.currentAssetId = e.currentTarget.dataset.id;
+            this.currentPage = 'edit';
+            this.render();
+          });
+        });
+
+        document.querySelectorAll('.quick-edit-btn')?.forEach(btn => {
+          btn.addEventListener('click', (e) => {
+            this.currentAssetId = e.currentTarget.dataset.id;
+            this.currentPage = 'quick-edit';
+            this.render();
+          });
+        });
+
+        document.querySelectorAll('.delete-btn')?.forEach(btn => {
+          btn.addEventListener('click', (e) => {
+            const assetId = e.currentTarget.dataset.id;
+            if (confirm('确定要删除这个资产吗？')) {
+              this.assets = this.assets.filter(a => a.id !== assetId);
+              this.saveAssets();
+              this.render();
+            }
+          });
+        });
+      }
+
+      addAddEventListeners() {
+        const backBtn = document.getElementById('back-btn');
+        if (backBtn) {
+          backBtn.addEventListener('click', () => {
+            this.currentPage = 'list';
+            this.render();
+          });
+        }
+
+        const cancelBtn = document.getElementById('cancel-add-btn');
+        if (cancelBtn) {
+          cancelBtn.addEventListener('click', () => {
+            this.currentPage = 'list';
+            this.render();
+          });
+        }
+
+        const form = document.getElementById('add-form');
+        if (form) {
+          form.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const formData = new FormData(form);
+            
+            // 生成资产编码
+            const assetCode = 'PC-' + new Date().getFullYear() + '-' + String(this.assets.length + 1).padStart(4, '0');
+            
+            const asset = {
+              id: Date.now().toString(),
+              asset_code: assetCode,
+              brand: formData.get('brand'),
+              model: formData.get('model'),
+              cpu: formData.get('cpu'),
+              ram: formData.get('ram'),
+              storage: formData.get('storage'),
+              gpu: formData.get('gpu'),
+              os: formData.get('os'),
+              user_name: formData.get('user_name'),
+              department: formData.get('department'),
+              location: formData.get('location'),
+              status: formData.get('status'),
+              notes: formData.get('notes'),
+              created_at: new Date().toISOString().split('T')[0],
+              updated_at: new Date().toISOString().split('T')[0],
+              history: []
+            };
+            
+            // 添加操作历史
+            const historyRecord = {
+              user: this.currentUser.email,
+              timestamp: new Date().toISOString(),
+              action: '新增',
+              changes: ['创建资产: ' + assetCode]
+            };
+            asset.history.push(historyRecord);
+            
+            this.assets.push(asset);
+            this.saveAssets();
+            this.currentPage = 'list';
+            this.render();
+          });
+        }
+      }
+
+      addEditEventListeners() {
+        const backBtn = document.getElementById('back-btn');
+        if (backBtn) {
+          backBtn.addEventListener('click', () => {
+            this.currentPage = 'list';
+            this.render();
+          });
+        }
+
+        const cancelBtn = document.getElementById('cancel-edit-btn');
+        if (cancelBtn) {
+          cancelBtn.addEventListener('click', () => {
+            this.currentPage = 'list';
+            this.render();
+          });
+        }
+
+        const form = document.getElementById('edit-form');
+        if (form) {
+          form.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const formData = new FormData(form);
+            const index = this.assets.findIndex(a => a.id === this.currentAssetId);
+            if (index !== -1) {
+              const oldAsset = { ...this.assets[index] };
+              const newAsset = {
+                ...this.assets[index],
+                asset_code: formData.get('asset_code'),
+                brand: formData.get('brand'),
+                model: formData.get('model'),
+                cpu: formData.get('cpu'),
+                ram: formData.get('ram'),
+                storage: formData.get('storage'),
+                gpu: formData.get('gpu'),
+                os: formData.get('os'),
+                user_name: formData.get('user_name'),
+                department: formData.get('department'),
+                location: formData.get('location'),
+                status: formData.get('status'),
+                notes: formData.get('notes'),
+                updated_at: new Date().toISOString().split('T')[0]
+              };
+              
+              // 添加操作历史
+              const changes = [];
+              if (oldAsset.user_name !== newAsset.user_name) {
+                changes.push(`使用人: ${oldAsset.user_name} → ${newAsset.user_name}`);
+              }
+              if (oldAsset.department !== newAsset.department) {
+                changes.push(`部门: ${oldAsset.department} → ${newAsset.department}`);
+              }
+              if (oldAsset.location !== newAsset.location) {
+                changes.push(`位置: ${oldAsset.location} → ${newAsset.location}`);
+              }
+              if (oldAsset.status !== newAsset.status) {
+                changes.push(`状态: ${oldAsset.status} → ${newAsset.status}`);
+              }
+              
+              if (changes.length > 0) {
+                const historyRecord = {
+                  user: this.currentUser.email,
+                  timestamp: new Date().toISOString(),
+                  action: '修改',
+                  changes: changes
+                };
+                
+                if (!newAsset.history) {
+                  newAsset.history = [];
+                }
+                newAsset.history.unshift(historyRecord);
+              }
+              
+              this.assets[index] = newAsset;
+              this.saveAssets();
+              this.currentPage = 'list';
+              this.render();
+            }
+          });
+        }
+      }
+
+      addQuickEditEventListeners() {
+        const backBtn = document.getElementById('back-btn');
+        if (backBtn) {
+          backBtn.addEventListener('click', () => {
+            this.currentPage = 'list';
+            this.render();
+          });
+        }
+
+        const detailBtn = document.getElementById('detail-btn');
+        if (detailBtn) {
+          detailBtn.addEventListener('click', () => {
+            this.currentPage = 'detail';
+            this.render();
+          });
+        }
+
+        const form = document.getElementById('edit-form');
+        if (form) {
+          form.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const formData = new FormData(form);
+            const index = this.assets.findIndex(a => a.id === this.currentAssetId);
+            if (index !== -1) {
+              const oldAsset = { ...this.assets[index] };
+              const newAsset = {
+                ...this.assets[index],
+                user_name: formData.get('user_name'),
+                department: formData.get('department'),
+                location: formData.get('location'),
+                updated_at: new Date().toISOString().split('T')[0]
+              };
+              
+              // 添加操作历史
+              const changes = [];
+              if (oldAsset.user_name !== newAsset.user_name) {
+                changes.push(`使用人: ${oldAsset.user_name} → ${newAsset.user_name}`);
+              }
+              if (oldAsset.department !== newAsset.department) {
+                changes.push(`部门: ${oldAsset.department} → ${newAsset.department}`);
+              }
+              if (oldAsset.location !== newAsset.location) {
+                changes.push(`位置: ${oldAsset.location} → ${newAsset.location}`);
+              }
+              
+              if (changes.length > 0) {
+                const historyRecord = {
+                  user: this.currentUser.email,
+                  timestamp: new Date().toISOString(),
+                  action: '快速修改',
+                  changes: changes
+                };
+                
+                if (!newAsset.history) {
+                  newAsset.history = [];
+                }
+                newAsset.history.unshift(historyRecord);
+              }
+              
+              this.assets[index] = newAsset;
+              this.saveAssets();
+              this.currentPage = 'detail';
+              this.render();
+            }
+          });
+        }
+      }
+
+      addDetailEventListeners() {
+        document.getElementById('back-btn')?.addEventListener('click', () => {
+          this.currentPage = 'list';
+          this.render();
+        });
+
+        document.getElementById('back-btn-detail')?.addEventListener('click', () => {
+          this.currentPage = 'list';
+          this.render();
+        });
+
+        document.getElementById('edit-btn')?.addEventListener('click', () => {
+          this.currentPage = 'edit';
+          this.render();
+        });
+
+        document.getElementById('quick-edit-btn')?.addEventListener('click', () => {
+          this.currentPage = 'quick-edit';
+          this.render();
+        });
+
+        document.getElementById('delete-btn')?.addEventListener('click', () => {
+          if (confirm('确定要删除这个资产吗？')) {
+            this.assets = this.assets.filter(a => a.id !== this.currentAssetId);
+            this.saveAssets();
+            this.currentPage = 'list';
+            this.render();
+          }
+        });
+      }
+
+      addLoginEventListeners() {
+        const form = document.getElementById('login-form');
+        if (form) {
+          form.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const formData = new FormData(form);
+            const email = formData.get('email');
+            const password = formData.get('password');
+            const user = this.users.find(u => u.email === email && u.password === password);
+            if (user) {
+              this.currentUser = user;
+              this.saveCurrentUser(user);
+              const urlParams = new URLSearchParams(window.location.search);
+              if (urlParams.get('redirect') === 'edit' && urlParams.get('id')) {
+                this.currentAssetId = urlParams.get('id');
+                this.currentPage = 'quick-edit';
+              } else {
+                this.currentPage = 'list';
+              }
+              this.render();
+            } else {
+              alert('邮箱或密码错误');
+            }
+          });
+        }
+
+        document.getElementById('to-register')?.addEventListener('click', (e) => {
+          e.preventDefault();
+          this.currentPage = 'register';
+          this.render();
+        });
+      }
+
+      addRegisterEventListeners() {
+        const form = document.getElementById('register-form');
+        if (form) {
+          form.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const formData = new FormData(form);
+            const username = formData.get('username');
+            const email = formData.get('email');
+            const password = formData.get('password');
+            const existingUser = this.users.find(u => u.username === username || u.email === email);
+            if (existingUser) {
+              alert('用户名或邮箱已存在');
+            } else {
+              const user = {
+                id: Date.now().toString(),
+                username,
+                email,
+                password,
+                role: 'user',
+                created_at: new Date().toISOString().split('T')[0]
+              };
+              this.users.push(user);
+              this.saveUsers();
+              this.currentUser = user;
+              this.saveCurrentUser(user);
+              this.currentPage = 'list';
+              this.render();
+            }
+          });
+        }
+
+        document.getElementById('to-login')?.addEventListener('click', (e) => {
+          e.preventDefault();
+          this.currentPage = 'login';
+          this.render();
+        });
+      }
+
+      renderSettingsModal() {
+        const modal = document.createElement('div');
+        modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
+        let modalContent = '<div class="bg-white rounded-lg p-6 max-w-4xl w-full mx-4">' +
+          '<div class="flex items-center justify-between mb-4"><h3 class="text-lg font-semibold">系统设置</h3><button id="close-settings-btn" class="text-gray-500 hover:text-gray-700"><i class="fa fa-times text-xl"></i></button></div>' +
+          '<div class="space-y-6">';
+        
+        // 部署URL设置
+        modalContent += '<div><label class="block text-sm font-medium text-gray-700 mb-2">部署URL（二维码用）</label>' +
+          '<input type="text" id="deployed-url-input" value="' + (this.config.deployedUrl || '') + '" placeholder="例: https://yourdomain.com/asset.html" class="w-full px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">' +
+          '<p class="text-xs text-gray-500 mt-1">部署到服务器后填入此URL，二维码才能在任何网络环境扫描打开</p></div>';
+        
+        // 用户管理（只有管理员可见）
+        if (this.currentUser && this.currentUser.role === 'admin') {
+          modalContent += '<div><h4 class="text-md font-semibold mb-3">用户管理</h4>' +
+            '<div class="overflow-x-auto">' +
+            '<table class="min-w-full divide-y divide-gray-200">' +
+            '<thead class="bg-gray-50">' +
+            '<tr>' +
+            '<th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">邮箱</th>' +
+            '<th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">角色</th>' +
+            '<th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">操作</th>' +
+            '</tr>' +
+            '</thead>' +
+            '<tbody class="bg-white divide-y divide-gray-200">';
+          
+          this.users.forEach(user => {
+            if (user.email !== '747227185@qq.com') { // 不显示管理员账号
+              modalContent += '<tr>' +
+                '<td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">' + user.email + '</td>' +
+                '<td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">' + (user.role === 'admin' ? '管理员' : '普通用户') + '</td>' +
+                '<td class="px-4 py-3 whitespace-nowrap text-sm font-medium">' +
+                '<button class="text-red-600 hover:text-red-900 delete-user-btn" data-id="' + user.id + '">删除</button>' +
+                '</td>' +
+                '</tr>';
+            }
+          });
+          
+          modalContent += '</tbody>' +
+            '</table>' +
+            '</div></div>';
+        }
+        
+        modalContent += '<div class="flex gap-2"><button id="save-settings-btn" class="flex-1 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">保存</button><button id="reset-data-btn" class="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600">重置所有数据</button></div>' +
+          '</div></div>';
+        
+        modal.innerHTML = modalContent;
+        document.body.appendChild(modal);
+
+        document.getElementById('close-settings-btn').addEventListener('click', () => {
+          document.body.removeChild(modal);
+        });
+
+        document.getElementById('save-settings-btn').addEventListener('click', () => {
+          const url = document.getElementById('deployed-url-input').value.trim();
+          this.config.deployedUrl = url;
+          this.saveConfig();
+          document.body.removeChild(modal);
+          alert('设置已保存');
+        });
+
+        document.getElementById('reset-data-btn').addEventListener('click', () => {
+          if (confirm('确定要重置所有数据吗？此操作不可恢复！')) {
+            localStorage.removeItem('asset_assets');
+            localStorage.removeItem('asset_users');
+            localStorage.removeItem('asset_current_user');
+            localStorage.removeItem('asset_config');
+            location.reload();
+          }
+        });
+        
+        // 用户删除事件
+        if (this.currentUser && this.currentUser.role === 'admin') {
+          document.querySelectorAll('.delete-user-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+              const userId = e.currentTarget.dataset.id;
+              if (confirm('确定要删除这个用户吗？')) {
+                this.users = this.users.filter(u => u.id !== userId);
+                this.saveUsers();
+                document.body.removeChild(modal);
+                this.renderSettingsModal(); // 重新渲染设置页面
+              }
+            });
+          });
+        }
+      }
+
+      renderImportModal() {
+        const modal = document.createElement('div');
+        modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
+        modal.innerHTML = '<div class="bg-white rounded-lg p-6 max-w-2xl w-full mx-4">' +
+          '<div class="flex items-center justify-between mb-4"><h3 class="text-lg font-semibold">批量导入</h3><button id="close-import-btn" class="text-gray-500 hover:text-gray-700"><i class="fa fa-times text-xl"></i></button></div>' +
+          '<div class="space-y-4">' +
+          '<div class="bg-blue-50 p-4 rounded">' +
+          '<h4 class="font-medium text-blue-800 mb-2">支持自动识别以下格式：</h4>' +
+          '<div class="text-sm text-blue-700 space-y-1">' +
+          '<p>✓ 采集原始信息（资产编号、制造商、CPU、内存、硬盘、显卡等）</p>' +
+          '<p>✓ 简化格式（资产编码、品牌、型号、使用人、部门等）</p>' +
+          '<p>✓ 系统会自动匹配字段，无需修改原始文件</p>' +
+          '</div>' +
+          '</div>' +
+          '<input type="file" id="import-file" accept=".xlsx,.xls,.csv" class="w-full px-4 py-2 border rounded">' +
+          '<div class="flex gap-2"><button id="import-btn" class="flex-1 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">导入</button><button id="cancel-import-btn" class="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300">取消</button></div>' +
+          '</div></div>';
+        document.body.appendChild(modal);
+
+        document.getElementById('close-import-btn').addEventListener('click', () => {
+          document.body.removeChild(modal);
+        });
+
+        document.getElementById('cancel-import-btn').addEventListener('click', () => {
+          document.body.removeChild(modal);
+        });
+
+        document.getElementById('import-btn').addEventListener('click', () => {
+          const fileInput = document.getElementById('import-file');
+          const file = fileInput.files[0];
+          if (!file) {
+            alert('请选择文件');
+            return;
+          }
+
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            try {
+              const data = new Uint8Array(e.target.result);
+              const workbook = XLSX.read(data, { type: 'array' });
+              const firstSheetName = workbook.SheetNames[0];
+              const worksheet = workbook.Sheets[firstSheetName];
+              const jsonData = XLSX.utils.sheet_to_json(worksheet);
+              
+              let added = 0;
+              let updated = 0;
+              
+              jsonData.forEach(item => {
+                // 智能匹配字段
+                const mappedAsset = this.mapImportFields(item);
+                
+                // 系统统一生成资产编码
+                const assetCode = 'PC-' + new Date().getFullYear() + '-' + String(this.assets.length + 1 + added).padStart(4, '0');
+                mappedAsset.asset_code = assetCode;
+                
+                // 检查是否已存在（基于计算机名或其他唯一标识）
+                const computerName = this.findFieldValue(item, ['计算机名']);
+                const existing = computerName ? 
+                  this.assets.find(a => a.notes && a.notes.includes('计算机名: ' + computerName)) : 
+                  null;
+                
+                if (existing) {
+                  // 更新现有资产
+                  Object.assign(existing, mappedAsset, {
+                    updated_at: new Date().toISOString().split('T')[0]
+                  });
+                  updated++;
+                } else {
+                  // 新增资产
+                  const asset = {
+                    id: Date.now().toString() + added,
+                    ...mappedAsset,
+                    created_at: new Date().toISOString().split('T')[0],
+                    updated_at: new Date().toISOString().split('T')[0],
+                    history: []
+                  };
+                  
+                  // 添加操作历史
+                  const historyRecord = {
+                    user: this.currentUser.email,
+                    timestamp: new Date().toISOString(),
+                    action: '导入',
+                    changes: ['通过批量导入创建资产：' + assetCode]
+                  };
+                  asset.history.push(historyRecord);
+                  
+                  this.assets.push(asset);
+                  added++;
+                }
+              });
+              
+              this.saveAssets();
+              document.body.removeChild(modal);
+              alert('导入成功！\n新增：' + added + ' 个资产\n更新：' + updated + ' 个资产');
+              this.render();
+            } catch (error) {
+              alert('导入失败：' + error.message);
+            }
+          };
+          reader.readAsArrayBuffer(file);
+        });
+      }
+      
+      mapImportFields(item) {
+        // 字段映射配置
+        const fieldMappings = {
+          asset_code: ['资产编号', '资产编码', 'asset_code', '编号'],
+          brand: ['制造商', '品牌', 'brand', '厂商'],
+          model: ['型号', 'model', '设备型号'],
+          cpu: ['CPU', 'cpu', '处理器', '处理器型号'],
+          ram: ['内存(GB)', '内存 (GB)', '内存', 'RAM', 'ram', '内存容量'],
+          storage: ['磁盘总容量', '硬盘', '存储', 'storage', '硬盘容量'],
+          gpu: ['显卡', '显示芯片', 'gpu', '显卡型号'],
+          os: ['操作系统', 'os', '系统'],
+          user_name: ['归属人', '使用人', '资产归属', 'user_name', '用户名', '使用者'],
+          department: ['部门', 'department', '使用部门'],
+          location: ['地点', '位置', 'location', '存放地点'],
+          status: ['状态', 'status']
+        };
+        
+        const mapped = {};
+        
+        // 映射其他字段
+        mapped.brand = this.findFieldValue(item, fieldMappings.brand) || '';
+        mapped.model = this.findFieldValue(item, fieldMappings.model) || '';
+        mapped.cpu = this.findFieldValue(item, fieldMappings.cpu) || '';
+        mapped.ram = this.findFieldValue(item, fieldMappings.ram) || '';
+        mapped.storage = this.findFieldValue(item, fieldMappings.storage) || '';
+        mapped.gpu = this.findFieldValue(item, fieldMappings.gpu) || '';
+        mapped.os = this.findFieldValue(item, fieldMappings.os) || '';
+        mapped.user_name = this.findFieldValue(item, fieldMappings.user_name) || '';
+        mapped.department = this.findFieldValue(item, fieldMappings.department) || '';
+        mapped.location = this.findFieldValue(item, fieldMappings.location) || '';
+        mapped.status = this.findFieldValue(item, fieldMappings.status) || 'active';
+        
+        // 构建备注信息（包含其他采集信息）
+        const notes = this.buildImportNotes(item);
+        mapped.notes = notes;
+        
+        return mapped;
+      }
+      
+      findFieldValue(item, possibleKeys) {
+        for (const key of possibleKeys) {
+          if (item.hasOwnProperty(key) && item[key]) {
+            return String(item[key]).trim();
+          }
+        }
+        return '';
+      }
+      
+      buildImportNotes(item) {
+        // 构建采集原始信息的备注
+        const extraFields = {
+          '采集时间': item['采集时间'],
+          '计算机名': item['计算机名'],
+          '域': item['域'],
+          '资产标签': item['资产标签'],
+          '系统 UUID': item['系统 UUID'],
+          'BIOS 序列号': item['BIOS 序列号'],
+          '主板序列号': item['主板序列号'],
+          '磁盘型号': item['磁盘型号'],
+          '磁盘序列号': item['磁盘序列号'],
+          'MAC 地址': item['MAC 地址'],
+          'IP 地址': item['IP 地址'],
+          '系统版本': item['系统版本']
+        };
+        
+        const notes = [];
+        for (const [key, value] of Object.entries(extraFields)) {
+          if (value) {
+            notes.push(key + ': ' + value);
+          }
+        }
+        
+        return notes.join(' | ');
+      }
+      
+      formatStorage(value) {
+        if (!value) return '-';
+        
+        // 尝试将值转换为数字并取整
+        const num = parseFloat(value);
+        if (!isNaN(num)) {
+          return Math.round(num) + ' GB';
+        }
+        
+        // 如果转换失败，返回原始值
+        return value;
+      }
+
+      getAppUrl() {
+        if (this.config.deployedUrl) {
+          return this.config.deployedUrl;
+        }
+        return window.location.origin + window.location.pathname.replace(/\/[^\/]+$/, '/') + window.location.pathname.split('/').pop();
+      }
+
+      generateQRCode() {
+        const asset = this.assets.find(a => a.id === this.currentAssetId);
+        if (!asset) return;
+
+        const qrcodeContainer = document.getElementById('qrcode');
+        if (qrcodeContainer) {
+          qrcodeContainer.innerHTML = '';
+          const appUrl = this.getAppUrl();
+          const qrData = appUrl + '?action=edit&id=' + asset.id;
+          
+          try {
+            if (typeof QRCode !== 'undefined') {
+              new QRCode(qrcodeContainer, {
+                text: qrData,
+                width: 180,
+                height: 180,
+                colorDark: '#000000',
+                colorLight: '#ffffff'
+              });
+            } else {
+              qrcodeContainer.innerHTML = '<p class="text-red-500">二维码库加载失败</p>';
+            }
+          } catch (error) {
+            qrcodeContainer.innerHTML = '<p class="text-red-500">生成失败</p>';
+          }
+        }
+      }
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      new AssetManagementSystem();
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>资产管理系统</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 0;
+      background-color: #f5f5f5;
+    }
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+    .header {
+      background-color: #fff;
+      padding: 20px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      margin-bottom: 20px;
+    }
+    .header h1 {
+      margin: 0;
+      color: #333;
+    }
+    .card {
+      background-color: #fff;
+      padding: 20px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      margin-bottom: 20px;
+    }
+    .card h2 {
+      margin-top: 0;
+      color: #333;
+      border-bottom: 1px solid #eee;
+      padding-bottom: 10px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+    }
+    th, td {
+      padding: 10px;
+      text-align: left;
+      border-bottom: 1px solid #eee;
+    }
+    th {
+      background-color: #f9f9f9;
+      font-weight: bold;
+    }
+    tr:hover {
+      background-color: #f5f5f5;
+    }
+    .status-badge {
+      padding: 3px 8px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: bold;
+    }
+    .status-active {
+      background-color: #d4edda;
+      color: #155724;
+    }
+    .status-idle {
+      background-color: #fff3cd;
+      color: #856404;
+    }
+    .status-maintenance {
+      background-color: #f8d7da;
+      color: #721c24;
+    }
+    .button {
+      display: inline-block;
+      padding: 8px 16px;
+      background-color: #007bff;
+      color: #fff;
+      text-decoration: none;
+      border-radius: 4px;
+      margin-right: 10px;
+    }
+    .button:hover {
+      background-color: #0069d9;
+    }
+    .button-danger {
+      background-color: #dc3545;
+    }
+    .button-danger:hover {
+      background-color: #c82333;
+    }
+    .button-secondary {
+      background-color: #6c757d;
+    }
+    .button-secondary:hover {
+      background-color: #5a6268;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>资产管理系统</h1>
+    </div>
+
+    <div class="card">
+      <h2>资产列表</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>资产编码</th>
+            <th>品牌</th>
+            <th>型号</th>
+            <th>CPU</th>
+            <th>内存</th>
+            <th>存储</th>
+            <th>显卡</th>
+            <th>操作系统</th>
+            <th>部门</th>
+            <th>用户</th>
+            <th>状态</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>PC-2026-0001</td>
+            <td>Dell</td>
+            <td>OptiPlex 7090</td>
+            <td>Intel Core i7-10700</td>
+            <td>16GB DDR4</td>
+            <td>512GB SSD</td>
+            <td>NVIDIA GeForce GTX 1650</td>
+            <td>Windows 11 Pro</td>
+            <td>研发部</td>
+            <td>张伟</td>
+            <td><span class="status-badge status-active">使用中</span></td>
+            <td>
+              <a href="#" class="button">编辑</a>
+              <a href="#" class="button button-danger">删除</a>
+            </td>
+          </tr>
+          <tr>
+            <td>PC-2026-0002</td>
+            <td>Lenovo</td>
+            <td>ThinkPad X1 Carbon</td>
+            <td>Intel Core i5-1135G7</td>
+            <td>8GB DDR4</td>
+            <td>256GB SSD</td>
+            <td>Intel Iris Xe Graphics</td>
+            <td>Windows 10 Pro</td>
+            <td>市场部</td>
+            <td>李娜</td>
+            <td><span class="status-badge status-active">使用中</span></td>
+            <td>
+              <a href="#" class="button">编辑</a>
+              <a href="#" class="button button-danger">删除</a>
+            </td>
+          </tr>
+          <tr>
+            <td>PC-2026-0003</td>
+            <td>HP</td>
+            <td>EliteDesk 800 G6</td>
+            <td>Intel Core i5-10500</td>
+            <td>8GB DDR4</td>
+            <td>256GB SSD</td>
+            <td>NVIDIA Quadro P400</td>
+            <td>Windows 11 Pro</td>
+            <td>设计部</td>
+            <td>王芳</td>
+            <td><span class="status-badge status-active">使用中</span></td>
+            <td>
+              <a href="#" class="button">编辑</a>
+              <a href="#" class="button button-danger">删除</a>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      <div style="margin-top: 20px;">
+        <a href="#" class="button">添加资产</a>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // 简单的事件处理
+    document.addEventListener('DOMContentLoaded', function() {
+      // 编辑按钮
+      const editButtons = document.querySelectorAll('.button:not(.button-danger)');
+      editButtons.forEach(button => {
+        button.addEventListener('click', function(e) {
+          e.preventDefault();
+          alert('编辑资产功能');
+        });
+      });
+
+      // 删除按钮
+      const deleteButtons = document.querySelectorAll('.button-danger');
+      deleteButtons.forEach(button => {
+        button.addEventListener('click', function(e) {
+          e.preventDefault();
+          if (confirm('确定要删除这个资产吗？')) {
+            alert('资产删除成功');
+          }
+        });
+      });
+
+      // 添加资产按钮
+      const addButton = document.querySelector('.button');
+      if (addButton) {
+        addButton.addEventListener('click', function(e) {
+          e.preventDefault();
+          alert('添加资产功能');
+        });
+      }
+    });
+  </script>
+</body>
+</html>
