@@ -289,6 +289,119 @@ export default function Index() {
     }
   }
 
+  const handleBatchExportQR = async () => {
+    if (selectedIds.length === 0) {
+      alert('请选择要导出二维码的资产')
+      return
+    }
+
+    try {
+      // 导入QRCode库
+      const QRCode = (await import('qrcode')).default
+      
+      // 为每个选中的资产生成二维码
+      const qrPromises = selectedIds.map(async (id) => {
+        const asset = assets.find(a => a.id === id)
+        if (asset) {
+          const qrData = `${window.location.origin}/asset/${asset.id}`
+          const url = await QRCode.toDataURL(qrData, {
+            width: 200,
+            margin: 2
+          })
+          return { asset, url }
+        }
+        return null
+      })
+
+      const qrResults = await Promise.all(qrPromises)
+      const validResults = qrResults.filter(result => result !== null)
+
+      // 创建一个包含所有二维码的HTML页面
+      let html = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>资产二维码</title>
+          <style>
+            body {
+              font-family: Arial, sans-serif;
+              margin: 20px;
+            }
+            .qr-container {
+              display: inline-block;
+              margin: 10px;
+              text-align: center;
+              page-break-inside: avoid;
+            }
+            .qr-code {
+              border: 1px solid #ddd;
+              padding: 10px;
+              background: white;
+            }
+            .asset-info {
+              margin-top: 10px;
+              font-size: 12px;
+              max-width: 200px;
+            }
+            @media print {
+              body {
+                margin: 0;
+              }
+              .qr-container {
+                margin: 20px;
+              }
+            }
+          </style>
+        </head>
+        <body>
+          <h1>资产二维码</h1>
+          <div class="qr-grid">
+      `
+
+      validResults.forEach((result: any) => {
+        html += `
+          <div class="qr-container">
+            <div class="qr-code">
+              <img src="${result.url}" alt="${result.asset.asset_code}" />
+            </div>
+            <div class="asset-info">
+              <p><strong>资产编码:</strong> ${result.asset.asset_code}</p>
+              <p><strong>品牌:</strong> ${result.asset.brand}</p>
+              <p><strong>型号:</strong> ${result.asset.model}</p>
+              <p><strong>使用人:</strong> ${result.asset.user_name}</p>
+            </div>
+          </div>
+        `
+      })
+
+      html += `
+          </div>
+        </body>
+        </html>
+      `
+
+      // 创建一个Blob对象
+      const blob = new Blob([html], { type: 'text/html' })
+      const url = URL.createObjectURL(blob)
+
+      // 创建一个a标签并点击它来下载
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `资产二维码_${new Date().toISOString().slice(0, 10)}.html`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+
+      // 释放URL对象
+      URL.revokeObjectURL(url)
+
+      alert('二维码导出成功')
+    } catch (error) {
+      console.error('Error exporting QR codes:', error)
+      alert('二维码导出失败')
+    }
+  }
+
   const getStatusBadge = (status: string) => {
     const labels: Record<string, string> = {
       active: '使用中',
@@ -336,10 +449,19 @@ export default function Index() {
                 >
                   + 新增设备
                 </button>
+                {user && user.role === 'admin' && (
+                  <button
+                    onClick={() => navigate('/history')}
+                    className="px-3 py-1 bg-white text-blue-600 rounded text-sm hover:bg-gray-100"
+                  >
+                    操作历史
+                  </button>
+                )}
                 <button
+                  onClick={handleBatchExportQR}
                   className="px-3 py-1 bg-white text-blue-600 rounded text-sm hover:bg-gray-100"
                 >
-                  <i className="fa fa-cog"></i> 设置
+                  批量导出二维码
                 </button>
                 <button
                   onClick={handleSignOut}

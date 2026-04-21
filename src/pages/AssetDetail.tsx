@@ -10,7 +10,6 @@ export default function AssetDetail() {
   const { isAuthenticated } = useAuth()
   const [asset, setAsset] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [showQRCode, setShowQRCode] = useState(false)
   const [qrcodeUrl, setQrcodeUrl] = useState('')
 
   useEffect(() => {
@@ -20,10 +19,10 @@ export default function AssetDetail() {
   }, [id])
 
   useEffect(() => {
-    if (asset && showQRCode) {
+    if (asset) {
       generateQRCode()
     }
-  }, [asset, showQRCode])
+  }, [asset])
 
   const generateQRCode = async () => {
     if (asset) {
@@ -121,12 +120,6 @@ export default function AssetDetail() {
           </div>
           {isAuthenticated && (
             <div className="flex items-center gap-2">
-              <button
-                onClick={() => setShowQRCode(!showQRCode)}
-                className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
-              >
-                {showQRCode ? '隐藏二维码' : '显示二维码'}
-              </button>
               <button
                 onClick={handleDelete}
                 className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
@@ -229,22 +222,20 @@ export default function AssetDetail() {
           </div>
         </div>
 
-        {showQRCode && (
-          <div className="mt-6 bg-white rounded-lg shadow p-6">
-            <h2 className="text-xl font-semibold mb-4">资产二维码</h2>
-            <div className="flex justify-center">
-              <div className="p-4 bg-white border rounded-lg">
-                {qrcodeUrl ? (
-                  <img src={qrcodeUrl} alt="资产二维码" width="200" height="200" />
-                ) : (
-                  <div className="w-48 h-48 flex items-center justify-center bg-gray-100 rounded">
-                    <span className="text-gray-500">生成中...</span>
-                  </div>
-                )}
-              </div>
+        <div className="mt-6 bg-white rounded-lg shadow p-6">
+          <h2 className="text-xl font-semibold mb-4">资产二维码</h2>
+          <div className="flex justify-center">
+            <div className="p-4 bg-white border rounded-lg">
+              {qrcodeUrl ? (
+                <img src={qrcodeUrl} alt="资产二维码" width="200" height="200" />
+              ) : (
+                <div className="w-48 h-48 flex items-center justify-center bg-gray-100 rounded">
+                  <span className="text-gray-500">生成中...</span>
+                </div>
+              )}
             </div>
           </div>
-        )}
+        </div>
       </main>
     </div>
   )
