@@ -20,28 +20,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     console.log('AuthProvider: Initializing auth state')
     
-    // 添加超时机制，确保即使认证状态更新失败，系统也能够正常启动
-    const timeoutId = setTimeout(() => {
-      console.log('AuthProvider: Auth timeout - setting loading to false')
-      setLoading(false)
-    }, 5000)
+    // 立即设置loading为false，确保系统能够正常启动
+    setLoading(false)
     
+    // 尝试获取认证状态，但即使失败也不影响系统启动
     try {
       const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
         console.log('AuthProvider: Auth state changed:', { _event, session })
         setUser(session?.user ?? null)
-        clearTimeout(timeoutId)
-        setLoading(false)
       })
 
-      return () => {
-        subscription.unsubscribe()
-        clearTimeout(timeoutId)
-      }
+      return () => subscription.unsubscribe()
     } catch (error) {
       console.error('AuthProvider: Error initializing auth:', error)
-      clearTimeout(timeoutId)
-      setLoading(false)
     }
   }, [])
 
