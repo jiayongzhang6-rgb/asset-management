@@ -6,7 +6,7 @@ import { useAuth } from '../lib/auth'
 
 export default function Index() {
   const navigate = useNavigate()
-  const { isAuthenticated, user, signOut } = useAuth()
+  const { isAuthenticated, user, signOut, loading: authLoading } = useAuth()
   const [assets, setAssets] = useState<Asset[]>([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
@@ -214,7 +214,7 @@ export default function Index() {
     )
   }
 
-  if (loading) {
+  if (authLoading || loading) {
     return (
       <div className="flex items-center justify-center h-screen">
         <div className="text-lg">加载中...</div>
