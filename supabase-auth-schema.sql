@@ -24,8 +24,13 @@ create table if not exists operation_history (
 -- 启用行级安全
 alter table operation_history enable row level security;
 
--- 为操作历史表添加外键约束
-alter table operation_history add constraint fk_asset foreign key (asset_id) references assets (id) on delete cascade;
+-- 为操作历史表添加外键约束（如果assets表存在）
+do $$
+begin
+  if exists (select 1 from information_schema.tables where table_name = 'assets') then
+    alter table operation_history add constraint fk_asset foreign key (asset_id) references assets (id) on delete cascade;
+  end if;
+end $$;
 
 -- 移除旧的策略（如果存在）
 drop policy if exists "Allow public read access" on users;
