@@ -7,6 +7,8 @@ export default function OperationHistory() {
   const navigate = useNavigate()
   const { isAuthenticated, user } = useAuth()
   const [history, setHistory] = useState<any[]>([])
+  const [filteredHistory, setFilteredHistory] = useState<any[]>([])
+  const [assetId, setAssetId] = useState('')
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -15,17 +17,47 @@ export default function OperationHistory() {
     }
   }, [isAuthenticated])
 
+  useEffect(() => {
+    if (assetId) {
+      setFilteredHistory(history.filter(item => item.asset_id === parseInt(assetId)))
+    } else {
+      setFilteredHistory(history)
+    }
+  }, [assetId, history])
+
   const fetchHistory = async () => {
     setLoading(true)
     try {
       const { data, error } = await supabase.from('operation_history').select('*').order('created_at', { ascending: false })
       if (error) throw error
       setHistory(data || [])
+      setFilteredHistory(data || [])
     } catch (error) {
       console.error('Error fetching operation history:', error)
     } finally {
       setLoading(false)
     }
+  }
+
+  const getOperationDetails = (item: any) => {
+    if (item.operation_type === 'create') {
+      return `创建了资产 ${item.asset_id}\n使用人: ${item.new_data.user_name}\n部门: ${item.new_data.department}\n位置: ${item.new_data.location}`
+    } else if (item.operation_type === 'update') {
+      let details = `更新了资产 ${item.asset_id}\n`
+      if (item.old_data.user_name !== item.new_data.user_name) {
+        details += `使用人: ${item.old_data.user_name} → ${item.new_data.user_name}\n`
+      }
+      if (item.old_data.department !== item.new_data.department) {
+        details += `部门: ${item.old_data.department} → ${item.new_data.department}\n`
+      }
+      if (item.old_data.location !== item.new_data.location) {
+        details += `位置: ${item.old_data.location} → ${item.new_data.location}\n`
+      }
+      return details
+    } else if (item.operation_type === 'delete') {
+      return `删除了资产 ${item.asset_id}\n使用人: ${item.old_data.user_name}\n部门: ${item.old_data.department}\n位置: ${item.old_data.location}`
+    }
+    return JSON.stringify(item, null, 2)
   }
 
   if (!isAuthenticated) {
@@ -90,6 +122,27 @@ export default function OperationHistory() {
       <main className="container mx-auto px-4 py-8">
         <div className="bg-white rounded-lg shadow p-6">
           <h2 className="text-xl font-semibold mb-6">操作历史记录</h2>
+          
+          {/* 筛选功能 */}
+          <div className="mb-6">
+            <label className="block text-gray-700 mb-2">按资产ID筛选</label>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={assetId}
+                onChange={(e) => setAssetId(e.target.value)}
+                placeholder="输入资产ID"
+                className="flex-1 px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <button
+                onClick={() => setAssetId('')}
+                className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
+              >
+                清除
+              </button>
+            </div>
+          </div>
+          
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
@@ -102,7 +155,7 @@ export default function OperationHistory() {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {history.map((item) => (
+                {filteredHistory.map((item) => (
                   <tr key={item.id}>
                     <td className="px-4 py-3 text-sm text-gray-900">
                       {new Date(item.created_at).toLocaleString('zh-CN')}
@@ -121,7 +174,7 @@ export default function OperationHistory() {
                     <td className="px-4 py-3 text-sm text-gray-900">
                       <button
                         onClick={() => {
-                          alert(`操作详情：\n${JSON.stringify(item, null, 2)}`)
+                          alert(getOperationDetails(item))
                         }}
                         className="text-blue-500 hover:underline"
                       >
@@ -133,7 +186,7 @@ export default function OperationHistory() {
               </tbody>
             </table>
           </div>
-          {history.length === 0 && (
+          {filteredHistory.length === 0 && (
             <div className="text-center py-8 text-gray-500">
               暂无操作历史记录
             </div>
