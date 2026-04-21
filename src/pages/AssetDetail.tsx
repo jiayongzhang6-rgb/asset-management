@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import type { Asset } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
+import QRCode from 'qrcode'
 
 export default function AssetDetail() {
   const { id } = useParams<{ id: string }>()
@@ -11,12 +12,34 @@ export default function AssetDetail() {
   const [asset, setAsset] = useState<Asset | null>(null)
   const [loading, setLoading] = useState(true)
   const [showQRCode, setShowQRCode] = useState(false)
+  const [qrcodeUrl, setQrcodeUrl] = useState<string>('')
 
   useEffect(() => {
     if (id) {
       fetchAsset()
     }
   }, [id])
+
+  useEffect(() => {
+    if (asset && showQRCode) {
+      generateQRCode()
+    }
+  }, [asset, showQRCode])
+
+  const generateQRCode = async () => {
+    if (asset) {
+      try {
+        const qrData = `${window.location.origin}/asset/${asset.id}`
+        const url = await QRCode.toDataURL(qrData, {
+          width: 200,
+          margin: 2
+        })
+        setQrcodeUrl(url)
+      } catch (error) {
+        console.error('Error generating QR code:', error)
+      }
+    }
+  }
 
   const fetchAsset = async () => {
     setLoading(true)
@@ -211,12 +234,13 @@ export default function AssetDetail() {
             <h2 className="text-xl font-semibold mb-4">资产二维码</h2>
             <div className="flex justify-center">
               <div className="p-4 bg-white border rounded-lg">
-                <svg width="200" height="200" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
-                  <rect width="200" height="200" fill="white" stroke="black" strokeWidth="2"/>
-                  <text x="100" y="100" textAnchor="middle" dominantBaseline="middle" fontSize="12">
-                    {asset.asset_code}
-                  </text>
-                </svg>
+                {qrcodeUrl ? (
+                  <img src={qrcodeUrl} alt="资产二维码" width="200" height="200" />
+                ) : (
+                  <div className="w-48 h-48 flex items-center justify-center bg-gray-100 rounded">
+                    <span className="text-gray-500">生成中...</span>
+                  </div>
+                )}
               </div>
             </div>
           </div>

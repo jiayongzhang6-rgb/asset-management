@@ -64,7 +64,7 @@ export default function Import() {
             gpu: item['显卡'] || item['GPU'] || item['gpu'] || '',
             os: item['操作系统'] || item['OS'] || item['os'] || '',
             department: item['部门'] || item['Department'] || item['department'] || '',
-            user_name: item['用户'] || item['User'] || item['user_name'] || '',
+            user_name: item['用户'] || item['User'] || item['user_name'] || item['使用人'] || item['使用人姓名'] || '',
             location: item['位置'] || item['Location'] || item['location'] || '',
             status: 'active',
             notes: item['备注'] || item['Notes'] || item['notes'] || '',
