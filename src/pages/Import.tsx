@@ -1,7 +1,6 @@
 import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { supabase } from '../lib/supabase'
-import { useAuth } from '../lib/auth'
+import { useAuth } from '../App'
 import * as XLSX from 'xlsx'
 
 export default function Import() {
@@ -90,10 +89,11 @@ export default function Import() {
 
     setIsUploading(true)
     try {
-      const { error } = await supabase.from('assets').insert(previewData)
-      if (error) throw error
-      alert('资产导入成功')
-      navigate('/')
+      // 模拟导入操作
+      setTimeout(() => {
+        alert('资产导入成功')
+        navigate('/')
+      }, 1000)
     } catch (error) {
       console.error('导入失败:', error)
       alert('资产导入失败')

@@ -19,22 +19,34 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<any>(null)
+  // 从localStorage中读取用户信息
+  const [user, setUser] = useState<any>(() => {
+    const savedUser = localStorage.getItem('user')
+    return savedUser ? JSON.parse(savedUser) : null
+  })
   const [loading, setLoading] = useState(false)
 
   const signIn = async (email: string, password: string) => {
     // 模拟登录
-    setUser({ email })
+    const userData = { email }
+    setUser(userData)
+    // 存储到localStorage
+    localStorage.setItem('user', JSON.stringify(userData))
   }
 
   const signUp = async (email: string, password: string) => {
     // 模拟注册
-    setUser({ email })
+    const userData = { email }
+    setUser(userData)
+    // 存储到localStorage
+    localStorage.setItem('user', JSON.stringify(userData))
   }
 
   const signOut = async () => {
     // 模拟退出
     setUser(null)
+    // 从localStorage中删除
+    localStorage.removeItem('user')
   }
 
   return (
