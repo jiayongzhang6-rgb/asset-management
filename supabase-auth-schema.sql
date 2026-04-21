@@ -24,13 +24,8 @@ create table if not exists operation_history (
 -- 启用行级安全
 alter table operation_history enable row level security;
 
--- 为操作历史表添加外键约束（如果assets表存在）
-do $$
-begin
-  if exists (select 1 from information_schema.tables where table_name = 'assets') then
-    alter table operation_history add constraint fk_asset foreign key (asset_id) references assets (id) on delete cascade;
-  end if;
-end $$;
+-- 移除外键约束，因为assets表的id类型可能是uuid，而operation_history表的asset_id类型是bigint，它们不兼容
+-- 外键约束会在后续手动添加，或者在创建表时直接指定兼容的类型
 
 -- 移除旧的策略（如果存在）
 drop policy if exists "Allow public read access" on users;
