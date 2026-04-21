@@ -437,32 +437,34 @@ export default function Index() {
             {isAuthenticated ? (
               <>
                 <span className="text-sm">{user?.email}</span>
-                <button
-                  onClick={() => navigate('/import')}
-                  className="px-3 py-1 bg-white text-blue-600 rounded text-sm hover:bg-gray-100"
-                >
-                  批量导入
-                </button>
-                <button
-                  onClick={() => setIsAddDialogOpen(true)}
-                  className="px-3 py-1 bg-white text-blue-600 rounded text-sm hover:bg-gray-100"
-                >
-                  + 新增设备
-                </button>
                 {user && user.role === 'admin' && (
-                  <button
-                    onClick={() => navigate('/history')}
-                    className="px-3 py-1 bg-white text-blue-600 rounded text-sm hover:bg-gray-100"
-                  >
-                    操作历史
-                  </button>
+                  <>
+                    <button
+                      onClick={() => navigate('/import')}
+                      className="px-3 py-1 bg-white text-blue-600 rounded text-sm hover:bg-gray-100"
+                    >
+                      批量导入
+                    </button>
+                    <button
+                      onClick={() => setIsAddDialogOpen(true)}
+                      className="px-3 py-1 bg-white text-blue-600 rounded text-sm hover:bg-gray-100"
+                    >
+                      + 新增设备
+                    </button>
+                    <button
+                      onClick={() => navigate('/history')}
+                      className="px-3 py-1 bg-white text-blue-600 rounded text-sm hover:bg-gray-100"
+                    >
+                      操作历史
+                    </button>
+                    <button
+                      onClick={handleBatchExportQR}
+                      className="px-3 py-1 bg-white text-blue-600 rounded text-sm hover:bg-gray-100"
+                    >
+                      批量导出二维码
+                    </button>
+                  </>
                 )}
-                <button
-                  onClick={handleBatchExportQR}
-                  className="px-3 py-1 bg-white text-blue-600 rounded text-sm hover:bg-gray-100"
-                >
-                  批量导出二维码
-                </button>
                 <button
                   onClick={handleSignOut}
                   className="px-3 py-1 bg-white text-blue-600 rounded text-sm hover:bg-gray-100"

@@ -1,4 +1,4 @@
-import { BrowserRouter, Route, Routes } from 'react-router-dom'
+import { BrowserRouter, Route, Routes, useLocation, useEffect, useNavigate } from 'react-router-dom'
 import React, { createContext, useContext, useState } from 'react'
 import { supabase } from './lib/supabase'
 import Index from './pages/Index'
@@ -117,10 +117,32 @@ export function useAuth() {
   return context
 }
 
+// URL参数处理组件
+function URLHandler() {
+  const location = useLocation()
+  const navigate = useNavigate()
+  const { isAuthenticated } = useAuth()
+
+  useEffect(() => {
+    // 检查URL参数
+    const params = new URLSearchParams(location.search)
+    const action = params.get('action')
+    const id = params.get('id')
+
+    if (action === 'edit' && id) {
+      // 跳转到资产详情页
+      navigate(`/asset/${id}`)
+    }
+  }, [location.search, navigate, isAuthenticated])
+
+  return null
+}
+
 export default function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
+        <URLHandler />
         <Routes>
           <Route path="/" element={<Index />} />
           <Route path="/asset/:id" element={<AssetDetail />} />
