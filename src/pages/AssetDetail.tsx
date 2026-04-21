@@ -1,18 +1,56 @@
 import React, { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { supabase } from '../lib/supabase'
-import type { Asset } from '../lib/supabase'
-import { useAuth } from '../lib/auth'
-import QRCode from 'qrcode'
+import { useAuth } from '../App'
+import * as QRCode from 'qrcode'
 
 export default function AssetDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { isAuthenticated } = useAuth()
-  const [asset, setAsset] = useState<Asset | null>(null)
+  const [asset, setAsset] = useState(null)
   const [loading, setLoading] = useState(true)
   const [showQRCode, setShowQRCode] = useState(false)
-  const [qrcodeUrl, setQrcodeUrl] = useState<string>('')
+  const [qrcodeUrl, setQrcodeUrl] = useState('')
+
+  // 模拟资产数据
+  const mockAssets = [
+    {
+      id: '1',
+      asset_code: 'PC-2026-04-001',
+      brand: 'Dell',
+      model: 'XPS 13',
+      cpu: 'Intel i7-12700K',
+      ram: '16GB',
+      storage: '512GB SSD',
+      gpu: 'RTX 3070',
+      os: 'Windows 11',
+      department: '技术部',
+      user_name: '张三',
+      location: 'A101',
+      status: 'active',
+      notes: '',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    },
+    {
+      id: '2',
+      asset_code: 'PC-2026-04-002',
+      brand: 'HP',
+      model: 'EliteBook 840 G8',
+      cpu: 'Intel i5-1145G7',
+      ram: '8GB',
+      storage: '256GB SSD',
+      gpu: '集成显卡',
+      os: 'Windows 10',
+      department: '市场部',
+      user_name: '李四',
+      location: 'B202',
+      status: 'active',
+      notes: '',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    }
+  ]
 
   useEffect(() => {
     if (id) {
@@ -44,16 +82,14 @@ export default function AssetDetail() {
   const fetchAsset = async () => {
     setLoading(true)
     try {
-      const { data, error } = await supabase
-        .from('assets')
-        .select('*')
-        .eq('id', id)
-        .single()
-      if (error) throw error
-      setAsset(data)
+      // 模拟网络请求延迟
+      setTimeout(() => {
+        const foundAsset = mockAssets.find(a => a.id === id)
+        setAsset(foundAsset || null)
+        setLoading(false)
+      }, 500)
     } catch (error) {
       console.error('Error fetching asset:', error)
-    } finally {
       setLoading(false)
     }
   }
@@ -61,10 +97,11 @@ export default function AssetDetail() {
   const handleDelete = async () => {
     if (asset && confirm('确定要删除这个资产吗？')) {
       try {
-        const { error } = await supabase.from('assets').delete().eq('id', asset.id)
-        if (error) throw error
-        navigate('/')
-        alert('资产删除成功')
+        // 模拟删除操作
+        setTimeout(() => {
+          navigate('/')
+          alert('资产删除成功')
+        }, 500)
       } catch (error) {
         console.error('Error deleting asset:', error)
         alert('资产删除失败')

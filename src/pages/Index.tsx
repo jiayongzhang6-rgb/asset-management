@@ -1,19 +1,50 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { supabase } from '../lib/supabase'
-import type { Asset } from '../lib/supabase'
-import { useAuth } from '../lib/auth'
+import { useAuth } from '../App'
 
 export default function Index() {
   const navigate = useNavigate()
   const { isAuthenticated, user, signOut, loading: authLoading } = useAuth()
-  const [assets, setAssets] = useState<Asset[]>([])
-  const [loading, setLoading] = useState(true)
+  const [assets, setAssets] = useState([
+    {
+      id: '1',
+      asset_code: 'PC-2026-04-001',
+      brand: 'Dell',
+      model: 'XPS 13',
+      cpu: 'Intel i7-12700K',
+      ram: '16GB',
+      storage: '512GB SSD',
+      gpu: 'RTX 3070',
+      os: 'Windows 11',
+      department: '技术部',
+      user_name: '张三',
+      location: 'A101',
+      status: 'active',
+      notes: ''
+    },
+    {
+      id: '2',
+      asset_code: 'PC-2026-04-002',
+      brand: 'HP',
+      model: 'EliteBook 840 G8',
+      cpu: 'Intel i5-1145G7',
+      ram: '8GB',
+      storage: '256GB SSD',
+      gpu: '集成显卡',
+      os: 'Windows 10',
+      department: '市场部',
+      user_name: '李四',
+      location: 'B202',
+      status: 'active',
+      notes: ''
+    }
+  ])
+  const [loading, setLoading] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
-  const [editingAsset, setEditingAsset] = useState<Asset | null>(null)
+  const [editingAsset, setEditingAsset] = useState(null)
   const [formData, setFormData] = useState({
     brand: '',
     model: '',
@@ -29,31 +60,15 @@ export default function Index() {
     notes: ''
   })
 
+  // 模拟fetchAssets函数
   const fetchAssets = async () => {
     console.log('Index: Fetching assets')
     setLoading(true)
-    try {
-      console.log('Index: Attempting to connect to Supabase')
-      const { data, error } = await supabase
-        .from('assets')
-        .select('*')
-        .order('created_at', { ascending: false })
-      
-      if (error) {
-        console.error('Index: Error fetching assets:', error)
-        throw error
-      }
-      
-      console.log('Index: Assets fetched successfully:', data)
-      setAssets(data || [])
-    } catch (error) {
-      console.error('Index: Error in fetchAssets:', error)
-      // 即使出错，也设置一个空数组，确保系统能够正常显示
-      setAssets([])
-    } finally {
-      console.log('Index: Finished fetching assets')
+    // 模拟网络请求延迟
+    setTimeout(() => {
+      console.log('Index: Assets fetched successfully')
       setLoading(false)
-    }
+    }, 500)
   }
 
   useEffect(() => {
@@ -97,11 +112,10 @@ export default function Index() {
     try {
       const assetData = {
         ...formData,
-        asset_code: generateAssetCode()
+        asset_code: generateAssetCode(),
+        id: String(assets.length + 1)
       }
-      const { error } = await supabase.from('assets').insert([assetData])
-      if (error) throw error
-      await fetchAssets()
+      setAssets([assetData, ...assets])
       setIsAddDialogOpen(false)
       resetForm()
       alert('资产添加成功')
@@ -115,9 +129,9 @@ export default function Index() {
     e.preventDefault()
     if (editingAsset) {
       try {
-        const { error } = await supabase.from('assets').update(formData).eq('id', editingAsset.id)
-        if (error) throw error
-        await fetchAssets()
+        setAssets(assets.map(asset => 
+          asset.id === editingAsset.id ? { ...asset, ...formData } : asset
+        ))
         setIsEditDialogOpen(false)
         setEditingAsset(null)
         resetForm()
@@ -129,7 +143,7 @@ export default function Index() {
     }
   }
 
-  const handleEdit = (asset: Asset) => {
+  const handleEdit = (asset: any) => {
     setEditingAsset(asset)
     setFormData({
       brand: asset.brand || '',
@@ -151,9 +165,7 @@ export default function Index() {
   const handleDelete = async (id: string) => {
     if (confirm('确定要删除这个资产吗？')) {
       try {
-        const { error } = await supabase.from('assets').delete().eq('id', id)
-        if (error) throw error
-        await fetchAssets()
+        setAssets(assets.filter(asset => asset.id !== id))
         alert('资产删除成功')
       } catch (error) {
         console.error('Error deleting asset:', error)
@@ -169,9 +181,7 @@ export default function Index() {
     }
     if (confirm(`确定要删除选中的 ${selectedIds.length} 个资产吗？`)) {
       try {
-        const { error } = await supabase.from('assets').delete().in('id', selectedIds)
-        if (error) throw error
-        await fetchAssets()
+        setAssets(assets.filter(asset => !selectedIds.includes(asset.id)))
         setSelectedIds([])
         alert('资产删除成功')
       } catch (error) {
