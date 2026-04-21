@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
+import * as XLSX from 'xlsx'
 
 export default function Import() {
   const navigate = useNavigate()
@@ -35,44 +36,44 @@ export default function Import() {
     }
   }
 
+  const generateAssetCode = (index: number) => {
+    const date = new Date()
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const count = String(index + 1).padStart(3, '0')
+    return `PC-${year}-${month}-${count}`
+  }
+
   const parseExcel = (file: File) => {
     const reader = new FileReader()
     reader.onload = () => {
       try {
-        // 这里简化处理，实际项目中需要使用xlsx库解析Excel文件
-        // 这里模拟解析结果
-        const mockData = [
-          {
-            brand: 'Dell',
-            model: 'OptiPlex 7090',
-            cpu: 'Intel Core i7-10700',
-            ram: '16GB DDR4',
-            storage: '512GB SSD',
-            gpu: 'NVIDIA GeForce GTX 1650',
-            os: 'Windows 11 Pro',
-            department: '研发部',
-            user_name: '张伟',
-            location: 'A栋3楼-301',
+        const data = new Uint8Array(reader.result as ArrayBuffer)
+        const workbook = XLSX.read(data, { type: 'array' })
+        const sheetName = workbook.SheetNames[0]
+        const worksheet = workbook.Sheets[sheetName]
+        const jsonData = XLSX.utils.sheet_to_json(worksheet)
+        
+        const processedData = jsonData.map((item: any, index: number) => {
+          return {
+            brand: item['品牌'] || item['Brand'] || item['brand'] || '',
+            model: item['型号'] || item['Model'] || item['model'] || '',
+            cpu: item['CPU'] || item['cpu'] || '',
+            ram: item['内存'] || item['RAM'] || item['ram'] || '',
+            storage: item['存储'] || item['Storage'] || item['storage'] || '',
+            gpu: item['显卡'] || item['GPU'] || item['gpu'] || '',
+            os: item['操作系统'] || item['OS'] || item['os'] || '',
+            department: item['部门'] || item['Department'] || item['department'] || '',
+            user_name: item['用户'] || item['User'] || item['user_name'] || '',
+            location: item['位置'] || item['Location'] || item['location'] || '',
             status: 'active',
-            notes: ''
-          },
-          {
-            brand: 'Lenovo',
-            model: 'ThinkPad X1 Carbon',
-            cpu: 'Intel Core i5-1135G7',
-            ram: '8GB DDR4',
-            storage: '256GB SSD',
-            gpu: 'Intel Iris Xe Graphics',
-            os: 'Windows 10 Pro',
-            department: '市场部',
-            user_name: '李娜',
-            location: 'B栋2楼-205',
-            status: 'active',
-            notes: ''
+            notes: item['备注'] || item['Notes'] || item['notes'] || '',
+            asset_code: generateAssetCode(index)
           }
-        ]
-        setPreviewData(mockData)
-        alert(`成功解析 ${mockData.length} 条数据`)
+        })
+        
+        setPreviewData(processedData)
+        alert(`成功解析 ${processedData.length} 条数据`)
       } catch (error) {
         console.error('文件解析失败:', error)
         alert('文件解析失败，请检查文件格式')

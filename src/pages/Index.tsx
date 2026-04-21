@@ -73,10 +73,22 @@ export default function Index() {
     }
   }
 
+  const generateAssetCode = () => {
+    const date = new Date()
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const count = String(assets.length + 1).padStart(3, '0')
+    return `PC-${year}-${month}-${count}`
+  }
+
   const handleAddSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     try {
-      const { error } = await supabase.from('assets').insert([formData])
+      const assetData = {
+        ...formData,
+        asset_code: generateAssetCode()
+      }
+      const { error } = await supabase.from('assets').insert([assetData])
       if (error) throw error
       await fetchAssets()
       setIsAddDialogOpen(false)
