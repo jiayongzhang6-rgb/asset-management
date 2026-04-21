@@ -30,17 +30,28 @@ export default function Index() {
   })
 
   const fetchAssets = async () => {
+    console.log('Index: Fetching assets')
     setLoading(true)
     try {
+      console.log('Index: Attempting to connect to Supabase')
       const { data, error } = await supabase
         .from('assets')
         .select('*')
         .order('created_at', { ascending: false })
-      if (error) throw error
+      
+      if (error) {
+        console.error('Index: Error fetching assets:', error)
+        throw error
+      }
+      
+      console.log('Index: Assets fetched successfully:', data)
       setAssets(data || [])
     } catch (error) {
-      console.error('Error fetching assets:', error)
+      console.error('Index: Error in fetchAssets:', error)
+      // 即使出错，也设置一个空数组，确保系统能够正常显示
+      setAssets([])
     } finally {
+      console.log('Index: Finished fetching assets')
       setLoading(false)
     }
   }
