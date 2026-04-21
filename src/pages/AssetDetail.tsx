@@ -29,7 +29,7 @@ export default function AssetDetail() {
   const generateQRCode = async () => {
     if (asset) {
       try {
-        const qrData = `${window.location.origin}/asset/${asset.id}`
+        const qrData = `${window.location.origin}?action=edit&id=${asset.id}`
         const url = await QRCode.toDataURL(qrData, {
           width: 200,
           margin: 2

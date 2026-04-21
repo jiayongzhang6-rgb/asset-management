@@ -6,7 +6,7 @@ import { useAuth } from '../lib/auth'
 
 export default function Index() {
   const navigate = useNavigate()
-  const { isAuthenticated } = useAuth()
+  const { isAuthenticated, user, signOut } = useAuth()
   const [assets, setAssets] = useState<Asset[]>([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
@@ -187,6 +187,15 @@ export default function Index() {
     })
   }
 
+  const handleSignOut = async () => {
+    try {
+      await signOut()
+      navigate('/login')
+    } catch (error) {
+      console.error('Error signing out:', error)
+    }
+  }
+
   const getStatusBadge = (status: string) => {
     const labels: Record<string, string> = {
       active: '使用中',
@@ -215,21 +224,41 @@ export default function Index() {
 
   return (
     <div className="min-h-screen bg-gray-100">
-      <header className="bg-white shadow">
-        <div className="container mx-auto px-4 py-4 flex items-center justify-between">
-          <h1 className="text-2xl font-bold">资产管理系统</h1>
-          <div className="flex items-center gap-4">
+      <header className="bg-blue-600 text-white shadow">
+        <div className="container mx-auto px-4 py-3 flex items-center justify-between">
+          <h1 className="text-xl font-bold">IT资产管理系统</h1>
+          <div className="flex items-center gap-3">
             {isAuthenticated ? (
-              <button
-                onClick={() => navigate('/import')}
-                className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
-              >
-                导入
-              </button>
+              <>
+                <span className="text-sm">{user?.email}</span>
+                <button
+                  onClick={() => navigate('/import')}
+                  className="px-3 py-1 bg-white text-blue-600 rounded text-sm hover:bg-gray-100"
+                >
+                  批量导入
+                </button>
+                <button
+                  onClick={() => setIsAddDialogOpen(true)}
+                  className="px-3 py-1 bg-white text-blue-600 rounded text-sm hover:bg-gray-100"
+                >
+                  + 新增设备
+                </button>
+                <button
+                  className="px-3 py-1 bg-white text-blue-600 rounded text-sm hover:bg-gray-100"
+                >
+                  <i className="fa fa-cog"></i> 设置
+                </button>
+                <button
+                  onClick={handleSignOut}
+                  className="px-3 py-1 bg-white text-blue-600 rounded text-sm hover:bg-gray-100"
+                >
+                  退出
+                </button>
+              </>
             ) : (
               <button
                 onClick={() => navigate('/login')}
-                className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                className="px-3 py-1 bg-white text-blue-600 rounded text-sm hover:bg-gray-100"
               >
                 登录
               </button>
@@ -238,15 +267,61 @@ export default function Index() {
         </div>
       </header>
 
-      <main className="container mx-auto px-4 py-8">
+      <main className="container mx-auto px-4 py-6">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+          <div className="bg-white rounded-lg shadow p-4">
+            <div className="flex items-center gap-3">
+              <div className="p-3 bg-blue-100 rounded-lg">
+                <i className="fa fa-desktop text-blue-600 text-xl"></i>
+              </div>
+              <div>
+                <p className="text-sm text-gray-500">资产总数</p>
+                <p className="text-2xl font-bold">{assets.length}</p>
+              </div>
+            </div>
+          </div>
+          <div className="bg-white rounded-lg shadow p-4">
+            <div className="flex items-center gap-3">
+              <div className="p-3 bg-green-100 rounded-lg">
+                <i className="fa fa-check-circle text-green-600 text-xl"></i>
+              </div>
+              <div>
+                <p className="text-sm text-gray-500">使用中</p>
+                <p className="text-2xl font-bold">{assets.filter(a => a.status === 'active').length}</p>
+              </div>
+            </div>
+          </div>
+          <div className="bg-white rounded-lg shadow p-4">
+            <div className="flex items-center gap-3">
+              <div className="p-3 bg-yellow-100 rounded-lg">
+                <i className="fa fa-clock-o text-yellow-600 text-xl"></i>
+              </div>
+              <div>
+                <p className="text-sm text-gray-500">闲置</p>
+                <p className="text-2xl font-bold">{assets.filter(a => a.status === 'idle').length}</p>
+              </div>
+            </div>
+          </div>
+          <div className="bg-white rounded-lg shadow p-4">
+            <div className="flex items-center gap-3">
+              <div className="p-3 bg-red-100 rounded-lg">
+                <i className="fa fa-trash text-red-600 text-xl"></i>
+              </div>
+              <div>
+                <p className="text-sm text-gray-500">报废</p>
+                <p className="text-2xl font-bold">{assets.filter(a => a.status === 'maintenance').length}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <div className="bg-white rounded-lg shadow p-6">
           <div className="flex items-center justify-between mb-6">
-            <h2 className="text-xl font-semibold">资产列表</h2>
             <div className="flex items-center gap-4">
               <div className="relative">
                 <input
                   type="text"
-                  placeholder="搜索资产..."
+                  placeholder="搜索资产编码、品牌、使用人..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="pl-10 pr-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -255,25 +330,21 @@ export default function Index() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                 </svg>
               </div>
-              {isAuthenticated && (
-                <>
-                  {selectedIds.length > 0 && (
-                    <button
-                      onClick={handleBatchDelete}
-                      className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
-                    >
-                      删除选中 ({selectedIds.length})
-                    </button>
-                  )}
-                  <button
-                    onClick={() => setIsAddDialogOpen(true)}
-                    className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-                  >
-                    添加资产
-                  </button>
-                </>
-              )}
+              <select className="px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <option value="">全部部门</option>
+              </select>
+              <select className="px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <option value="">全部状态</option>
+              </select>
             </div>
+            {isAuthenticated && selectedIds.length > 0 && (
+              <button
+                onClick={handleBatchDelete}
+                className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
+              >
+                删除选中 ({selectedIds.length})
+              </button>
+            )}
           </div>
 
           <div className="overflow-x-auto">
