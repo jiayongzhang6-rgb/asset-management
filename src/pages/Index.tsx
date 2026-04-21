@@ -291,8 +291,6 @@ export default function Index() {
                     )}
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">资产编码</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">品牌</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">型号</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">CPU</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">内存</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">存储</th>
@@ -301,6 +299,7 @@ export default function Index() {
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">部门</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">用户</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">位置</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">品牌型号</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">状态</th>
                   {isAuthenticated && <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">操作</th>}
                 </tr>
@@ -319,8 +318,6 @@ export default function Index() {
                       )}
                     </td>
                     <td className="px-4 py-3 text-sm font-medium text-gray-900">{asset.asset_code}</td>
-                    <td className="px-4 py-3 text-sm text-gray-900">{asset.brand}</td>
-                    <td className="px-4 py-3 text-sm text-gray-900">{asset.model}</td>
                     <td className="px-4 py-3 text-sm text-gray-900">{asset.cpu}</td>
                     <td className="px-4 py-3 text-sm text-gray-900">{asset.ram}</td>
                     <td className="px-4 py-3 text-sm text-gray-900">{asset.storage}</td>
@@ -329,6 +326,7 @@ export default function Index() {
                     <td className="px-4 py-3 text-sm text-gray-900">{asset.department}</td>
                     <td className="px-4 py-3 text-sm text-gray-900">{asset.user_name}</td>
                     <td className="px-4 py-3 text-sm text-gray-900">{asset.location}</td>
+                    <td className="px-4 py-3 text-sm text-gray-900">{asset.brand} {asset.model}</td>
                     <td className="px-4 py-3 text-sm">{getStatusBadge(asset.status)}</td>
                     {isAuthenticated && (
                       <td className="px-4 py-3 text-sm" onClick={(e) => e.stopPropagation()}>
