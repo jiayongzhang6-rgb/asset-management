@@ -6,7 +6,7 @@ import * as XLSX from 'xlsx'
 
 export default function Import() {
   const navigate = useNavigate()
-  const { isAuthenticated } = useAuth()
+  const { isAuthenticated, user } = useAuth()
   const [file, setFile] = useState<File | null>(null)
   const [isUploading, setIsUploading] = useState(false)
   const [previewData, setPreviewData] = useState<any[]>([])
@@ -99,6 +99,12 @@ export default function Import() {
   }
 
   const handleImport = async () => {
+    // 权限控制：只有管理员可以导入资产
+    if (user && user.role !== 'admin') {
+      alert('只有管理员可以导入资产')
+      return
+    }
+    
     if (previewData.length === 0) {
       alert('没有可导入的数据')
       return
@@ -110,6 +116,16 @@ export default function Import() {
       for (const asset of previewData) {
         const { data, error } = await supabase.from('assets').insert(asset)
         if (error) throw error
+        
+        // 记录操作历史
+        if (user) {
+          await supabase.from('operation_history').insert({
+            asset_id: data[0].id,
+            operation_type: 'create',
+            new_data: asset,
+            user_email: user.email
+          })
+        }
       }
       
       // 模拟导入操作

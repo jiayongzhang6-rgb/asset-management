@@ -1,9 +1,11 @@
 import { BrowserRouter, Route, Routes } from 'react-router-dom'
 import React, { createContext, useContext, useState } from 'react'
+import { supabase } from './lib/supabase'
 import Index from './pages/Index'
 import AssetDetail from './pages/AssetDetail'
 import Login from './pages/Login'
 import Import from './pages/Import'
+import OperationHistory from './pages/OperationHistory'
 import NotFound from './pages/NotFound'
 
 // 简化的AuthProvider，不使用Supabase
@@ -27,19 +29,61 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(false)
 
   const signIn = async (email: string, password: string) => {
-    // 模拟登录
-    const userData = { email }
-    setUser(userData)
-    // 存储到localStorage
-    localStorage.setItem('user', JSON.stringify(userData))
+    setLoading(true)
+    try {
+      // 检查用户是否存在
+      const { data: users, error } = await supabase.from('users').select('*').eq('email', email)
+      if (error) throw error
+      
+      let userData
+      if (users.length > 0) {
+        // 用户存在
+        userData = users[0]
+      } else {
+        // 用户不存在，创建新用户
+        const { data, error } = await supabase.from('users').insert({ email, role: 'user' })
+        if (error) throw error
+        userData = { email, role: 'user' }
+      }
+      
+      setUser(userData)
+      // 存储到localStorage
+      localStorage.setItem('user', JSON.stringify(userData))
+    } catch (error) {
+      console.error('Error signing in:', error)
+      throw error
+    } finally {
+      setLoading(false)
+    }
   }
 
   const signUp = async (email: string, password: string) => {
-    // 模拟注册
-    const userData = { email }
-    setUser(userData)
-    // 存储到localStorage
-    localStorage.setItem('user', JSON.stringify(userData))
+    setLoading(true)
+    try {
+      // 检查用户是否存在
+      const { data: users, error } = await supabase.from('users').select('*').eq('email', email)
+      if (error) throw error
+      
+      let userData
+      if (users.length > 0) {
+        // 用户存在
+        userData = users[0]
+      } else {
+        // 用户不存在，创建新用户
+        const { data, error } = await supabase.from('users').insert({ email, role: 'user' })
+        if (error) throw error
+        userData = { email, role: 'user' }
+      }
+      
+      setUser(userData)
+      // 存储到localStorage
+      localStorage.setItem('user', JSON.stringify(userData))
+    } catch (error) {
+      console.error('Error signing up:', error)
+      throw error
+    } finally {
+      setLoading(false)
+    }
   }
 
   const signOut = async () => {
@@ -82,6 +126,7 @@ export default function App() {
           <Route path="/asset/:id" element={<AssetDetail />} />
           <Route path="/login" element={<Login />} />
           <Route path="/import" element={<Import />} />
+          <Route path="/history" element={<OperationHistory />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>

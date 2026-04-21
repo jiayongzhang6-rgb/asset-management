@@ -89,6 +89,17 @@ export default function Index() {
       }
       const { data, error } = await supabase.from('assets').insert(assetData)
       if (error) throw error
+      
+      // 记录操作历史
+      if (user) {
+        await supabase.from('operation_history').insert({
+          asset_id: data[0].id,
+          operation_type: 'create',
+          new_data: assetData,
+          user_email: user.email
+        })
+      }
+      
       await fetchAssets()
       setIsAddDialogOpen(false)
       resetForm()
@@ -103,8 +114,30 @@ export default function Index() {
     e.preventDefault()
     if (editingAsset) {
       try {
-        const { data, error } = await supabase.from('assets').update(formData).eq('id', editingAsset.id)
+        // 权限控制：普通用户只能修改使用人、位置、部门等信息
+        let updateData = formData
+        if (user && user.role !== 'admin') {
+          updateData = {
+            user_name: formData.user_name,
+            location: formData.location,
+            department: formData.department
+          }
+        }
+        
+        const { data, error } = await supabase.from('assets').update(updateData).eq('id', editingAsset.id)
         if (error) throw error
+        
+        // 记录操作历史
+        if (user) {
+          await supabase.from('operation_history').insert({
+            asset_id: editingAsset.id,
+            operation_type: 'update',
+            old_data: editingAsset,
+            new_data: updateData,
+            user_email: user.email
+          })
+        }
+        
         await fetchAssets()
         setIsEditDialogOpen(false)
         setEditingAsset(null)
@@ -137,10 +170,31 @@ export default function Index() {
   }
 
   const handleDelete = async (id: string) => {
+    // 权限控制：只有管理员可以删除资产
+    if (user && user.role !== 'admin') {
+      alert('只有管理员可以删除资产')
+      return
+    }
+    
     if (confirm('确定要删除这个资产吗？')) {
       try {
+        // 获取要删除的资产信息
+        const { data: asset, error: getError } = await supabase.from('assets').select('*').eq('id', id).single()
+        if (getError) throw getError
+        
         const { data, error } = await supabase.from('assets').delete().eq('id', id)
         if (error) throw error
+        
+        // 记录操作历史
+        if (user) {
+          await supabase.from('operation_history').insert({
+            asset_id: id,
+            operation_type: 'delete',
+            old_data: asset,
+            user_email: user.email
+          })
+        }
+        
         await fetchAssets()
         alert('资产删除成功')
       } catch (error) {
@@ -151,6 +205,12 @@ export default function Index() {
   }
 
   const handleBatchDelete = async () => {
+    // 权限控制：只有管理员可以批量删除资产
+    if (user && user.role !== 'admin') {
+      alert('只有管理员可以批量删除资产')
+      return
+    }
+    
     if (selectedIds.length === 0) {
       alert('请选择要删除的资产')
       return
@@ -158,8 +218,22 @@ export default function Index() {
     if (confirm(`确定要删除选中的 ${selectedIds.length} 个资产吗？`)) {
       try {
         for (const id of selectedIds) {
+          // 获取要删除的资产信息
+          const { data: asset, error: getError } = await supabase.from('assets').select('*').eq('id', id).single()
+          if (getError) throw getError
+          
           const { data, error } = await supabase.from('assets').delete().eq('id', id)
           if (error) throw error
+          
+          // 记录操作历史
+          if (user) {
+            await supabase.from('operation_history').insert({
+              asset_id: id,
+              operation_type: 'delete',
+              old_data: asset,
+              user_email: user.email
+            })
+          }
         }
         await fetchAssets()
         setSelectedIds([])
