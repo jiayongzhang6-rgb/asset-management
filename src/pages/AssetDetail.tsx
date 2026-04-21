@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '../App'
+import { supabase } from '../lib/supabase'
 import * as QRCode from 'qrcode'
 
 export default function AssetDetail() {
@@ -11,15 +12,6 @@ export default function AssetDetail() {
   const [loading, setLoading] = useState(true)
   const [showQRCode, setShowQRCode] = useState(false)
   const [qrcodeUrl, setQrcodeUrl] = useState('')
-
-  // 从localStorage中获取资产数据
-  const getAssetsFromLocalStorage = () => {
-    const savedAssets = localStorage.getItem('assets')
-    if (savedAssets) {
-      return JSON.parse(savedAssets)
-    }
-    return []
-  }
 
   useEffect(() => {
     if (id) {
@@ -51,15 +43,13 @@ export default function AssetDetail() {
   const fetchAsset = async () => {
     setLoading(true)
     try {
-      // 模拟网络请求延迟
-      setTimeout(() => {
-        const assets = getAssetsFromLocalStorage()
-        const foundAsset = assets.find((a: any) => a.id === id)
-        setAsset(foundAsset || null)
-        setLoading(false)
-      }, 500)
+      const { data, error } = await supabase.from('assets').select('*').eq('id', id).single()
+      if (error) throw error
+      setAsset(data || null)
     } catch (error) {
       console.error('Error fetching asset:', error)
+      setAsset(null)
+    } finally {
       setLoading(false)
     }
   }
@@ -67,10 +57,8 @@ export default function AssetDetail() {
   const handleDelete = async () => {
     if (asset && confirm('确定要删除这个资产吗？')) {
       try {
-        // 从localStorage中删除资产
-        const assets = getAssetsFromLocalStorage()
-        const newAssets = assets.filter((a: any) => a.id !== asset.id)
-        localStorage.setItem('assets', JSON.stringify(newAssets))
+        const { data, error } = await supabase.from('assets').delete().eq('id', asset.id)
+        if (error) throw error
         
         // 模拟删除操作
         setTimeout(() => {

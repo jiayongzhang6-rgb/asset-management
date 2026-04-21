@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../App'
+import { supabase } from '../lib/supabase'
 import * as XLSX from 'xlsx'
 
 export default function Import() {
@@ -105,21 +106,11 @@ export default function Import() {
 
     setIsUploading(true)
     try {
-      // 从localStorage中读取现有资产
-      const existingAssets = localStorage.getItem('assets')
-      const assets = existingAssets ? JSON.parse(existingAssets) : []
-      
-      // 为导入的资产添加id
-      const importedAssets = previewData.map((asset, index) => ({
-        ...asset,
-        id: String(assets.length + index + 1)
-      }))
-      
-      // 合并现有资产和导入的资产
-      const newAssets = [...importedAssets, ...assets]
-      
-      // 更新localStorage
-      localStorage.setItem('assets', JSON.stringify(newAssets))
+      // 将导入的资产添加到Supabase中
+      for (const asset of previewData) {
+        const { data, error } = await supabase.from('assets').insert(asset)
+        if (error) throw error
+      }
       
       // 模拟导入操作
       setTimeout(() => {
