@@ -5,40 +5,47 @@ import { useAuth } from '../App'
 export default function Index() {
   const navigate = useNavigate()
   const { isAuthenticated, user, signOut, loading: authLoading } = useAuth()
-  const [assets, setAssets] = useState([
-    {
-      id: '1',
-      asset_code: 'PC-2026-04-001',
-      brand: 'Dell',
-      model: 'XPS 13',
-      cpu: 'Intel i7-12700K',
-      ram: '16GB',
-      storage: '512GB SSD',
-      gpu: 'RTX 3070',
-      os: 'Windows 11',
-      department: '技术部',
-      user_name: '张三',
-      location: 'A101',
-      status: 'active',
-      notes: ''
-    },
-    {
-      id: '2',
-      asset_code: 'PC-2026-04-002',
-      brand: 'HP',
-      model: 'EliteBook 840 G8',
-      cpu: 'Intel i5-1145G7',
-      ram: '8GB',
-      storage: '256GB SSD',
-      gpu: '集成显卡',
-      os: 'Windows 10',
-      department: '市场部',
-      user_name: '李四',
-      location: 'B202',
-      status: 'active',
-      notes: ''
+  const [assets, setAssets] = useState(() => {
+    const savedAssets = localStorage.getItem('assets')
+    if (savedAssets) {
+      return JSON.parse(savedAssets)
     }
-  ])
+    // 默认资产数据
+    return [
+      {
+        id: '1',
+        asset_code: 'PC-2026-04-001',
+        brand: 'Dell',
+        model: 'XPS 13',
+        cpu: 'Intel i7-12700K',
+        ram: '16GB',
+        storage: '512GB SSD',
+        gpu: 'RTX 3070',
+        os: 'Windows 11',
+        department: '技术部',
+        user_name: '张三',
+        location: 'A101',
+        status: 'active',
+        notes: ''
+      },
+      {
+        id: '2',
+        asset_code: 'PC-2026-04-002',
+        brand: 'HP',
+        model: 'EliteBook 840 G8',
+        cpu: 'Intel i5-1145G7',
+        ram: '8GB',
+        storage: '256GB SSD',
+        gpu: '集成显卡',
+        os: 'Windows 10',
+        department: '市场部',
+        user_name: '李四',
+        location: 'B202',
+        status: 'active',
+        notes: ''
+      }
+    ]
+  })
   const [loading, setLoading] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedIds, setSelectedIds] = useState<string[]>([])
@@ -115,7 +122,10 @@ export default function Index() {
         asset_code: generateAssetCode(),
         id: String(assets.length + 1)
       }
-      setAssets([assetData, ...assets])
+      const newAssets = [assetData, ...assets]
+      setAssets(newAssets)
+      // 更新localStorage
+      localStorage.setItem('assets', JSON.stringify(newAssets))
       setIsAddDialogOpen(false)
       resetForm()
       alert('资产添加成功')
@@ -129,9 +139,12 @@ export default function Index() {
     e.preventDefault()
     if (editingAsset) {
       try {
-        setAssets(assets.map(asset => 
+        const newAssets = assets.map(asset => 
           asset.id === editingAsset.id ? { ...asset, ...formData } : asset
-        ))
+        )
+        setAssets(newAssets)
+        // 更新localStorage
+        localStorage.setItem('assets', JSON.stringify(newAssets))
         setIsEditDialogOpen(false)
         setEditingAsset(null)
         resetForm()
@@ -165,7 +178,10 @@ export default function Index() {
   const handleDelete = async (id: string) => {
     if (confirm('确定要删除这个资产吗？')) {
       try {
-        setAssets(assets.filter(asset => asset.id !== id))
+        const newAssets = assets.filter(asset => asset.id !== id)
+        setAssets(newAssets)
+        // 更新localStorage
+        localStorage.setItem('assets', JSON.stringify(newAssets))
         alert('资产删除成功')
       } catch (error) {
         console.error('Error deleting asset:', error)
@@ -181,7 +197,10 @@ export default function Index() {
     }
     if (confirm(`确定要删除选中的 ${selectedIds.length} 个资产吗？`)) {
       try {
-        setAssets(assets.filter(asset => !selectedIds.includes(asset.id)))
+        const newAssets = assets.filter(asset => !selectedIds.includes(asset.id))
+        setAssets(newAssets)
+        // 更新localStorage
+        localStorage.setItem('assets', JSON.stringify(newAssets))
         setSelectedIds([])
         alert('资产删除成功')
       } catch (error) {

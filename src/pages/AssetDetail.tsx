@@ -12,45 +12,14 @@ export default function AssetDetail() {
   const [showQRCode, setShowQRCode] = useState(false)
   const [qrcodeUrl, setQrcodeUrl] = useState('')
 
-  // 模拟资产数据
-  const mockAssets = [
-    {
-      id: '1',
-      asset_code: 'PC-2026-04-001',
-      brand: 'Dell',
-      model: 'XPS 13',
-      cpu: 'Intel i7-12700K',
-      ram: '16GB',
-      storage: '512GB SSD',
-      gpu: 'RTX 3070',
-      os: 'Windows 11',
-      department: '技术部',
-      user_name: '张三',
-      location: 'A101',
-      status: 'active',
-      notes: '',
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
-    },
-    {
-      id: '2',
-      asset_code: 'PC-2026-04-002',
-      brand: 'HP',
-      model: 'EliteBook 840 G8',
-      cpu: 'Intel i5-1145G7',
-      ram: '8GB',
-      storage: '256GB SSD',
-      gpu: '集成显卡',
-      os: 'Windows 10',
-      department: '市场部',
-      user_name: '李四',
-      location: 'B202',
-      status: 'active',
-      notes: '',
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
+  // 从localStorage中获取资产数据
+  const getAssetsFromLocalStorage = () => {
+    const savedAssets = localStorage.getItem('assets')
+    if (savedAssets) {
+      return JSON.parse(savedAssets)
     }
-  ]
+    return []
+  }
 
   useEffect(() => {
     if (id) {
@@ -84,7 +53,8 @@ export default function AssetDetail() {
     try {
       // 模拟网络请求延迟
       setTimeout(() => {
-        const foundAsset = mockAssets.find(a => a.id === id)
+        const assets = getAssetsFromLocalStorage()
+        const foundAsset = assets.find((a: any) => a.id === id)
         setAsset(foundAsset || null)
         setLoading(false)
       }, 500)
@@ -97,6 +67,11 @@ export default function AssetDetail() {
   const handleDelete = async () => {
     if (asset && confirm('确定要删除这个资产吗？')) {
       try {
+        // 从localStorage中删除资产
+        const assets = getAssetsFromLocalStorage()
+        const newAssets = assets.filter((a: any) => a.id !== asset.id)
+        localStorage.setItem('assets', JSON.stringify(newAssets))
+        
         // 模拟删除操作
         setTimeout(() => {
           navigate('/')

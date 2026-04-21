@@ -54,19 +54,35 @@ export default function Import() {
         const jsonData = XLSX.utils.sheet_to_json(worksheet)
         
         const processedData = jsonData.map((item: any, index: number) => {
+          // 收集其他字段到备注中
+          const otherFields = []
+          if (item['计算机名']) otherFields.push(`计算机名: ${item['计算机名']}`)
+          if (item['主板']) otherFields.push(`主板: ${item['主板']}`)
+          if (item['系统UUID']) otherFields.push(`系统UUID: ${item['系统UUID']}`)
+          if (item['BIOS序号']) otherFields.push(`BIOS序号: ${item['BIOS序号']}`)
+          if (item['主板序号']) otherFields.push(`主板序号: ${item['主板序号']}`)
+          if (item['系统版本']) otherFields.push(`系统版本: ${item['系统版本']}`)
+          if (item['磁盘型号']) otherFields.push(`磁盘型号: ${item['磁盘型号']}`)
+          if (item['磁盘序号']) otherFields.push(`磁盘序号: ${item['磁盘序号']}`)
+          if (item['MAC地址']) otherFields.push(`MAC地址: ${item['MAC地址']}`)
+          if (item['IP地址']) otherFields.push(`IP地址: ${item['IP地址']}`)
+          
           return {
             brand: item['品牌'] || item['Brand'] || item['brand'] || '',
-            model: item['型号'] || item['Model'] || item['model'] || '',
+            model: item['型号'] || item['Model'] || item['model'] || item['计算机名'] || '',
             cpu: item['CPU'] || item['cpu'] || '',
-            ram: item['内存'] || item['RAM'] || item['ram'] || item['内存容量'] || '',
-            storage: item['存储'] || item['Storage'] || item['storage'] || item['硬盘'] || item['硬盘容量'] || '',
+            ram: item['内存(GB)'] || item['内存'] || item['RAM'] || item['ram'] || item['内存容量'] || '',
+            storage: item['硬盘'] || item['存储'] || item['Storage'] || item['storage'] || item['硬盘容量'] || '',
             gpu: item['显卡'] || item['GPU'] || item['gpu'] || '',
             os: item['操作系统'] || item['OS'] || item['os'] || '',
             department: item['部门'] || item['Department'] || item['department'] || '',
-            user_name: item['用户'] || item['User'] || item['user_name'] || item['使用人'] || item['使用人姓名'] || '',
-            location: item['位置'] || item['Location'] || item['location'] || '',
+            user_name: item['使用人'] || item['用户'] || item['User'] || item['user_name'] || item['使用人姓名'] || '',
+            location: item['地点'] || item['位置'] || item['Location'] || item['location'] || '',
             status: 'active',
-            notes: item['备注'] || item['Notes'] || item['notes'] || '',
+            notes: [
+              item['备注'] || item['Notes'] || item['notes'] || '',
+              ...otherFields
+            ].filter(Boolean).join('; '),
             asset_code: generateAssetCode(index)
           }
         })
@@ -89,6 +105,22 @@ export default function Import() {
 
     setIsUploading(true)
     try {
+      // 从localStorage中读取现有资产
+      const existingAssets = localStorage.getItem('assets')
+      const assets = existingAssets ? JSON.parse(existingAssets) : []
+      
+      // 为导入的资产添加id
+      const importedAssets = previewData.map((asset, index) => ({
+        ...asset,
+        id: String(assets.length + index + 1)
+      }))
+      
+      // 合并现有资产和导入的资产
+      const newAssets = [...importedAssets, ...assets]
+      
+      // 更新localStorage
+      localStorage.setItem('assets', JSON.stringify(newAssets))
+      
       // 模拟导入操作
       setTimeout(() => {
         alert('资产导入成功')
