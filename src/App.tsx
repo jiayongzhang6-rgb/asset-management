@@ -24,7 +24,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // 从localStorage中读取用户信息
   const [user, setUser] = useState<any>(() => {
     const savedUser = localStorage.getItem('user')
-    return savedUser ? JSON.parse(savedUser) : null
+    if (savedUser) {
+      const parsedUser = JSON.parse(savedUser)
+      // 确保用户对象有role属性，默认值为'user'
+      return {
+        ...parsedUser,
+        role: parsedUser.role || 'user'
+      }
+    }
+    return null
   })
   const [loading, setLoading] = useState(false)
 
@@ -41,9 +49,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         userData = users[0]
       } else {
         // 用户不存在，创建新用户
-        const { data, error } = await supabase.from('users').insert({ email, role: 'user' })
+        // 检查是否为管理员邮箱
+        const role = email === '747227185@qq.com' ? 'admin' : 'user'
+        const { data, error } = await supabase.from('users').insert({ email, role })
         if (error) throw error
-        userData = { email, role: 'user' }
+        userData = { email, role }
       }
       
       setUser(userData)
@@ -70,9 +80,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         userData = users[0]
       } else {
         // 用户不存在，创建新用户
-        const { data, error } = await supabase.from('users').insert({ email, role: 'user' })
+        // 检查是否为管理员邮箱
+        const role = email === '747227185@qq.com' ? 'admin' : 'user'
+        const { data, error } = await supabase.from('users').insert({ email, role })
         if (error) throw error
-        userData = { email, role: 'user' }
+        userData = { email, role }
       }
       
       setUser(userData)
