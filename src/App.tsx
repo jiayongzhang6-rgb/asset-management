@@ -21,39 +21,37 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  // 从localStorage中读取用户信息
+  // 1. 修正后的初始化逻辑
   const [user, setUser] = useState<any>(() => {
     const savedUser = localStorage.getItem('user')
     if (savedUser) {
       const parsedUser = JSON.parse(savedUser)
-      // 确保用户对象有role属性，默认值为'user'
       return {
         ...parsedUser,
-        role: parsedUser.role || 'user'
+        role: parsedUser.role || (parsedUser.email === '747227185@qq.com' ? 'admin' : 'user')
       }
     }
     return null
   })
+
   const [loading, setLoading] = useState(false)
 
+  // 2. 修正后的登录/创建逻辑
   const signIn = async (email: string, password: string) => {
     setLoading(true)
     try {
-      // 检查用户是否存在
-      const { data: users, error } = await supabase.from('users').select('*').eq('email', email)
-      if (error) throw error
-      
-      let userData
-      if (users.length > 0) {
-        // 用户存在
+      const { data: users, error: fetchError } = await supabase.from('users').select('*').eq('email', email)
+      if (fetchError) throw fetchError
+
+      let userData;
+      if (users && users.length > 0) {
         userData = users[0]
       } else {
-        // 用户不存在，创建新用户
-        // 检查是否为管理员邮箱
+        // 这里的 role 判断只需要写一次
         const role = email === '747227185@qq.com' ? 'admin' : 'user'
-        const { data, error } = await supabase.from('users').insert({ email, role })
-        if (error) throw error
-        userData = { email, role }
+        const { data, error: insertError } = await supabase.from('users').insert({ email, role }).select().single()
+        if (insertError) throw insertError
+        userData = data || { email, role }
       }
       
       setUser(userData)
@@ -70,21 +68,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signUp = async (email: string, password: string) => {
     setLoading(true)
     try {
-      // 检查用户是否存在
-      const { data: users, error } = await supabase.from('users').select('*').eq('email', email)
-      if (error) throw error
-      
-      let userData
-      if (users.length > 0) {
-        // 用户存在
+      const { data: users, error: fetchError } = await supabase.from('users').select('*').eq('email', email)
+      if (fetchError) throw fetchError
+
+      let userData;
+      if (users && users.length > 0) {
         userData = users[0]
       } else {
-        // 用户不存在，创建新用户
-        // 检查是否为管理员邮箱
+        // 这里的 role 判断只需要写一次
         const role = email === '747227185@qq.com' ? 'admin' : 'user'
-        const { data, error } = await supabase.from('users').insert({ email, role })
-        if (error) throw error
-        userData = { email, role }
+        const { data, error: insertError } = await supabase.from('users').insert({ email, role }).select().single()
+        if (insertError) throw insertError
+        userData = data || { email, role }
       }
       
       setUser(userData)
