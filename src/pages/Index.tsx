@@ -9,7 +9,7 @@ export default function Index() {
   const [assets, setAssets] = useState<Asset[]>([])
   const [loading, setLoading] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
-  const [selectedIds, setSelectedIds] = useState<string[]>([])
+  const [selectedIds, setSelectedIds] = useState<number[]>([])
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
   const [editingAsset, setEditingAsset] = useState(null)
@@ -64,7 +64,7 @@ export default function Index() {
     }
   }
 
-  const handleSelectOne = (id: string, checked: boolean) => {
+  const handleSelectOne = (id: number, checked: boolean) => {
     if (checked) {
       setSelectedIds([...selectedIds, id])
     } else {
@@ -187,7 +187,7 @@ export default function Index() {
     setIsEditDialogOpen(true)
   }
 
-  const handleDelete = async (id: string) => {
+  const handleDelete = async (id: number) => {
     // 权限控制：只有管理员可以删除资产
     if (user && user.role !== 'admin') {
       alert('只有管理员可以删除资产')
