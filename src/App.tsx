@@ -1,5 +1,5 @@
-import { BrowserRouter, Route, Routes, useLocation, useEffect, useNavigate } from 'react-router-dom'
-import React, { createContext, useContext, useState } from 'react'
+﻿import { BrowserRouter, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
+import React, { createContext, useContext, useState, useEffect } from 'react'
 import { supabase } from './lib/supabase'
 import Index from './pages/Index'
 import AssetDetail from './pages/AssetDetail'
