@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import React, { useState, useEffect } from 'react'
+﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import React, { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '../App'
 import { supabase, type Asset, type MaintenanceRecord } from '../lib/supabase'
@@ -57,41 +57,37 @@ export default function AssetDetail() {
       }
       console.log('AssetDetail: Fetching asset with id:', assetId)
       
-      // 尝试获取资产数据
-      const { data, error } = await supabase.from('assets').select('*').eq('id', assetId).single()
+      // 尝试获取资产数据，最多重试3次
+      let retries = 3
+      let data = null
+      let error = null
       
-      if (error) {
+      while (retries > 0) {
+        console.log(`AssetDetail: Attempt ${4 - retries} of 3`)
+        const result = await supabase.from('assets').select('*').eq('id', assetId).single()
+        data = result.data
+        error = result.error
+        
+        if (!error) {
+          break
+        }
+        
         console.error('AssetDetail: Error fetching asset:', error)
-        // 网络错误时，尝试重新获取
-        if (error.message.includes('connection') || error.message.includes('network')) {
+        retries--
+        
+        if (retries > 0) {
           console.log('AssetDetail: Retrying to fetch asset...')
           // 等待1秒后重试
           await new Promise(resolve => setTimeout(resolve, 1000))
-          const { data: retryData, error: retryError } = await supabase.from('assets').select('*').eq('id', assetId).single()
-          if (retryError) {
-            console.error('AssetDetail: Retry error fetching asset:', retryError)
-            throw retryError
-          }
-          console.log('AssetDetail: Asset fetched successfully on retry:', retryData)
-          setAsset(retryData)
-          setFormData({
-            brand: retryData.brand || '',
-            model: retryData.model || '',
-            cpu: retryData.cpu || '',
-            ram: retryData.ram || '',
-            storage: retryData.storage || '',
-            gpu: retryData.gpu || '',
-            os: retryData.os || '',
-            department: retryData.department || '',
-            user_name: retryData.user_name || '',
-            location: retryData.location || '',
-            status: retryData.status || 'active',
-            notes: retryData.notes || ''
-          })
-        } else {
-          throw error
         }
-      } else {
+      }
+      
+      if (error) {
+        console.error('AssetDetail: Final error fetching asset:', error)
+        throw error
+      }
+      
+      if (data) {
         console.log('AssetDetail: Asset fetched successfully:', data)
         setAsset(data)
         setFormData({
