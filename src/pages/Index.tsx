@@ -595,12 +595,19 @@ export default function Index() {
                   </tr>
                 ) : (
                   filteredAssets.map((asset) => (
-                    <tr key={asset.id} className="hover:bg-gray-50">
-                      <td className="px-4 py-4 whitespace-nowrap">
+                    <tr 
+                      key={asset.id} 
+                      className="hover:bg-gray-50 cursor-pointer"
+                      onClick={() => navigate(`/asset/${asset.id}`)}
+                    >
+                      <td className="px-4 py-4 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                         <input
                           type="checkbox"
                           checked={selectedIds.includes(asset.id)}
-                          onChange={(e) => handleSelectOne(asset.id, e.target.checked)}
+                          onChange={(e) => {
+                            e.stopPropagation()
+                            handleSelectOne(asset.id, e.target.checked)
+                          }}
                           className="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50"
                         />
                       </td>
@@ -639,22 +646,31 @@ export default function Index() {
                           {asset.status === 'active' ? '使用中' : asset.status === 'idle' ? '闲置' : '维修中'}
                         </span>
                       </td>
-                      <td className="px-4 py-4 whitespace-nowrap text-sm font-medium">
+                      <td className="px-4 py-4 whitespace-nowrap text-sm font-medium" onClick={(e) => e.stopPropagation()}>
                         <button
-                          onClick={() => navigate(`/asset/${asset.id}`)}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            navigate(`/asset/${asset.id}`)
+                          }}
                           className="text-blue-600 hover:text-blue-900 mr-3"
                         >
                           详情
                         </button>
                         <button
-                          onClick={() => handleEdit(asset)}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleEdit(asset)
+                          }}
                           className="text-green-600 hover:text-green-900 mr-3"
                         >
                           编辑
                         </button>
                         {user?.role === 'admin' && (
                           <button
-                            onClick={() => handleDelete(asset.id)}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleDelete(asset.id)
+                            }}
                             className="text-red-600 hover:text-red-900"
                           >
                             删除

@@ -142,12 +142,12 @@ function URLHandler() {
     const id = params.get('id')
 
     if (action === 'edit' && id) {
-      // 如果用户已登录，直接跳转到资产详情页
+      // 如果用户已登录，直接跳转到首页并触发编辑
       if (isAuthenticated) {
-        navigate(`/asset/${id}`)
+        navigate('/', { state: { editAssetId: id } })
       } else {
         // 如果用户未登录，保存目标页面，等登录后再跳转
-        setPendingRedirect(`/asset/${id}`)
+        setPendingRedirect(`/?action=edit&id=${id}`)
         navigate('/login')
       }
     }
