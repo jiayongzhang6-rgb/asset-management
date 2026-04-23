@@ -129,7 +129,7 @@ export default function AssetDetail() {
             new_data: updateData,
             user_email: user.email
           })
-          console.log('Operation history recorded')
+          console.log('Operation history recorded for update')
         }
         
         await fetchAsset()
