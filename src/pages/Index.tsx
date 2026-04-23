@@ -640,17 +640,19 @@ export default function Index() {
     }
   }
 
+  // 检查认证状态并导航
+  useEffect(() => {
+    if (!isAuthenticated) {
+      navigate('/login')
+    }
+  }, [isAuthenticated, navigate])
+
   if (authLoading) {
     return (
       <div className="flex items-center justify-center h-screen">
         <div className="text-lg">加载中...</div>
       </div>
     )
-  }
-
-  if (!isAuthenticated) {
-    navigate('/login')
-    return null
   }
 
   return (
@@ -767,12 +769,6 @@ export default function Index() {
               <Pie data={getStatusDistribution()} options={chartOptions} />
             </div>
           </div>
-          <div className="card">
-            <h3 className="text-lg font-semibold mb-4">资产分类分布</h3>
-            <div className="h-64 sm:h-80">
-              <Pie data={getCategoryDistribution()} options={chartOptions} />
-            </div>
-          </div>
         </div>
 
         <div className="card mb-6">
@@ -792,18 +788,6 @@ export default function Index() {
               </div>
             </div>
             <div className="flex flex-col md:flex-row gap-4">
-              <div>
-                <select
-                  className="input"
-                  value={selectedCategory || ''}
-                  onChange={(e) => setSelectedCategory(e.target.value ? parseInt(e.target.value) : null)}
-                >
-                  <option value="">全部分类</option>
-                  {categories.map(category => (
-                    <option key={category.id} value={category.id}>{category.name}</option>
-                  ))}
-                </select>
-              </div>
               {selectedIds.length > 0 && (
                 <div className="flex gap-2">
                   <button

@@ -1,7 +1,7 @@
-﻿﻿﻿﻿﻿﻿﻿﻿﻿import React, { useState, useEffect } from 'react'
+﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import React, { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '../App'
-import { supabase, type Asset, type AssetCategory, type MaintenanceRecord } from '../lib/supabase'
+import { supabase, type Asset, type MaintenanceRecord } from '../lib/supabase'
 
 export default function AssetDetail() {
   const { id } = useParams<{ id: string }>()
