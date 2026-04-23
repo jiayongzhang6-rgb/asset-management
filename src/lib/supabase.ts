@@ -9,14 +9,6 @@ if (!supabaseUrl || !supabaseAnonKey) {
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
-export type AssetCategory = {
-  id: number
-  name: string
-  description: string
-  created_at: string
-  updated_at: string
-}
-
 export type MaintenanceRecord = {
   id: number
   asset_id: number
@@ -44,76 +36,18 @@ export type Asset = {
   location: string
   status: string
   notes: string
-  category_id: number
   created_at: string
   updated_at: string
 }
 
 export type AssetInsert = Omit<Asset, 'id' | 'created_at' | 'updated_at'>
 export type AssetUpdate = Partial<AssetInsert>
-export type AssetCategoryInsert = Omit<AssetCategory, 'id' | 'created_at' | 'updated_at'>
-export type AssetCategoryUpdate = Partial<AssetCategoryInsert>
 export type MaintenanceRecordInsert = Omit<MaintenanceRecord, 'id' | 'created_at' | 'updated_at'>
 export type MaintenanceRecordUpdate = Partial<MaintenanceRecordInsert>
 
 // 初始化数据库表结构
 export const initDatabase = async () => {
   try {
-    // 检查asset_categories表是否存在
-    const { data: categoriesTables, error: categoriesTablesError } = await supabase
-      .from('information_schema.tables')
-      .select('table_name')
-      .eq('table_schema', 'public')
-      .eq('table_name', 'asset_categories')
-
-    if (categoriesTablesError) {
-      console.error('Error checking asset_categories table:', categoriesTablesError)
-    } else {
-      if (categoriesTables.length === 0) {
-        const { error: createCategoriesError } = await supabase.rpc('execute_sql', {
-          sql: `
-            CREATE TABLE asset_categories (
-              id bigint primary key generated always as identity,
-              name text not null unique,
-              description text,
-              created_at timestamp with time zone default now(),
-              updated_at timestamp with time zone default now()
-            );
-            
-            -- 启用行级安全
-            alter table asset_categories enable row level security;
-            
-            -- 创建策略
-            create policy "Allow public read access" on asset_categories
-              for select using (true);
-            
-            create policy "Allow public insert access" on asset_categories
-              for insert with check (true);
-            
-            create policy "Allow public update access" on asset_categories
-              for update using (true);
-            
-            create policy "Allow public delete access" on asset_categories
-              for delete using (true);
-            
-            -- 插入默认分类
-            INSERT INTO asset_categories (name, description) VALUES
-              ('台式电脑', '桌面式计算机设备'),
-              ('笔记本电脑', '便携式计算机设备'),
-              ('服务器', '网络服务器设备'),
-              ('网络设备', '路由器、交换机等网络设备'),
-              ('其他', '其他类型的IT资产');
-          `
-        })
-
-        if (createCategoriesError) {
-          console.error('Error creating asset_categories table:', createCategoriesError)
-        } else {
-          console.log('Asset categories table created successfully')
-        }
-      }
-    }
-
     // 检查maintenance_records表是否存在
     const { data: maintenanceTables, error: maintenanceTablesError } = await supabase
       .from('information_schema.tables')
@@ -162,33 +96,6 @@ export const initDatabase = async () => {
           console.error('Error creating maintenance_records table:', createMaintenanceError)
         } else {
           console.log('Maintenance records table created successfully')
-        }
-      }
-    }
-
-    // 检查assets表是否有category_id列
-    const { data: assetsColumns, error: assetsColumnsError } = await supabase
-      .from('information_schema.columns')
-      .select('column_name')
-      .eq('table_schema', 'public')
-      .eq('table_name', 'assets')
-      .eq('column_name', 'category_id')
-
-    if (assetsColumnsError) {
-      console.error('Error checking assets columns:', assetsColumnsError)
-    } else {
-      if (assetsColumns.length === 0) {
-        const { error: addColumnError } = await supabase.rpc('execute_sql', {
-          sql: `
-            ALTER TABLE assets ADD COLUMN category_id bigint DEFAULT 1;
-            ALTER TABLE assets ADD CONSTRAINT fk_category FOREIGN KEY (category_id) REFERENCES asset_categories(id);
-          `
-        })
-
-        if (addColumnError) {
-          console.error('Error adding category_id column to assets:', addColumnError)
-        } else {
-          console.log('Added category_id column to assets table')
         }
       }
     }

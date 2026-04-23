@@ -142,8 +142,43 @@ export default function Import() {
   }
 
   const downloadTemplate = () => {
-    // 这里简化处理，实际项目中需要生成Excel文件
-    alert('模板下载功能开发中')
+    // 创建一个包含模板数据的Excel文件
+    const templateData = [
+      {
+        '品牌': 'Dell',
+        '型号': 'OptiPlex 7090',
+        'CPU': 'Intel Core i5-11500',
+        '内存(GB)': '16GB',
+        '硬盘': '512GB SSD',
+        '显卡': '集成显卡',
+        '操作系统': 'Windows 10 Pro',
+        '部门': '技术部',
+        '使用人': '张三',
+        '位置': 'A区-101',
+        '备注': '办公用机'
+      },
+      {
+        '品牌': 'HP',
+        '型号': 'EliteBook 840 G8',
+        'CPU': 'Intel Core i7-1165G7',
+        '内存(GB)': '32GB',
+        '硬盘': '1TB SSD',
+        '显卡': 'NVIDIA MX450',
+        '操作系统': 'Windows 10 Pro',
+        '部门': '市场部',
+        '使用人': '李四',
+        '位置': 'B区-202',
+        '备注': '笔记本电脑'
+      }
+    ];
+
+    // 创建工作簿和工作表
+    const workbook = XLSX.utils.book_new();
+    const worksheet = XLSX.utils.json_to_sheet(templateData);
+    XLSX.utils.book_append_sheet(workbook, worksheet, '资产模板');
+
+    // 生成Excel文件并下载
+    XLSX.writeFile(workbook, '资产导入模板.xlsx');
   }
 
   return (

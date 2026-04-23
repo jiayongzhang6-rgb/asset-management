@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from 'react'
+﻿﻿﻿﻿﻿﻿﻿﻿﻿import React, { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '../App'
 import { supabase, type Asset, type AssetCategory, type MaintenanceRecord } from '../lib/supabase'
@@ -8,7 +8,6 @@ export default function AssetDetail() {
   const navigate = useNavigate()
   const { isAuthenticated, user, signOut, loading: authLoading } = useAuth()
   const [asset, setAsset] = useState<Asset | null>(null)
-  const [categories, setCategories] = useState<AssetCategory[]>([])
   const [maintenanceRecords, setMaintenanceRecords] = useState<MaintenanceRecord[]>([])
   const [loading, setLoading] = useState(false)
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
@@ -30,8 +29,7 @@ export default function AssetDetail() {
     user_name: '',
     location: '',
     status: 'active',
-    notes: '',
-    category_id: 1
+    notes: ''
   })
   const [maintenanceFormData, setMaintenanceFormData] = useState({
     issue_description: '',
@@ -41,17 +39,7 @@ export default function AssetDetail() {
     status: 'pending'
   })
 
-  // 从Supabase中获取资产分类数据
-  const fetchCategories = async () => {
-    try {
-      const { data, error } = await supabase.from('asset_categories').select('*')
-      if (error) throw error
-      setCategories(data || [])
-      console.log('AssetDetail: Categories fetched successfully', data)
-    } catch (error) {
-      console.error('Error fetching categories:', error)
-    }
-  }
+
 
   // 从Supabase中获取资产数据
   const fetchAsset = async () => {
@@ -73,8 +61,7 @@ export default function AssetDetail() {
         user_name: data.user_name || '',
         location: data.location || '',
         status: data.status || 'active',
-        notes: data.notes || '',
-        category_id: data.category_id || 1
+        notes: data.notes || ''
       })
     } catch (error) {
       console.error('Error fetching asset:', error)
@@ -118,7 +105,6 @@ export default function AssetDetail() {
   }
 
   useEffect(() => {
-    fetchCategories()
     fetchAsset()
     fetchAssetHistory()
     fetchMaintenanceRecords()
@@ -468,10 +454,6 @@ export default function AssetDetail() {
                 <div className="font-medium">{asset.asset_code}</div>
               </div>
               <div className="flex items-center gap-4">
-                <div className="w-24 text-gray-500">资产分类</div>
-                <div>{categories.find(c => c.id === asset.category_id)?.name || '未分类'}</div>
-              </div>
-              <div className="flex items-center gap-4">
                 <div className="w-24 text-gray-500">品牌</div>
                 <div>{asset.brand}</div>
               </div>
@@ -564,7 +546,8 @@ export default function AssetDetail() {
                         <button
                           className="text-blue-600 hover:text-blue-900"
                           onClick={() => {
-                            alert(`操作类型: ${history.operation_type}\n操作人: ${history.user_email}\n操作时间: ${new Date(history.created_at).toLocaleString()}`)
+                            // 显示更详细的操作历史信息
+                            alert(`操作类型: ${history.operation_type === 'create' ? '创建' : history.operation_type === 'update' ? '更新' : '删除'}\n操作人: ${history.user_email}\n操作时间: ${new Date(history.created_at).toLocaleString()}\n资产ID: ${history.asset_id}`)
                           }}
                         >
                           查看详情

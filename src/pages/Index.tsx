@@ -13,10 +13,8 @@ export default function Index() {
   const location = useLocation()
   const { isAuthenticated, user, signOut, loading: authLoading } = useAuth()
   const [assets, setAssets] = useState<Asset[]>([])
-  const [categories, setCategories] = useState<AssetCategory[]>([])
   const [loading, setLoading] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
-  const [selectedCategory, setSelectedCategory] = useState<number | null>(null)
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
@@ -33,8 +31,7 @@ export default function Index() {
     user_name: '',
     location: '',
     status: 'active',
-    notes: '',
-    category_id: 1
+    notes: ''
   })
   // 分页相关状态
   const [page, setPage] = useState(1)
@@ -67,33 +64,7 @@ export default function Index() {
     }
   }
   
-  // 计算资产分类分布数据
-  const getCategoryDistribution = () => {
-    const categoryCounts = assets.reduce((acc, asset) => {
-      acc[asset.category_id] = (acc[asset.category_id] || 0) + 1
-      return acc
-    }, {} as Record<number, number>)
-    
-    return {
-      labels: Object.keys(categoryCounts).map(categoryId => {
-        const category = categories.find(c => c.id === parseInt(categoryId))
-        return category ? category.name : '未分类'
-      }),
-      datasets: [
-        {
-          data: Object.values(categoryCounts),
-          backgroundColor: [
-            '#0ea5e9', // 蓝色
-            '#8b5cf6', // 紫色
-            '#ec4899', // 粉色
-            '#14b8a6', // 青色
-            '#f97316', // 橙色
-          ],
-          borderWidth: 1,
-        },
-      ],
-    }
-  }
+
   
   const chartOptions = {
     responsive: true,
@@ -120,18 +91,6 @@ export default function Index() {
     initDatabase()
   }, [])
 
-  // 从Supabase中获取资产分类数据
-  const fetchCategories = async () => {
-    try {
-      const { data, error } = await supabase.from('asset_categories').select('*')
-      if (error) throw error
-      setCategories(data || [])
-      console.log('Index: Categories fetched successfully', data)
-    } catch (error) {
-      console.error('Error fetching categories:', error)
-    }
-  }
-
   // 从Supabase中获取资产数据
   const fetchAssets = async () => {
     console.log('Index: Fetching assets')
@@ -142,9 +101,6 @@ export default function Index() {
       
       // 获取资产数据，带分页
       let query = supabase.from('assets').select('*', { count: 'exact' })
-      if (selectedCategory) {
-        query = query.eq('category_id', selectedCategory)
-      }
       if (searchTerm) {
         query = query.or(`asset_code.ilike.%${searchTerm}%,brand.ilike.%${searchTerm}%,model.ilike.%${searchTerm}%,department.ilike.%${searchTerm}%,user_name.ilike.%${searchTerm}%`)
       }
@@ -161,7 +117,6 @@ export default function Index() {
   }
 
   useEffect(() => {
-    fetchCategories()
     fetchAssets()
   }, [])
 
@@ -173,7 +128,7 @@ export default function Index() {
       fetchAssets()
     }, 300)
     return () => clearTimeout(timer)
-  }, [selectedCategory, searchTerm])
+  }, [searchTerm])
 
   useEffect(() => {
     fetchAssets()
@@ -229,8 +184,7 @@ export default function Index() {
       user_name: '',
       location: '',
       status: 'active',
-      notes: '',
-      category_id: 1
+      notes: ''
     })
   }
 
@@ -410,8 +364,7 @@ export default function Index() {
         user_name: asset.user_name || '',
         location: asset.location || '',
         status: asset.status || 'active',
-        notes: asset.notes || '',
-        category_id: asset.category_id || 1
+        notes: asset.notes || ''
       })
     } else {
       setFormData({
@@ -426,8 +379,7 @@ export default function Index() {
         user_name: asset.user_name || '',
         location: asset.location || '',
         status: asset.status || 'active',
-        notes: asset.notes || '',
-        category_id: asset.category_id || 1
+        notes: asset.notes || ''
       })
     }
     setIsEditDialogOpen(true)
@@ -884,7 +836,6 @@ export default function Index() {
                     />
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">资产编码</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">资产分类</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">CPU</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">内存</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">存储</th>
@@ -930,16 +881,11 @@ export default function Index() {
                         />
                       </td>
                       <td className="px-4 py-4 whitespace-nowrap">
-                      <div className="text-sm font-medium text-gray-900">{asset.asset_code}</div>
-                    </td>
-                    <td className="px-4 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-900">
-                        {categories.find(c => c.id === asset.category_id)?.name || '未分类'}
-                      </div>
-                    </td>
-                    <td className="px-4 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-900">{asset.cpu}</div>
-                    </td>
+                    <div className="text-sm font-medium text-gray-900">{asset.asset_code}</div>
+                  </td>
+                  <td className="px-4 py-4 whitespace-nowrap">
+                    <div className="text-sm text-gray-900">{asset.cpu}</div>
+                  </td>
                     <td className="px-4 py-4 whitespace-nowrap">
                       <div className="text-sm text-gray-900">{asset.ram}</div>
                     </td>
@@ -1150,19 +1096,7 @@ export default function Index() {
                     <option value="maintenance">维修中</option>
                   </select>
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-secondary-700 mb-1">资产分类</label>
-                  <select
-                    className="input"
-                    value={formData.category_id}
-                    onChange={(e) => setFormData({ ...formData, category_id: parseInt(e.target.value) })}
-                    required
-                  >
-                    {categories.map(category => (
-                      <option key={category.id} value={category.id}>{category.name}</option>
-                    ))}
-                  </select>
-                </div>
+
                 <div>
                   <label className="block text-sm font-medium text-secondary-700 mb-1">部门</label>
                   <input
@@ -1324,19 +1258,7 @@ export default function Index() {
                         <option value="maintenance">维修中</option>
                       </select>
                     </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">资产分类</label>
-                      <select
-                        className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        value={formData.category_id}
-                        onChange={(e) => setFormData({ ...formData, category_id: parseInt(e.target.value) })}
-                        required
-                      >
-                        {categories.map(category => (
-                          <option key={category.id} value={category.id}>{category.name}</option>
-                        ))}
-                      </select>
-                    </div>
+
                   </>
                 )}
                 <div>
