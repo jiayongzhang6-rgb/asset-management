@@ -306,7 +306,7 @@ export default function Index() {
                 try {
                   // 使用原始资产ID，确保资产ID不会变
                   const fallbackHistoryData = {
-                    asset_id: editingAsset.id,
+                    asset_id: parseInt(editingAsset.id),
                     operation_type: 'update',
                     user_email: user.email,
                     created_at: new Date().toISOString()
