@@ -5,33 +5,39 @@ import { supabase } from '../lib/supabase'
 
 export default function OperationHistory() {
   const navigate = useNavigate()
-  const { isAuthenticated, user } = useAuth()
+  const { isAuthenticated, user, signOut } = useAuth()
   const [history, setHistory] = useState<any[]>([])
-  const [filteredHistory, setFilteredHistory] = useState<any[]>([])
-  const [assetId, setAssetId] = useState('')
   const [loading, setLoading] = useState(true)
+  const [assetIdFilter, setAssetIdFilter] = useState('')
+  const [filteredHistory, setFilteredHistory] = useState<any[]>([])
 
   useEffect(() => {
     if (isAuthenticated) {
       fetchHistory()
+    } else {
+      navigate('/login')
     }
-  }, [isAuthenticated])
+  }, [isAuthenticated, navigate])
 
   useEffect(() => {
-    if (assetId) {
-      setFilteredHistory(history.filter(item => item.asset_id === parseInt(assetId)))
+    if (assetIdFilter) {
+      setFilteredHistory(history.filter(item => item.asset_id.toString().includes(assetIdFilter)))
     } else {
       setFilteredHistory(history)
     }
-  }, [assetId, history])
+  }, [assetIdFilter, history])
 
   const fetchHistory = async () => {
     setLoading(true)
     try {
-      const { data, error } = await supabase.from('operation_history').select('*').order('created_at', { ascending: false })
+      const { data, error } = await supabase
+        .from('operation_history')
+        .select('*')
+        .order('created_at', { ascending: false })
       if (error) throw error
       setHistory(data || [])
       setFilteredHistory(data || [])
+      console.log('Operation history fetched:', data)
     } catch (error) {
       console.error('Error fetching operation history:', error)
     } finally {
@@ -41,9 +47,9 @@ export default function OperationHistory() {
 
   const getOperationDetails = (item: any) => {
     if (item.operation_type === 'create') {
-      return `创建了资产 ${item.asset_id}\n使用人: ${item.new_data.user_name}\n部门: ${item.new_data.department}\n位置: ${item.new_data.location}`
+      return `创建了资产\n使用人: ${item.new_data.user_name}\n部门: ${item.new_data.department}\n位置: ${item.new_data.location}`
     } else if (item.operation_type === 'update') {
-      let details = `更新了资产 ${item.asset_id}\n`
+      let details = `更新了资产\n`
       if (item.old_data.user_name !== item.new_data.user_name) {
         details += `使用人: ${item.old_data.user_name} → ${item.new_data.user_name}\n`
       }
@@ -53,54 +59,15 @@ export default function OperationHistory() {
       if (item.old_data.location !== item.new_data.location) {
         details += `位置: ${item.old_data.location} → ${item.new_data.location}\n`
       }
-      return details
+      return details || '无变化'
     } else if (item.operation_type === 'delete') {
-      return `删除了资产 ${item.asset_id}\n使用人: ${item.old_data.user_name}\n部门: ${item.old_data.department}\n位置: ${item.old_data.location}`
+      return `删除了资产\n使用人: ${item.old_data.user_name}\n部门: ${item.old_data.department}\n位置: ${item.old_data.location}`
     }
     return JSON.stringify(item, null, 2)
   }
 
-  if (!isAuthenticated) {
-    return (
-      <div className="min-h-screen bg-gray-100 flex items-center justify-center">
-        <div className="bg-white rounded-lg shadow-md p-8 max-w-md">
-          <h2 className="text-2xl font-bold text-center mb-4">需要登录</h2>
-          <p className="text-gray-600 text-center mb-6">请登录后查看操作历史</p>
-          <button
-            onClick={() => navigate('/login')}
-            className="w-full px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-          >
-            去登录
-          </button>
-        </div>
-      </div>
-    )
-  }
-
-  // 权限控制：只有管理员可以查看操作历史
-  if (user && user.role !== 'admin') {
-    return (
-      <div className="min-h-screen bg-gray-100 flex items-center justify-center">
-        <div className="bg-white rounded-lg shadow-md p-8 max-w-md">
-          <h2 className="text-2xl font-bold text-center mb-4">权限不足</h2>
-          <p className="text-gray-600 text-center mb-6">只有管理员可以查看操作历史</p>
-          <button
-            onClick={() => navigate('/')}
-            className="w-full px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-          >
-            返回首页
-          </button>
-        </div>
-      </div>
-    )
-  }
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-screen">
-        <div className="text-lg">加载中...</div>
-      </div>
-    )
+  const viewAsset = (assetId: number) => {
+    navigate(`/asset/${assetId}`)
   }
 
   return (
@@ -114,81 +81,106 @@ export default function OperationHistory() {
             >
               返回
             </button>
-            <h1 className="text-2xl font-bold">操作历史</h1>
+            <h1 className="text-2xl font-bold">操作历史记录</h1>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-gray-600">{user?.email}</span>
+            {user?.role === 'admin' && (
+              <button
+                onClick={() => navigate('/users')}
+                className="px-4 py-2 bg-purple-500 text-white rounded hover:bg-purple-600"
+              >
+                用户管理
+              </button>
+            )}
+            <button
+              onClick={signOut}
+              className="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600"
+            >
+              退出
+            </button>
           </div>
         </div>
       </header>
 
       <main className="container mx-auto px-4 py-8">
-        <div className="bg-white rounded-lg shadow p-6">
-          <h2 className="text-xl font-semibold mb-6">操作历史记录</h2>
-          
-          {/* 筛选功能 */}
-          <div className="mb-6">
-            <label className="block text-gray-700 mb-2">按资产ID筛选</label>
-            <div className="flex gap-2">
+        <div className="bg-white rounded-lg shadow p-6 mb-6">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
+            <h2 className="text-xl font-semibold">所有操作历史</h2>
+            <div className="relative">
               <input
                 type="text"
-                value={assetId}
-                onChange={(e) => setAssetId(e.target.value)}
-                placeholder="输入资产ID"
-                className="flex-1 px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="按资产ID筛选"
+                className="pl-10 pr-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                value={assetIdFilter}
+                onChange={(e) => setAssetIdFilter(e.target.value)}
               />
-              <button
-                onClick={() => setAssetId('')}
-                className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
-              >
-                清除
-              </button>
+              <div className="absolute left-3 top-2.5 text-gray-400">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+              </div>
             </div>
           </div>
-          
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">时间</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">操作类型</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">资产ID</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">操作人</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">详情</th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {filteredHistory.map((item) => (
-                  <tr key={item.id}>
-                    <td className="px-4 py-3 text-sm text-gray-900">
-                      {new Date(item.created_at).toLocaleString('zh-CN')}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-gray-900">
-                      {item.operation_type === 'create' && '创建'}
-                      {item.operation_type === 'update' && '更新'}
-                      {item.operation_type === 'delete' && '删除'}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-gray-900">
-                      {item.asset_id}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-gray-900">
-                      {item.user_email}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-gray-900">
-                      <button
-                        onClick={() => {
-                          alert(getOperationDetails(item))
-                        }}
-                        className="text-blue-500 hover:underline"
-                      >
-                        查看详情
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          {filteredHistory.length === 0 && (
-            <div className="text-center py-8 text-gray-500">
+
+          {loading ? (
+            <div className="flex items-center justify-center py-12">
+              <div className="text-lg">加载中...</div>
+            </div>
+          ) : filteredHistory.length === 0 ? (
+            <div className="text-center py-12 text-gray-500">
               暂无操作历史记录
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">时间</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">资产ID</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">操作类型</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">操作人</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">详情</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">操作</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {filteredHistory.map((item) => (
+                    <tr key={item.id}>
+                      <td className="px-4 py-3 text-sm text-gray-900">
+                        {new Date(item.created_at).toLocaleString('zh-CN')}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-900">
+                        {item.asset_id}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-900">
+                        {item.operation_type === 'create' && '创建'}
+                        {item.operation_type === 'update' && '更新'}
+                        {item.operation_type === 'delete' && '删除'}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-900">
+                        {item.user_email}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-900">
+                        <button
+                          onClick={() => alert(getOperationDetails(item))}
+                          className="text-blue-500 hover:underline"
+                        >
+                          查看详情
+                        </button>
+                      </td>
+                      <td className="px-4 py-3 text-sm font-medium">
+                        <button
+                          onClick={() => viewAsset(item.asset_id)}
+                          className="text-green-600 hover:text-green-900"
+                        >
+                          查看资产
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
         </div>

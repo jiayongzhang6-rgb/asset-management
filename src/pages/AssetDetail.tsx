@@ -12,6 +12,21 @@ export default function AssetDetail() {
   const [loading, setLoading] = useState(true)
   const [qrcodeUrl, setQrcodeUrl] = useState('')
   const [assetHistory, setAssetHistory] = useState<any[]>([])
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
+  const [formData, setFormData] = useState({
+    brand: '',
+    model: '',
+    cpu: '',
+    ram: '',
+    storage: '',
+    gpu: '',
+    os: '',
+    department: '',
+    user_name: '',
+    location: '',
+    status: 'active',
+    notes: ''
+  })
 
   useEffect(() => {
     if (id) {
@@ -23,6 +38,20 @@ export default function AssetDetail() {
   useEffect(() => {
     if (asset) {
       generateQRCode()
+      setFormData({
+        brand: asset.brand || '',
+        model: asset.model || '',
+        cpu: asset.cpu || '',
+        ram: asset.ram || '',
+        storage: asset.storage || '',
+        gpu: asset.gpu || '',
+        os: asset.os || '',
+        department: asset.department || '',
+        user_name: asset.user_name || '',
+        location: asset.location || '',
+        status: asset.status || 'active',
+        notes: asset.notes || ''
+      })
     }
   }, [asset])
 
@@ -64,14 +93,54 @@ export default function AssetDetail() {
         .order('created_at', { ascending: false })
       if (error) throw error
       setAssetHistory(data || [])
+      console.log('Asset history fetched:', data)
     } catch (error) {
       console.error('Error fetching asset history:', error)
     }
   }
 
   const handleEdit = () => {
-    // 返回到首页并触发编辑对话框
-    navigate('/', { state: { editAssetId: id } })
+    setIsEditDialogOpen(true)
+  }
+
+  const handleEditSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (asset) {
+      try {
+        // 权限控制：普通用户只能修改使用人、位置、部门等信息
+        let updateData = formData
+        if (user && user.role !== 'admin') {
+          updateData = {
+            user_name: formData.user_name,
+            location: formData.location,
+            department: formData.department
+          }
+        }
+        
+        const { data, error } = await supabase.from('assets').update(updateData).eq('id', asset.id)
+        if (error) throw error
+        
+        // 记录操作历史
+        if (user) {
+          await supabase.from('operation_history').insert({
+            asset_id: asset.id,
+            operation_type: 'update',
+            old_data: asset,
+            new_data: updateData,
+            user_email: user.email
+          })
+          console.log('Operation history recorded')
+        }
+        
+        await fetchAsset()
+        await fetchAssetHistory()
+        setIsEditDialogOpen(false)
+        alert('资产更新成功')
+      } catch (error) {
+        console.error('Error updating asset:', error)
+        alert('资产更新失败')
+      }
+    }
   }
 
   const handleDelete = async () => {
@@ -348,6 +417,171 @@ export default function AssetDetail() {
           </p>
         </div>
       </main>
+
+      {/* 编辑资产对话框 */}
+      {isEditDialogOpen && asset && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl p-6 max-w-2xl w-full">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold">编辑资产</h2>
+              <button
+                onClick={() => setIsEditDialogOpen(false)}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <form onSubmit={handleEditSubmit} className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {user?.role === 'admin' && (
+                  <>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">品牌</label>
+                      <input
+                        type="text"
+                        className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        value={formData.brand}
+                        onChange={(e) => setFormData({ ...formData, brand: e.target.value })}
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">型号</label>
+                      <input
+                        type="text"
+                        className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        value={formData.model}
+                        onChange={(e) => setFormData({ ...formData, model: e.target.value })}
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">CPU</label>
+                      <input
+                        type="text"
+                        className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        value={formData.cpu}
+                        onChange={(e) => setFormData({ ...formData, cpu: e.target.value })}
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">内存</label>
+                      <input
+                        type="text"
+                        className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        value={formData.ram}
+                        onChange={(e) => setFormData({ ...formData, ram: e.target.value })}
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">存储</label>
+                      <input
+                        type="text"
+                        className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        value={formData.storage}
+                        onChange={(e) => setFormData({ ...formData, storage: e.target.value })}
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">显卡</label>
+                      <input
+                        type="text"
+                        className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        value={formData.gpu}
+                        onChange={(e) => setFormData({ ...formData, gpu: e.target.value })}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">操作系统</label>
+                      <input
+                        type="text"
+                        className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        value={formData.os}
+                        onChange={(e) => setFormData({ ...formData, os: e.target.value })}
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">状态</label>
+                      <select
+                        className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        value={formData.status}
+                        onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+                        required
+                      >
+                        <option value="active">使用中</option>
+                        <option value="idle">闲置</option>
+                        <option value="maintenance">维修中</option>
+                      </select>
+                    </div>
+                  </>
+                )}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">部门</label>
+                  <input
+                    type="text"
+                    className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={formData.department}
+                    onChange={(e) => setFormData({ ...formData, department: e.target.value })}
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">使用人</label>
+                  <input
+                    type="text"
+                    className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={formData.user_name}
+                    onChange={(e) => setFormData({ ...formData, user_name: e.target.value })}
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">位置</label>
+                  <input
+                    type="text"
+                    className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={formData.location}
+                    onChange={(e) => setFormData({ ...formData, location: e.target.value })}
+                    required
+                  />
+                </div>
+              </div>
+              {user?.role === 'admin' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">备注</label>
+                  <textarea
+                    className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={formData.notes}
+                    onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                    rows={3}
+                  />
+                </div>
+              )}
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsEditDialogOpen(false)}
+                  className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
+                >
+                  取消
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                >
+                  保存
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -6,6 +6,7 @@ import AssetDetail from './pages/AssetDetail'
 import Login from './pages/Login'
 import Import from './pages/Import'
 import OperationHistory from './pages/OperationHistory'
+import Users from './pages/Users'
 import NotFound from './pages/NotFound'
 
 // 简化的AuthProvider，不使用Supabase
@@ -167,6 +168,7 @@ export default function App() {
           <Route path="/login" element={<Login />} />
           <Route path="/import" element={<Import />} />
           <Route path="/history" element={<OperationHistory />} />
+          <Route path="/users" element={<Users />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
