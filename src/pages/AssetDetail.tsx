@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import React, { useState, useEffect } from 'react'
+﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import React, { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '../App'
 import { supabase, type Asset, type MaintenanceRecord } from '../lib/supabase'
@@ -46,7 +46,7 @@ export default function AssetDetail() {
     if (!id) return
     setLoading(true)
     try {
-      const { data, error } = await supabase.from('assets').select('*').eq('id', id).single()
+      const { data, error } = await supabase.from('assets').select('*').eq('id', parseInt(id)).single()
       if (error) throw error
       setAsset(data)
       setFormData({
@@ -77,7 +77,7 @@ export default function AssetDetail() {
       const { data, error } = await supabase
         .from('operation_history')
         .select('*')
-        .eq('asset_id', id)
+        .eq('asset_id', parseInt(id))
         .order('created_at', { ascending: false })
       if (error) throw error
       setAssetHistory(data || [])
@@ -94,7 +94,7 @@ export default function AssetDetail() {
       const { data, error } = await supabase
         .from('maintenance_records')
         .select('*')
-        .eq('asset_id', id)
+        .eq('asset_id', parseInt(id))
         .order('created_at', { ascending: false })
       if (error) throw error
       setMaintenanceRecords(data || [])

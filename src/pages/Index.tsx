@@ -207,7 +207,7 @@ export default function Index() {
           // 简化操作历史数据结构，确保能够成功插入
           // 尝试使用字符串形式的asset_id
           const historyData = {
-            asset_id: data[0].id,
+            asset_id: parseInt(data[0].id),
             operation_type: 'create',
             user_email: user.email,
             created_at: new Date().toISOString()
@@ -288,7 +288,7 @@ export default function Index() {
           try {
             // 简化操作历史数据结构，确保能够成功插入
             const historyData = {
-              asset_id: editingAsset.id,
+              asset_id: parseInt(editingAsset.id),
               operation_type: 'update',
               user_email: user.email,
               created_at: new Date().toISOString()
@@ -405,7 +405,7 @@ export default function Index() {
           try {
             // 简化操作历史数据结构，确保能够成功插入
             const historyData = {
-              asset_id: id,
+              asset_id: parseInt(id),
               operation_type: 'delete',
               user_email: user.email,
               created_at: new Date().toISOString()
@@ -486,7 +486,7 @@ export default function Index() {
             try {
               // 简化操作历史数据结构，确保能够成功插入
               const historyData = {
-                asset_id: id,
+                asset_id: parseInt(id),
                 operation_type: 'delete',
                 user_email: user.email,
                 created_at: new Date().toISOString()
