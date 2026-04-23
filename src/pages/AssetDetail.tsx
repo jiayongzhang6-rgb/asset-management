@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import React, { useState, useEffect } from 'react'
+﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import React, { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '../App'
 import { supabase, type Asset, type MaintenanceRecord } from '../lib/supabase'
@@ -64,30 +64,48 @@ export default function AssetDetail() {
       
       while (retries > 0) {
         console.log(`AssetDetail: Attempt ${4 - retries} of 3`)
-        const result = await supabase.from('assets').select('*').eq('id', assetId).single()
-        data = result.data
-        error = result.error
-        
-        if (!error) {
-          break
-        }
-        
-        console.error('AssetDetail: Error fetching asset:', error)
-        retries--
-        
-        if (retries > 0) {
-          console.log('AssetDetail: Retrying to fetch asset...')
-          // 等待1秒后重试
-          await new Promise(resolve => setTimeout(resolve, 1000))
+        try {
+          // 增加超时设置
+          const controller = new AbortController()
+          const timeoutId = setTimeout(() => controller.abort(), 10000) // 10秒超时
+          
+          const result = await supabase.from('assets').select('*').eq('id', assetId).single()
+          clearTimeout(timeoutId)
+          
+          data = result.data
+          error = result.error
+          
+          console.log('AssetDetail: Result from supabase:', { data, error })
+          
+          if (!error) {
+            break
+          }
+          
+          console.error('AssetDetail: Error fetching asset:', error)
+          retries--
+          
+          if (retries > 0) {
+            console.log('AssetDetail: Retrying to fetch asset...')
+            // 等待2秒后重试，增加等待时间
+            await new Promise(resolve => setTimeout(resolve, 2000))
+          }
+        } catch (e) {
+          console.error('AssetDetail: Exception during fetch:', e)
+          retries--
+          
+          if (retries > 0) {
+            console.log('AssetDetail: Retrying to fetch asset...')
+            // 等待2秒后重试，增加等待时间
+            await new Promise(resolve => setTimeout(resolve, 2000))
+          }
         }
       }
       
       if (error) {
         console.error('AssetDetail: Final error fetching asset:', error)
-        throw error
-      }
-      
-      if (data) {
+        // 显示更友好的错误信息
+        alert(`无法获取资产数据: ${error.message}\n请检查网络连接后重试`)
+      } else if (data) {
         console.log('AssetDetail: Asset fetched successfully:', data)
         setAsset(data)
         setFormData({
@@ -104,11 +122,14 @@ export default function AssetDetail() {
           status: data.status || 'active',
           notes: data.notes || ''
         })
+      } else {
+        console.error('AssetDetail: No data returned from supabase')
+        alert('无法获取资产数据，请检查网络连接后重试')
       }
     } catch (error) {
       console.error('AssetDetail: Exception fetching asset:', error)
       // 显示更友好的错误信息
-      alert('无法获取资产数据，请检查网络连接后重试')
+      alert(`无法获取资产数据: ${error.message}\n请检查网络连接后重试`)
     } finally {
       setLoading(false)
     }
@@ -401,10 +422,12 @@ export default function AssetDetail() {
     )
   }
 
-  if (!isAuthenticated) {
-    navigate('/login')
-    return null
-  }
+  // 修复：将 navigate() 调用移到 useEffect 中
+  useEffect(() => {
+    if (!isAuthenticated) {
+      navigate('/login')
+    }
+  }, [isAuthenticated, navigate])
 
   if (loading) {
     return (
