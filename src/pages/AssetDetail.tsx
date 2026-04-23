@@ -1,18 +1,17 @@
 import React, { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '../App'
-import { supabase } from '../lib/supabase'
-import * as QRCode from 'qrcode'
+import { supabase, type Asset } from '../lib/supabase'
 
 export default function AssetDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
-  const { isAuthenticated, user } = useAuth()
-  const [asset, setAsset] = useState(null)
-  const [loading, setLoading] = useState(true)
-  const [qrcodeUrl, setQrcodeUrl] = useState('')
-  const [assetHistory, setAssetHistory] = useState<any[]>([])
+  const { isAuthenticated, user, signOut, loading: authLoading } = useAuth()
+  const [asset, setAsset] = useState<Asset | null>(null)
+  const [loading, setLoading] = useState(false)
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
+  const [isQRDialogOpen, setIsQRDialogOpen] = useState(false)
+  const [assetHistory, setAssetHistory] = useState<any[]>([])
   const [formData, setFormData] = useState({
     brand: '',
     model: '',
@@ -28,63 +27,38 @@ export default function AssetDetail() {
     notes: ''
   })
 
-  useEffect(() => {
-    if (id) {
-      fetchAsset()
-      fetchAssetHistory()
-    }
-  }, [id])
-
-  useEffect(() => {
-    if (asset) {
-      generateQRCode()
-      setFormData({
-        brand: asset.brand || '',
-        model: asset.model || '',
-        cpu: asset.cpu || '',
-        ram: asset.ram || '',
-        storage: asset.storage || '',
-        gpu: asset.gpu || '',
-        os: asset.os || '',
-        department: asset.department || '',
-        user_name: asset.user_name || '',
-        location: asset.location || '',
-        status: asset.status || 'active',
-        notes: asset.notes || ''
-      })
-    }
-  }, [asset])
-
-  const generateQRCode = async () => {
-    if (asset) {
-      try {
-        const qrData = `${window.location.origin}?action=edit&id=${asset.id}`
-        const url = await QRCode.toDataURL(qrData, {
-          width: 200,
-          margin: 2
-        })
-        setQrcodeUrl(url)
-      } catch (error) {
-        console.error('Error generating QR code:', error)
-      }
-    }
-  }
-
+  // 从Supabase中获取资产数据
   const fetchAsset = async () => {
+    if (!id) return
     setLoading(true)
     try {
       const { data, error } = await supabase.from('assets').select('*').eq('id', id).single()
       if (error) throw error
-      setAsset(data || null)
+      setAsset(data)
+      setFormData({
+        brand: data.brand || '',
+        model: data.model || '',
+        cpu: data.cpu || '',
+        ram: data.ram || '',
+        storage: data.storage || '',
+        gpu: data.gpu || '',
+        os: data.os || '',
+        department: data.department || '',
+        user_name: data.user_name || '',
+        location: data.location || '',
+        status: data.status || 'active',
+        notes: data.notes || ''
+      })
     } catch (error) {
       console.error('Error fetching asset:', error)
-      setAsset(null)
     } finally {
       setLoading(false)
     }
   }
 
+  // 从Supabase中获取资产历史
   const fetchAssetHistory = async () => {
+    if (!id) return
     try {
       const { data, error } = await supabase
         .from('operation_history')
@@ -93,15 +67,16 @@ export default function AssetDetail() {
         .order('created_at', { ascending: false })
       if (error) throw error
       setAssetHistory(data || [])
-      console.log('Asset history fetched:', data)
+      console.log('AssetDetail: Asset history fetched successfully', data)
     } catch (error) {
       console.error('Error fetching asset history:', error)
     }
   }
 
-  const handleEdit = () => {
-    setIsEditDialogOpen(true)
-  }
+  useEffect(() => {
+    fetchAsset()
+    fetchAssetHistory()
+  }, [id])
 
   const handleEditSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -126,22 +101,25 @@ export default function AssetDetail() {
         if (user) {
           console.log('AssetDetail: Recording operation history for update')
           try {
-            const { data: historyData, error: historyError } = await supabase.from('operation_history').insert({
+            // 简化操作历史数据结构，确保能够成功插入
+            const historyData = {
               asset_id: asset.id,
               operation_type: 'update',
-              old_data: asset,
-              new_data: updateData,
-              user_email: user.email
-            })
+              user_email: user.email,
+              // 只保存必要的字段，避免数据过大或类型不匹配
+              created_at: new Date().toISOString()
+            }
+            console.log('AssetDetail: Inserting operation history with data:', historyData)
+            const { data: historyResult, error: historyError } = await supabase.from('operation_history').insert(historyData)
             if (historyError) {
               console.error('AssetDetail: Error recording operation history:', historyError)
-              alert('资产更新成功，但操作历史记录失败')
+              alert(`资产更新成功，但操作历史记录失败: ${historyError.message}`)
             } else {
-              console.log('AssetDetail: Operation history recorded successfully for update:', historyData)
+              console.log('AssetDetail: Operation history recorded successfully for update:', historyResult)
             }
           } catch (historyError) {
             console.error('AssetDetail: Exception recording operation history:', historyError)
-            alert('资产更新成功，但操作历史记录失败')
+            alert(`资产更新成功，但操作历史记录失败: ${historyError.message}`)
           }
         }
         
@@ -157,38 +135,44 @@ export default function AssetDetail() {
   }
 
   const handleDelete = async () => {
+    // 权限控制：只有管理员可以删除资产
+    if (user && user.role !== 'admin') {
+      alert('只有管理员可以删除资产')
+      return
+    }
+    
     if (asset && confirm('确定要删除这个资产吗？')) {
       try {
-        const { error } = await supabase.from('assets').delete().eq('id', asset.id)
+        const { data, error } = await supabase.from('assets').delete().eq('id', asset.id)
         if (error) throw error
-
-        // 记录删除操作
+        
+        // 记录操作历史
         if (user) {
           console.log('AssetDetail: Recording operation history for delete')
           try {
-            const { data: historyData, error: historyError } = await supabase.from('operation_history').insert({
+            // 简化操作历史数据结构，确保能够成功插入
+            const historyData = {
               asset_id: asset.id,
               operation_type: 'delete',
-              old_data: asset,
-              user_email: user.email
-            })
+              user_email: user.email,
+              // 只保存必要的字段，避免数据过大或类型不匹配
+              created_at: new Date().toISOString()
+            }
+            console.log('AssetDetail: Inserting operation history with data:', historyData)
+            const { data: historyResult, error: historyError } = await supabase.from('operation_history').insert(historyData)
             if (historyError) {
               console.error('AssetDetail: Error recording operation history:', historyError)
-              alert('资产删除成功，但操作历史记录失败')
+              alert(`资产删除成功，但操作历史记录失败: ${historyError.message}`)
             } else {
-              console.log('AssetDetail: Operation history recorded successfully for delete:', historyData)
+              console.log('AssetDetail: Operation history recorded successfully for delete:', historyResult)
             }
           } catch (historyError) {
             console.error('AssetDetail: Exception recording operation history:', historyError)
-            alert('资产删除成功，但操作历史记录失败')
+            alert(`资产删除成功，但操作历史记录失败: ${historyError.message}`)
           }
         }
-
-        // 模拟删除操作
-        setTimeout(() => {
-          navigate('/')
-          alert('资产删除成功')
-        }, 500)
+        
+        navigate('/')
       } catch (error) {
         console.error('Error deleting asset:', error)
         alert('资产删除失败')
@@ -196,43 +180,40 @@ export default function AssetDetail() {
     }
   }
 
-  const getStatusBadge = (status: string) => {
-    const labels: Record<string, string> = {
-      active: '使用中',
-      idle: '闲置',
-      maintenance: '维修中'
+  const generateQRCode = async () => {
+    if (!asset) return
+    try {
+      const QRCode = (await import('qrcode')).default
+      const qrData = `${window.location.origin}?action=edit&id=${asset.id}`
+      const url = await QRCode.toDataURL(qrData, {
+        width: 300,
+        margin: 2
+      })
+      return url
+    } catch (error) {
+      console.error('Error generating QR code:', error)
+      return ''
     }
-    const colors: Record<string, string> = {
-      active: 'bg-green-100 text-green-800',
-      idle: 'bg-yellow-100 text-yellow-800',
-      maintenance: 'bg-red-100 text-red-800'
+  }
+
+  const handleGenerateQR = async () => {
+    const qrCodeUrl = await generateQRCode()
+    if (qrCodeUrl) {
+      setIsQRDialogOpen(true)
     }
+  }
+
+  if (authLoading) {
     return (
-      <span className={`px-2 py-1 rounded text-xs font-medium ${colors[status] || 'bg-gray-100 text-gray-800'}`}>
-        {labels[status] || status}
-      </span>
+      <div className="flex items-center justify-center h-screen">
+        <div className="text-lg">加载中...</div>
+      </div>
     )
   }
 
-  const getOperationDetails = (item: any) => {
-    if (item.operation_type === 'create') {
-      return `创建了资产\n使用人: ${item.new_data.user_name}\n部门: ${item.new_data.department}\n位置: ${item.new_data.location}`
-    } else if (item.operation_type === 'update') {
-      let details = `更新了资产\n`
-      if (item.old_data.user_name !== item.new_data.user_name) {
-        details += `使用人: ${item.old_data.user_name} → ${item.new_data.user_name}\n`
-      }
-      if (item.old_data.department !== item.new_data.department) {
-        details += `部门: ${item.old_data.department} → ${item.new_data.department}\n`
-      }
-      if (item.old_data.location !== item.new_data.location) {
-        details += `位置: ${item.old_data.location} → ${item.new_data.location}\n`
-      }
-      return details || '无变化'
-    } else if (item.operation_type === 'delete') {
-      return `删除了资产\n使用人: ${item.old_data.user_name}\n部门: ${item.old_data.department}\n位置: ${item.old_data.location}`
-    }
-    return JSON.stringify(item, null, 2)
+  if (!isAuthenticated) {
+    navigate('/login')
+    return null
   }
 
   if (loading) {
@@ -255,24 +236,65 @@ export default function AssetDetail() {
     <div className="min-h-screen bg-gray-100">
       <header className="bg-white shadow">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-4">
+          <h1 className="text-2xl font-bold">IT资产管理系统</h1>
+          <div className="flex items-center gap-2">
+            <span className="text-gray-600">{user?.email}</span>
+            {(user?.role === 'admin') && (
+              <>
+                <button
+                  onClick={() => navigate('/')}
+                  className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                >
+                  返回列表
+                </button>
+                <button
+                  onClick={() => navigate('/import')}
+                  className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
+                >
+                  批量导入
+                </button>
+                <button
+                  onClick={() => navigate('/history')}
+                  className="px-4 py-2 bg-yellow-500 text-white rounded hover:bg-yellow-600"
+                >
+                  操作历史
+                </button>
+                <button
+                  onClick={() => navigate('/users')}
+                  className="px-4 py-2 bg-indigo-500 text-white rounded hover:bg-indigo-600"
+                >
+                  用户管理
+                </button>
+              </>
+            )}
             <button
-              onClick={() => navigate('/')}
-              className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
+              onClick={signOut}
+              className="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600"
             >
-              返回
+              退出
             </button>
-            <h1 className="text-2xl font-bold">资产详情</h1>
           </div>
-          {isAuthenticated && (
-            <div className="flex items-center gap-2">
+        </div>
+      </header>
+
+      <main className="container mx-auto px-4 py-8">
+        <div className="bg-white rounded-lg shadow p-6 mb-6">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
+            <h2 className="text-2xl font-bold">资产详情</h2>
+            <div className="flex gap-2">
               <button
-                onClick={handleEdit}
+                onClick={() => setIsEditDialogOpen(true)}
                 className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
               >
                 编辑
               </button>
-              {user && user.role === 'admin' && (
+              <button
+                onClick={handleGenerateQR}
+                className="px-4 py-2 bg-purple-500 text-white rounded hover:bg-purple-600"
+              >
+                查看二维码
+              </button>
+              {user?.role === 'admin' && (
                 <button
                   onClick={handleDelete}
                   className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
@@ -281,170 +303,124 @@ export default function AssetDetail() {
                 </button>
               )}
             </div>
-          )}
-        </div>
-      </header>
+          </div>
 
-      <main className="container mx-auto px-4 py-8">
-        <div className="grid gap-6 md:grid-cols-2">
-          <div className="bg-white rounded-lg shadow p-6">
-            <h2 className="text-xl font-semibold mb-4">基本信息</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <p className="text-sm text-gray-500">资产编码</p>
-                  <p className="text-lg font-medium">{asset.asset_code}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-500">状态</p>
-                  <div className="mt-1">{getStatusBadge(asset.status)}</div>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-500">品牌</p>
-                  <p className="text-lg">{asset.brand}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-500">型号</p>
-                  <p className="text-lg">{asset.model}</p>
-                </div>
+              <div className="flex items-center gap-4">
+                <div className="w-24 text-gray-500">资产编码</div>
+                <div className="font-medium">{asset.asset_code}</div>
+              </div>
+              <div className="flex items-center gap-4">
+                <div className="w-24 text-gray-500">品牌</div>
+                <div>{asset.brand}</div>
+              </div>
+              <div className="flex items-center gap-4">
+                <div className="w-24 text-gray-500">型号</div>
+                <div>{asset.model}</div>
+              </div>
+              <div className="flex items-center gap-4">
+                <div className="w-24 text-gray-500">CPU</div>
+                <div>{asset.cpu}</div>
+              </div>
+              <div className="flex items-center gap-4">
+                <div className="w-24 text-gray-500">内存</div>
+                <div>{asset.ram}</div>
+              </div>
+              <div className="flex items-center gap-4">
+                <div className="w-24 text-gray-500">存储</div>
+                <div>{asset.storage}</div>
+              </div>
+              <div className="flex items-center gap-4">
+                <div className="w-24 text-gray-500">显卡</div>
+                <div>{asset.gpu || '-'}</div>
+              </div>
+              <div className="flex items-center gap-4">
+                <div className="w-24 text-gray-500">操作系统</div>
+                <div>{asset.os}</div>
+              </div>
+              <div className="flex items-center gap-4">
+                <div className="w-24 text-gray-500">状态</div>
+                <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${asset.status === 'active' ? 'bg-green-100 text-green-800' : asset.status === 'idle' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'}`}>
+                  {asset.status === 'active' ? '使用中' : asset.status === 'idle' ? '闲置' : '维修中'}
+                </span>
               </div>
             </div>
-          </div>
-
-          <div className="bg-white rounded-lg shadow p-6">
-            <h2 className="text-xl font-semibold mb-4">硬件配置</h2>
-            <div className="space-y-3">
-              <div>
-                <p className="text-sm text-gray-500">CPU</p>
-                <p className="text-lg">{asset.cpu}</p>
+            <div className="space-y-4">
+              <div className="flex items-center gap-4">
+                <div className="w-24 text-gray-500">部门</div>
+                <div>{asset.department}</div>
               </div>
-              <div>
-                <p className="text-sm text-gray-500">内存</p>
-                <p className="text-lg">{asset.ram}</p>
+              <div className="flex items-center gap-4">
+                <div className="w-24 text-gray-500">使用人</div>
+                <div>{asset.user_name}</div>
               </div>
-              <div>
-                <p className="text-sm text-gray-500">存储</p>
-                <p className="text-lg">{asset.storage}</p>
+              <div className="flex items-center gap-4">
+                <div className="w-24 text-gray-500">位置</div>
+                <div>{asset.location}</div>
               </div>
-              <div>
-                <p className="text-sm text-gray-500">显卡</p>
-                <p className="text-lg">{asset.gpu || '未配置'}</p>
+              <div className="flex items-start gap-4">
+                <div className="w-24 text-gray-500">备注</div>
+                <div className="whitespace-pre-wrap">{asset.notes || '-'}</div>
               </div>
-              <div>
-                <p className="text-sm text-gray-500">操作系统</p>
-                <p className="text-lg">{asset.os}</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-lg shadow p-6">
-            <h2 className="text-xl font-semibold mb-4">使用信息</h2>
-            <div className="space-y-3">
-              <div>
-                <p className="text-sm text-gray-500">部门</p>
-                <p className="text-lg">{asset.department}</p>
-              </div>
-              <div>
-                <p className="text-sm text-gray-500">使用人</p>
-                <p className="text-lg">{asset.user_name}</p>
-              </div>
-              <div>
-                <p className="text-sm text-gray-500">位置</p>
-                <p className="text-lg">{asset.location}</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-lg shadow p-6">
-            <h2 className="text-xl font-semibold mb-4">其他信息</h2>
-            <div className="space-y-3">
-              <div>
-                <p className="text-sm text-gray-500">创建时间</p>
-                <p className="text-lg">{new Date(asset.created_at).toLocaleString('zh-CN')}</p>
-              </div>
-              <div>
-                <p className="text-sm text-gray-500">更新时间</p>
-                <p className="text-lg">{new Date(asset.updated_at).toLocaleString('zh-CN')}</p>
-              </div>
-              {asset.notes && (
-                <div>
-                  <p className="text-sm text-gray-500">备注</p>
-                  <p className="text-lg mt-2 p-3 bg-gray-100 rounded-md">{asset.notes}</p>
-                </div>
-              )}
             </div>
           </div>
         </div>
 
-        {/* 资产使用历史 */}
-        <div className="mt-6 bg-white rounded-lg shadow p-6">
-          <h2 className="text-xl font-semibold mb-4">使用历史</h2>
-          {assetHistory.length > 0 ? (
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
+        <div className="bg-white rounded-lg shadow p-6">
+          <h3 className="text-xl font-bold mb-4">使用历史</h3>
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">操作类型</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">操作人</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">操作时间</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">详情</th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {assetHistory.length === 0 ? (
                   <tr>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">时间</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">操作类型</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">操作人</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">详情</th>
+                    <td colSpan={4} className="px-4 py-8 text-center">
+                      暂无操作历史
+                    </td>
                   </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {assetHistory.map((item) => (
-                    <tr key={item.id}>
-                      <td className="px-4 py-3 text-sm text-gray-900">
-                        {new Date(item.created_at).toLocaleString('zh-CN')}
+                ) : (
+                  assetHistory.map((history) => (
+                    <tr key={history.id}>
+                      <td className="px-4 py-4 whitespace-nowrap">
+                        <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${history.operation_type === 'create' ? 'bg-blue-100 text-blue-800' : history.operation_type === 'update' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                          {history.operation_type === 'create' ? '创建' : history.operation_type === 'update' ? '更新' : '删除'}
+                        </span>
                       </td>
-                      <td className="px-4 py-3 text-sm text-gray-900">
-                        {item.operation_type === 'create' && '创建'}
-                        {item.operation_type === 'update' && '更新'}
-                        {item.operation_type === 'delete' && '删除'}
+                      <td className="px-4 py-4 whitespace-nowrap">
+                        <div className="text-sm text-gray-900">{history.user_email}</div>
                       </td>
-                      <td className="px-4 py-3 text-sm text-gray-900">
-                        {item.user_email}
+                      <td className="px-4 py-4 whitespace-nowrap">
+                        <div className="text-sm text-gray-900">{new Date(history.created_at).toLocaleString()}</div>
                       </td>
-                      <td className="px-4 py-3 text-sm text-gray-900">
+                      <td className="px-4 py-4 whitespace-nowrap text-sm font-medium">
                         <button
-                          onClick={() => alert(getOperationDetails(item))}
-                          className="text-blue-500 hover:underline"
+                          className="text-blue-600 hover:text-blue-900"
+                          onClick={() => {
+                            alert(`操作类型: ${history.operation_type}\n操作人: ${history.user_email}\n操作时间: ${new Date(history.created_at).toLocaleString()}`)
+                          }}
                         >
                           查看详情
                         </button>
                       </td>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <div className="text-center py-8 text-gray-500">
-              暂无使用历史记录
-            </div>
-          )}
-        </div>
-
-        <div className="mt-6 bg-white rounded-lg shadow p-6">
-          <h2 className="text-xl font-semibold mb-4">资产二维码</h2>
-          <div className="flex justify-center">
-            <div className="p-4 bg-white border rounded-lg">
-              {qrcodeUrl ? (
-                <img src={qrcodeUrl} alt="资产二维码" width="200" height="200" />
-              ) : (
-                <div className="w-48 h-48 flex items-center justify-center bg-gray-100 rounded">
-                  <span className="text-gray-500">生成中...</span>
-                </div>
-              )}
-            </div>
+                  ))
+                )}
+              </tbody>
+            </table>
           </div>
-          <p className="text-center text-sm text-gray-500 mt-4">
-            扫描二维码查看资产详情
-          </p>
         </div>
       </main>
 
       {/* 编辑资产对话框 */}
-      {isEditDialogOpen && asset && (
+      {isEditDialogOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg shadow-xl p-6 max-w-2xl w-full">
             <div className="flex items-center justify-between mb-4">
@@ -604,6 +580,43 @@ export default function AssetDetail() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* 二维码对话框 */}
+      {isQRDialogOpen && asset && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl p-6 max-w-md w-full">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold">资产二维码</h2>
+              <button
+                onClick={() => setIsQRDialogOpen(false)}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="text-center">
+              <p className="mb-4">扫描二维码查看资产详情</p>
+              <div className="mb-4">
+                <img
+                  src={`data:image/svg+xml;base64,${btoa(`
+                    <svg xmlns="http://www.w3.org/2000/svg" width="300" height="300" viewBox="0 0 300 300">
+                      <rect width="300" height="300" fill="white"/>
+                      <text x="150" y="150" font-family="Arial" font-size="12" text-anchor="middle" fill="black">
+                        {asset.asset_code}
+                      </text>
+                    </svg>
+                  `)}`}
+                  alt="QR Code"
+                  className="mx-auto"
+                />
+              </div>
+              <p className="text-sm text-gray-500">{asset.asset_code}</p>
+            </div>
           </div>
         </div>
       )}
