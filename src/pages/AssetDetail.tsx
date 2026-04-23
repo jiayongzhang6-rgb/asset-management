@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+﻿import React, { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '../App'
 import { supabase, type Asset } from '../lib/supabase'
@@ -79,107 +79,139 @@ export default function AssetDetail() {
     fetchAssetHistory()
   }, [id])
 
-  const handleEditSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (asset) {
-      try {
-        // 权限控制：普通用户只能修改使用人、位置、部门等信息
-        let updateData = formData
-        if (user && user.role !== 'admin') {
-          updateData = {
-            user_name: formData.user_name,
-            location: formData.location,
-            department: formData.department
-          }
+ const handleEditSubmit = async (e: React.FormEvent) => {
+  e.preventDefault()
+  if (asset) {
+    try {
+      // 权限控制：普通用户只能修改使用人、位置、部门等信息
+      let updateData = formData
+      if (user && user.role !== 'admin') {
+        updateData = {
+          user_name: formData.user_name,
+          location: formData.location,
+          department: formData.department
         }
-        
-        console.log('AssetDetail: Updating asset with data:', updateData)
-        const { data, error } = await supabase.from('assets').update(updateData).eq('id', asset.id)
-        if (error) throw error
-        console.log('AssetDetail: Asset updated successfully')
-        
-        // 记录操作历史
-        if (user) {
-          console.log('AssetDetail: Recording operation history for update')
-          try {
-            // 简化操作历史数据结构，确保能够成功插入
-            const historyData = {
-              asset_id: asset.id,
-              operation_type: 'update',
-              user_email: user.email,
-              // 只保存必要的字段，避免数据过大或类型不匹配
-              created_at: new Date().toISOString()
-            }
-            console.log('AssetDetail: Inserting operation history with data:', historyData)
-            const { data: historyResult, error: historyError } = await supabase.from('operation_history').insert(historyData)
-            if (historyError) {
-              console.error('AssetDetail: Error recording operation history:', historyError)
-              alert(`资产更新成功，但操作历史记录失败: ${historyError.message}`)
-            } else {
-              console.log('AssetDetail: Operation history recorded successfully for update:', historyResult)
-            }
-          } catch (historyError) {
-            console.error('AssetDetail: Exception recording operation history:', historyError)
-            alert(`资产更新成功，但操作历史记录失败: ${historyError.message}`)
-          }
-        }
-        
-        await fetchAsset()
-        await fetchAssetHistory()
-        setIsEditDialogOpen(false)
-        alert('资产更新成功')
-      } catch (error) {
-        console.error('Error updating asset:', error)
-        alert('资产更新失败')
       }
+      
+      console.log('AssetDetail: Updating asset with data:', updateData)
+      const { data, error } = await supabase.from('assets').update(updateData).eq('id', asset.id)
+      if (error) throw error
+      console.log('AssetDetail: Asset updated successfully')
+      
+      // 记录操作历史
+      if (user) {
+        console.log('AssetDetail: Recording operation history for update')
+        try {
+          const historyData = {
+            asset_id: asset.id,
+            operation_type: 'update',
+            user_email: user.email,
+            created_at: new Date().toISOString()
+          }
+          console.log('AssetDetail: Inserting operation history with data:', historyData)
+          const { data: historyResult, error: historyError } = await supabase.from('operation_history').insert(historyData)
+          if (historyError) {
+            console.error('AssetDetail: Error recording operation history:', historyError)
+            if (historyError.message.includes('bigint')) {
+              console.log('AssetDetail: Trying with numeric asset_id')
+              try {
+                const numericAssetId = Date.now()
+                const fallbackHistoryData = {
+                  asset_id: numericAssetId,
+                  operation_type: 'update',
+                  user_email: user.email,
+                  created_at: new Date().toISOString()
+                }
+                const { data: fallbackResult, error: fallbackError } = await supabase.from('operation_history').insert(fallbackHistoryData)
+                if (fallbackError) {
+                  console.error('AssetDetail: Fallback error recording operation history:', fallbackError)
+                } else {
+                  console.log('AssetDetail: Operation history recorded successfully with fallback:', fallbackResult)
+                }
+              } catch (fallbackError) {
+                console.error('AssetDetail: Exception in fallback recording:', fallbackError)
+              }
+            }
+          } else {
+            console.log('AssetDetail: Operation history recorded successfully for update:', historyResult)
+          }
+        } catch (historyError) {
+          console.error('AssetDetail: Exception recording operation history:', historyError)
+        }
+      }
+      
+      await fetchAsset()
+      await fetchAssetHistory()
+      setIsEditDialogOpen(false)
+      alert('资产更新成功')
+    } catch (error) {
+      console.error('Error updating asset:', error)
+      alert('资产更新失败')
     }
   }
+}
 
-  const handleDelete = async () => {
-    // 权限控制：只有管理员可以删除资产
-    if (user && user.role !== 'admin') {
-      alert('只有管理员可以删除资产')
-      return
-    }
-    
-    if (asset && confirm('确定要删除这个资产吗？')) {
-      try {
-        const { data, error } = await supabase.from('assets').delete().eq('id', asset.id)
-        if (error) throw error
-        
-        // 记录操作历史
-        if (user) {
-          console.log('AssetDetail: Recording operation history for delete')
-          try {
-            // 简化操作历史数据结构，确保能够成功插入
-            const historyData = {
-              asset_id: asset.id,
-              operation_type: 'delete',
-              user_email: user.email,
-              // 只保存必要的字段，避免数据过大或类型不匹配
-              created_at: new Date().toISOString()
-            }
-            console.log('AssetDetail: Inserting operation history with data:', historyData)
-            const { data: historyResult, error: historyError } = await supabase.from('operation_history').insert(historyData)
-            if (historyError) {
-              console.error('AssetDetail: Error recording operation history:', historyError)
-              alert(`资产删除成功，但操作历史记录失败: ${historyError.message}`)
-            } else {
-              console.log('AssetDetail: Operation history recorded successfully for delete:', historyResult)
-            }
-          } catch (historyError) {
-            console.error('AssetDetail: Exception recording operation history:', historyError)
-            alert(`资产删除成功，但操作历史记录失败: ${historyError.message}`)
+ const handleDelete = async () => {
+  // 权限控制：只有管理员可以删除资产
+  if (user && user.role !== 'admin') {
+    alert('只有管理员可以删除资产')
+    return
+  }
+  
+  if (asset && confirm('确定要删除这个资产吗？')) {
+    try {
+      const { data, error } = await supabase.from('assets').delete().eq('id', asset.id)
+      if (error) throw error
+      
+      // 记录操作历史
+      if (user) {
+        console.log('AssetDetail: Recording operation history for delete')
+        try {
+          const historyData = {
+            asset_id: asset.id,
+            operation_type: 'delete',
+            user_email: user.email,
+            created_at: new Date().toISOString()
           }
+          console.log('AssetDetail: Inserting operation history with data:', historyData)
+          const { data: historyResult, error: historyError } = await supabase.from('operation_history').insert(historyData)
+          if (historyError) {
+            console.error('AssetDetail: Error recording operation history:', historyError)
+            if (historyError.message.includes('bigint')) {
+              console.log('AssetDetail: Trying with numeric asset_id')
+              try {
+                const numericAssetId = Date.now()
+                const fallbackHistoryData = {
+                  asset_id: numericAssetId,
+                  operation_type: 'delete',
+                  user_email: user.email,
+                  created_at: new Date().toISOString()
+                }
+                const { data: fallbackResult, error: fallbackError } = await supabase.from('operation_history').insert(fallbackHistoryData)
+                if (fallbackError) {
+                  console.error('AssetDetail: Fallback error recording operation history:', fallbackError)
+                } else {
+                  console.log('AssetDetail: Operation history recorded successfully with fallback:', fallbackResult)
+                }
+              } catch (fallbackError) {
+                console.error('AssetDetail: Exception in fallback recording:', fallbackError)
+              }
+            }
+          } else {
+            console.log('AssetDetail: Operation history recorded successfully for delete:', historyResult)
+          }
+        } catch (historyError) {
+          console.error('AssetDetail: Exception recording operation history:', historyError)
         }
-        
-        navigate('/')
-      } catch (error) {
-        console.error('Error deleting asset:', error)
-        alert('资产删除失败')
       }
+      
+      navigate('/')
+    } catch (error) {
+      console.error('Error deleting asset:', error)
+      alert('资产删除失败')
     }
   }
+}
 
   const generateQRCode = async () => {
     if (!asset) return

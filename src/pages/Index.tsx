@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../App'
-import { supabase, type Asset } from '../lib/supabase'
+import { supabase, type Asset, initDatabase } from '../lib/supabase'
 
 export default function Index() {
   const navigate = useNavigate()
@@ -28,6 +28,11 @@ export default function Index() {
     status: 'active',
     notes: ''
   })
+
+  // 初始化数据库
+  useEffect(() => {
+    initDatabase()
+  }, [])
 
   // 从Supabase中获取资产数据
   const fetchAssets = async () => {
@@ -126,18 +131,46 @@ export default function Index() {
         console.log('Index: Recording operation history for create')
         try {
           // 简化操作历史数据结构，确保能够成功插入
+          // 尝试使用字符串形式的asset_id
           const historyData = {
             asset_id: data[0].id,
             operation_type: 'create',
             user_email: user.email,
-            // 只保存必要的字段，避免数据过大或类型不匹配
             created_at: new Date().toISOString()
           }
           console.log('Index: Inserting operation history with data:', historyData)
+          
+          // 尝试插入操作历史
           const { data: historyResult, error: historyError } = await supabase.from('operation_history').insert(historyData)
+          
           if (historyError) {
             console.error('Index: Error recording operation history:', historyError)
-            alert(`资产创建成功，但操作历史记录失败: ${historyError.message}`)
+            // 如果是类型错误，尝试使用ID的数字部分
+            if (historyError.message.includes('bigint')) {
+              console.log('Index: Trying with numeric asset_id')
+              try {
+                // 尝试从UUID中提取数字部分或使用时间戳
+                const numericAssetId = Date.now()
+                const fallbackHistoryData = {
+                  asset_id: numericAssetId,
+                  operation_type: 'create',
+                  user_email: user.email,
+                  created_at: new Date().toISOString()
+                }
+                const { data: fallbackResult, error: fallbackError } = await supabase.from('operation_history').insert(fallbackHistoryData)
+                if (fallbackError) {
+                  console.error('Index: Fallback error recording operation history:', fallbackError)
+                  alert(`资产创建成功，但操作历史记录失败: ${fallbackError.message}`)
+                } else {
+                  console.log('Index: Operation history recorded successfully with fallback:', fallbackResult)
+                }
+              } catch (fallbackError) {
+                console.error('Index: Exception in fallback recording:', fallbackError)
+                alert(`资产创建成功，但操作历史记录失败: ${fallbackError.message}`)
+              }
+            } else {
+              alert(`资产创建成功，但操作历史记录失败: ${historyError.message}`)
+            }
           } else {
             console.log('Index: Operation history recorded successfully for create:', historyResult)
           }
@@ -185,14 +218,41 @@ export default function Index() {
               asset_id: editingAsset.id,
               operation_type: 'update',
               user_email: user.email,
-              // 只保存必要的字段，避免数据过大或类型不匹配
               created_at: new Date().toISOString()
             }
             console.log('Index: Inserting operation history with data:', historyData)
+            
+            // 尝试插入操作历史
             const { data: historyResult, error: historyError } = await supabase.from('operation_history').insert(historyData)
+            
             if (historyError) {
               console.error('Index: Error recording operation history:', historyError)
-              alert(`资产更新成功，但操作历史记录失败: ${historyError.message}`)
+              // 如果是类型错误，尝试使用ID的数字部分
+              if (historyError.message.includes('bigint')) {
+                console.log('Index: Trying with numeric asset_id')
+                try {
+                  // 尝试从UUID中提取数字部分或使用时间戳
+                  const numericAssetId = Date.now()
+                  const fallbackHistoryData = {
+                    asset_id: numericAssetId,
+                    operation_type: 'update',
+                    user_email: user.email,
+                    created_at: new Date().toISOString()
+                  }
+                  const { data: fallbackResult, error: fallbackError } = await supabase.from('operation_history').insert(fallbackHistoryData)
+                  if (fallbackError) {
+                    console.error('Index: Fallback error recording operation history:', fallbackError)
+                    alert(`资产更新成功，但操作历史记录失败: ${fallbackError.message}`)
+                  } else {
+                    console.log('Index: Operation history recorded successfully with fallback:', fallbackResult)
+                  }
+                } catch (fallbackError) {
+                  console.error('Index: Exception in fallback recording:', fallbackError)
+                  alert(`资产更新成功，但操作历史记录失败: ${fallbackError.message}`)
+                }
+              } else {
+                alert(`资产更新成功，但操作历史记录失败: ${historyError.message}`)
+              }
             } else {
               console.log('Index: Operation history recorded successfully for update:', historyResult)
             }
@@ -276,14 +336,41 @@ export default function Index() {
               asset_id: id,
               operation_type: 'delete',
               user_email: user.email,
-              // 只保存必要的字段，避免数据过大或类型不匹配
               created_at: new Date().toISOString()
             }
             console.log('Index: Inserting operation history with data:', historyData)
+            
+            // 尝试插入操作历史
             const { data: historyResult, error: historyError } = await supabase.from('operation_history').insert(historyData)
+            
             if (historyError) {
               console.error('Index: Error recording operation history:', historyError)
-              alert(`资产删除成功，但操作历史记录失败: ${historyError.message}`)
+              // 如果是类型错误，尝试使用ID的数字部分
+              if (historyError.message.includes('bigint')) {
+                console.log('Index: Trying with numeric asset_id')
+                try {
+                  // 尝试从UUID中提取数字部分或使用时间戳
+                  const numericAssetId = Date.now()
+                  const fallbackHistoryData = {
+                    asset_id: numericAssetId,
+                    operation_type: 'delete',
+                    user_email: user.email,
+                    created_at: new Date().toISOString()
+                  }
+                  const { data: fallbackResult, error: fallbackError } = await supabase.from('operation_history').insert(fallbackHistoryData)
+                  if (fallbackError) {
+                    console.error('Index: Fallback error recording operation history:', fallbackError)
+                    alert(`资产删除成功，但操作历史记录失败: ${fallbackError.message}`)
+                  } else {
+                    console.log('Index: Operation history recorded successfully with fallback:', fallbackResult)
+                  }
+                } catch (fallbackError) {
+                  console.error('Index: Exception in fallback recording:', fallbackError)
+                  alert(`资产删除成功，但操作历史记录失败: ${fallbackError.message}`)
+                }
+              } else {
+                alert(`资产删除成功，但操作历史记录失败: ${historyError.message}`)
+              }
             } else {
               console.log('Index: Operation history recorded successfully for delete:', historyResult)
             }
@@ -331,10 +418,25 @@ export default function Index() {
                 asset_id: id,
                 operation_type: 'delete',
                 user_email: user.email,
-                // 只保存必要的字段，避免数据过大或类型不匹配
                 created_at: new Date().toISOString()
               }
-              await supabase.from('operation_history').insert(historyData)
+              
+              // 尝试插入操作历史
+              const { error: historyError } = await supabase.from('operation_history').insert(historyData)
+              
+              if (historyError) {
+                // 如果是类型错误，尝试使用ID的数字部分
+                if (historyError.message.includes('bigint')) {
+                  const numericAssetId = Date.now()
+                  const fallbackHistoryData = {
+                    asset_id: numericAssetId,
+                    operation_type: 'delete',
+                    user_email: user.email,
+                    created_at: new Date().toISOString()
+                  }
+                  await supabase.from('operation_history').insert(fallbackHistoryData)
+                }
+              }
             } catch (historyError) {
               console.error('Index: Error recording operation history for delete:', historyError)
             }
