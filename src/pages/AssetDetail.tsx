@@ -1,16 +1,21 @@
 ﻿import React, { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '../App'
-import { supabase, type Asset } from '../lib/supabase'
+import { supabase, type Asset, type AssetCategory, type MaintenanceRecord } from '../lib/supabase'
 
 export default function AssetDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { isAuthenticated, user, signOut, loading: authLoading } = useAuth()
   const [asset, setAsset] = useState<Asset | null>(null)
+  const [categories, setCategories] = useState<AssetCategory[]>([])
+  const [maintenanceRecords, setMaintenanceRecords] = useState<MaintenanceRecord[]>([])
   const [loading, setLoading] = useState(false)
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
   const [isQRDialogOpen, setIsQRDialogOpen] = useState(false)
+  const [isMaintenanceDialogOpen, setIsMaintenanceDialogOpen] = useState(false)
+  const [isEditMaintenanceDialogOpen, setIsEditMaintenanceDialogOpen] = useState(false)
+  const [editingMaintenanceRecord, setEditingMaintenanceRecord] = useState<MaintenanceRecord | null>(null)
   const [qrCodeUrl, setQrCodeUrl] = useState('')
   const [assetHistory, setAssetHistory] = useState<any[]>([])
   const [formData, setFormData] = useState({
@@ -25,8 +30,28 @@ export default function AssetDetail() {
     user_name: '',
     location: '',
     status: 'active',
-    notes: ''
+    notes: '',
+    category_id: 1
   })
+  const [maintenanceFormData, setMaintenanceFormData] = useState({
+    issue_description: '',
+    repair_description: '',
+    repair_date: '',
+    repair_cost: 0,
+    status: 'pending'
+  })
+
+  // 从Supabase中获取资产分类数据
+  const fetchCategories = async () => {
+    try {
+      const { data, error } = await supabase.from('asset_categories').select('*')
+      if (error) throw error
+      setCategories(data || [])
+      console.log('AssetDetail: Categories fetched successfully', data)
+    } catch (error) {
+      console.error('Error fetching categories:', error)
+    }
+  }
 
   // 从Supabase中获取资产数据
   const fetchAsset = async () => {
@@ -48,7 +73,8 @@ export default function AssetDetail() {
         user_name: data.user_name || '',
         location: data.location || '',
         status: data.status || 'active',
-        notes: data.notes || ''
+        notes: data.notes || '',
+        category_id: data.category_id || 1
       })
     } catch (error) {
       console.error('Error fetching asset:', error)
@@ -74,9 +100,28 @@ export default function AssetDetail() {
     }
   }
 
+  // 从Supabase中获取维修记录
+  const fetchMaintenanceRecords = async () => {
+    if (!id) return
+    try {
+      const { data, error } = await supabase
+        .from('maintenance_records')
+        .select('*')
+        .eq('asset_id', id)
+        .order('created_at', { ascending: false })
+      if (error) throw error
+      setMaintenanceRecords(data || [])
+      console.log('AssetDetail: Maintenance records fetched successfully', data)
+    } catch (error) {
+      console.error('Error fetching maintenance records:', error)
+    }
+  }
+
   useEffect(() => {
+    fetchCategories()
     fetchAsset()
     fetchAssetHistory()
+    fetchMaintenanceRecords()
   }, [id])
 
  const handleEditSubmit = async (e: React.FormEvent) => {
@@ -237,6 +282,77 @@ export default function AssetDetail() {
     }
   }
 
+  const handleAddMaintenance = () => {
+    setEditingMaintenanceRecord(null)
+    setMaintenanceFormData({
+      issue_description: '',
+      repair_description: '',
+      repair_date: '',
+      repair_cost: 0,
+      status: 'pending'
+    })
+    setIsMaintenanceDialogOpen(true)
+  }
+
+  const handleEditMaintenance = (record: MaintenanceRecord) => {
+    setEditingMaintenanceRecord(record)
+    setMaintenanceFormData({
+      issue_description: record.issue_description,
+      repair_description: record.repair_description || '',
+      repair_date: record.repair_date || '',
+      repair_cost: record.repair_cost || 0,
+      status: record.status
+    })
+    setIsEditMaintenanceDialogOpen(true)
+  }
+
+  const handleDeleteMaintenance = async (recordId: number) => {
+    if (confirm('确定要删除这条维修记录吗？')) {
+      try {
+        const { error } = await supabase.from('maintenance_records').delete().eq('id', recordId)
+        if (error) throw error
+        await fetchMaintenanceRecords()
+        alert('维修记录删除成功')
+      } catch (error) {
+        console.error('Error deleting maintenance record:', error)
+        alert('维修记录删除失败')
+      }
+    }
+  }
+
+  const handleMaintenanceSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!asset) return
+    
+    try {
+      if (editingMaintenanceRecord) {
+        // 更新现有维修记录
+        const { error } = await supabase
+          .from('maintenance_records')
+          .update(maintenanceFormData)
+          .eq('id', editingMaintenanceRecord.id)
+        if (error) throw error
+        setIsEditMaintenanceDialogOpen(false)
+        alert('维修记录更新成功')
+      } else {
+        // 添加新维修记录
+        const { error } = await supabase
+          .from('maintenance_records')
+          .insert({
+            ...maintenanceFormData,
+            asset_id: asset.id
+          })
+        if (error) throw error
+        setIsMaintenanceDialogOpen(false)
+        alert('维修记录添加成功')
+      }
+      await fetchMaintenanceRecords()
+    } catch (error) {
+      console.error('Error saving maintenance record:', error)
+      alert('维修记录保存失败')
+    }
+  }
+
   if (authLoading) {
     return (
       <div className="flex items-center justify-center h-screen">
@@ -328,6 +444,12 @@ export default function AssetDetail() {
               >
                 查看二维码
               </button>
+              <button
+                onClick={handleAddMaintenance}
+                className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
+              >
+                添加维修记录
+              </button>
               {user?.role === 'admin' && (
                 <button
                   onClick={handleDelete}
@@ -344,6 +466,10 @@ export default function AssetDetail() {
               <div className="flex items-center gap-4">
                 <div className="w-24 text-gray-500">资产编码</div>
                 <div className="font-medium">{asset.asset_code}</div>
+              </div>
+              <div className="flex items-center gap-4">
+                <div className="w-24 text-gray-500">资产分类</div>
+                <div>{categories.find(c => c.id === asset.category_id)?.name || '未分类'}</div>
               </div>
               <div className="flex items-center gap-4">
                 <div className="w-24 text-gray-500">品牌</div>
@@ -442,6 +568,69 @@ export default function AssetDetail() {
                           }}
                         >
                           查看详情
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-lg shadow p-6">
+          <h3 className="text-xl font-bold mb-4">维修记录</h3>
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">问题描述</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">维修描述</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">维修日期</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">维修费用</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">状态</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">操作</th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {maintenanceRecords.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="px-4 py-8 text-center">
+                      暂无维修记录
+                    </td>
+                  </tr>
+                ) : (
+                  maintenanceRecords.map((record) => (
+                    <tr key={record.id}>
+                      <td className="px-4 py-4">
+                        <div className="text-sm text-gray-900">{record.issue_description}</div>
+                      </td>
+                      <td className="px-4 py-4">
+                        <div className="text-sm text-gray-900">{record.repair_description || '-'}</div>
+                      </td>
+                      <td className="px-4 py-4 whitespace-nowrap">
+                        <div className="text-sm text-gray-900">{record.repair_date ? new Date(record.repair_date).toLocaleDateString() : '-'}</div>
+                      </td>
+                      <td className="px-4 py-4 whitespace-nowrap">
+                        <div className="text-sm text-gray-900">{record.repair_cost ? `¥${record.repair_cost}` : '-'}</div>
+                      </td>
+                      <td className="px-4 py-4 whitespace-nowrap">
+                        <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${record.status === 'pending' ? 'bg-yellow-100 text-yellow-800' : record.status === 'completed' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'}`}>
+                          {record.status === 'pending' ? '待处理' : record.status === 'completed' ? '已完成' : '处理中'}
+                        </span>
+                      </td>
+                      <td className="px-4 py-4 whitespace-nowrap text-sm font-medium">
+                        <button
+                          onClick={() => handleEditMaintenance(record)}
+                          className="text-blue-600 hover:text-blue-900 mr-3"
+                        >
+                          编辑
+                        </button>
+                        <button
+                          onClick={() => handleDeleteMaintenance(record.id)}
+                          className="text-red-600 hover:text-red-900"
+                        >
+                          删除
                         </button>
                       </td>
                     </tr>
@@ -554,6 +743,19 @@ export default function AssetDetail() {
                         <option value="maintenance">维修中</option>
                       </select>
                     </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">资产分类</label>
+                      <select
+                        className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        value={formData.category_id}
+                        onChange={(e) => setFormData({ ...formData, category_id: parseInt(e.target.value) })}
+                        required
+                      >
+                        {categories.map(category => (
+                          <option key={category.id} value={category.id}>{category.name}</option>
+                        ))}
+                      </select>
+                    </div>
                   </>
                 )}
                 <div>
@@ -652,6 +854,186 @@ export default function AssetDetail() {
               </div>
               <p className="text-sm text-gray-500">{asset.asset_code}</p>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* 添加维修记录对话框 */}
+      {isMaintenanceDialogOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl p-6 max-w-2xl w-full">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold">添加维修记录</h2>
+              <button
+                onClick={() => setIsMaintenanceDialogOpen(false)}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <form onSubmit={handleMaintenanceSubmit} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">问题描述</label>
+                <textarea
+                  className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  value={maintenanceFormData.issue_description}
+                  onChange={(e) => setMaintenanceFormData({ ...maintenanceFormData, issue_description: e.target.value })}
+                  rows={3}
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">维修描述</label>
+                <textarea
+                  className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  value={maintenanceFormData.repair_description}
+                  onChange={(e) => setMaintenanceFormData({ ...maintenanceFormData, repair_description: e.target.value })}
+                  rows={3}
+                />
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">维修日期</label>
+                  <input
+                    type="date"
+                    className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={maintenanceFormData.repair_date}
+                    onChange={(e) => setMaintenanceFormData({ ...maintenanceFormData, repair_date: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">维修费用</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={maintenanceFormData.repair_cost}
+                    onChange={(e) => setMaintenanceFormData({ ...maintenanceFormData, repair_cost: parseFloat(e.target.value) || 0 })}
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">状态</label>
+                <select
+                  className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  value={maintenanceFormData.status}
+                  onChange={(e) => setMaintenanceFormData({ ...maintenanceFormData, status: e.target.value })}
+                  required
+                >
+                  <option value="pending">待处理</option>
+                  <option value="in_progress">处理中</option>
+                  <option value="completed">已完成</option>
+                </select>
+              </div>
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsMaintenanceDialogOpen(false)}
+                  className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
+                >
+                  取消
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                >
+                  保存
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 编辑维修记录对话框 */}
+      {isEditMaintenanceDialogOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl p-6 max-w-2xl w-full">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold">编辑维修记录</h2>
+              <button
+                onClick={() => setIsEditMaintenanceDialogOpen(false)}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <form onSubmit={handleMaintenanceSubmit} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">问题描述</label>
+                <textarea
+                  className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  value={maintenanceFormData.issue_description}
+                  onChange={(e) => setMaintenanceFormData({ ...maintenanceFormData, issue_description: e.target.value })}
+                  rows={3}
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">维修描述</label>
+                <textarea
+                  className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  value={maintenanceFormData.repair_description}
+                  onChange={(e) => setMaintenanceFormData({ ...maintenanceFormData, repair_description: e.target.value })}
+                  rows={3}
+                />
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">维修日期</label>
+                  <input
+                    type="date"
+                    className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={maintenanceFormData.repair_date}
+                    onChange={(e) => setMaintenanceFormData({ ...maintenanceFormData, repair_date: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">维修费用</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={maintenanceFormData.repair_cost}
+                    onChange={(e) => setMaintenanceFormData({ ...maintenanceFormData, repair_cost: parseFloat(e.target.value) || 0 })}
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">状态</label>
+                <select
+                  className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  value={maintenanceFormData.status}
+                  onChange={(e) => setMaintenanceFormData({ ...maintenanceFormData, status: e.target.value })}
+                  required
+                >
+                  <option value="pending">待处理</option>
+                  <option value="in_progress">处理中</option>
+                  <option value="completed">已完成</option>
+                </select>
+              </div>
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsEditMaintenanceDialogOpen(false)}
+                  className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
+                >
+                  取消
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                >
+                  保存
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

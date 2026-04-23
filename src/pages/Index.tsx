@@ -1,15 +1,22 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../App'
-import { supabase, type Asset, initDatabase } from '../lib/supabase'
+import { supabase, type Asset, type AssetCategory, initDatabase } from '../lib/supabase'
+import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js'
+import { Pie } from 'react-chartjs-2'
+
+// 注册 Chart.js 组件
+ChartJS.register(ArcElement, Tooltip, Legend)
 
 export default function Index() {
   const navigate = useNavigate()
   const location = useLocation()
   const { isAuthenticated, user, signOut, loading: authLoading } = useAuth()
   const [assets, setAssets] = useState<Asset[]>([])
+  const [categories, setCategories] = useState<AssetCategory[]>([])
   const [loading, setLoading] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
+  const [selectedCategory, setSelectedCategory] = useState<number | null>(null)
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
@@ -26,22 +33,125 @@ export default function Index() {
     user_name: '',
     location: '',
     status: 'active',
-    notes: ''
+    notes: '',
+    category_id: 1
   })
+  // 分页相关状态
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(10)
+  const [totalAssets, setTotalAssets] = useState(0)
+  
+  // 计算资产状态分布数据
+  const getStatusDistribution = () => {
+    const statusCounts = assets.reduce((acc, asset) => {
+      acc[asset.status] = (acc[asset.status] || 0) + 1
+      return acc
+    }, {} as Record<string, number>)
+    
+    return {
+      labels: Object.keys(statusCounts).map(status => 
+        status === 'active' ? '使用中' : 
+        status === 'idle' ? '闲置' : '维修中'
+      ),
+      datasets: [
+        {
+          data: Object.values(statusCounts),
+          backgroundColor: [
+            '#22c55e', // 绿色 - 使用中
+            '#f59e0b', // 黄色 - 闲置
+            '#ef4444', // 红色 - 维修中
+          ],
+          borderWidth: 1,
+        },
+      ],
+    }
+  }
+  
+  // 计算资产分类分布数据
+  const getCategoryDistribution = () => {
+    const categoryCounts = assets.reduce((acc, asset) => {
+      acc[asset.category_id] = (acc[asset.category_id] || 0) + 1
+      return acc
+    }, {} as Record<number, number>)
+    
+    return {
+      labels: Object.keys(categoryCounts).map(categoryId => {
+        const category = categories.find(c => c.id === parseInt(categoryId))
+        return category ? category.name : '未分类'
+      }),
+      datasets: [
+        {
+          data: Object.values(categoryCounts),
+          backgroundColor: [
+            '#0ea5e9', // 蓝色
+            '#8b5cf6', // 紫色
+            '#ec4899', // 粉色
+            '#14b8a6', // 青色
+            '#f97316', // 橙色
+          ],
+          borderWidth: 1,
+        },
+      ],
+    }
+  }
+  
+  const chartOptions = {
+    responsive: true,
+    plugins: {
+      legend: {
+        position: 'bottom' as const,
+      },
+      tooltip: {
+        callbacks: {
+          label: function(context: any) {
+            const label = context.label || ''
+            const value = context.raw || 0
+            const total = context.dataset.data.reduce((a: any, b: any) => a + b, 0)
+            const percentage = Math.round((value / total) * 100)
+            return `${label}: ${value} (${percentage}%)`
+          },
+        },
+      },
+    },
+  }
 
   // 初始化数据库
   useEffect(() => {
     initDatabase()
   }, [])
 
+  // 从Supabase中获取资产分类数据
+  const fetchCategories = async () => {
+    try {
+      const { data, error } = await supabase.from('asset_categories').select('*')
+      if (error) throw error
+      setCategories(data || [])
+      console.log('Index: Categories fetched successfully', data)
+    } catch (error) {
+      console.error('Error fetching categories:', error)
+    }
+  }
+
   // 从Supabase中获取资产数据
   const fetchAssets = async () => {
     console.log('Index: Fetching assets')
     setLoading(true)
     try {
-      const { data, error } = await supabase.from('assets').select('*')
+      // 计算偏移量
+      const offset = (page - 1) * pageSize
+      
+      // 获取资产数据，带分页
+      let query = supabase.from('assets').select('*', { count: 'exact' })
+      if (selectedCategory) {
+        query = query.eq('category_id', selectedCategory)
+      }
+      if (searchTerm) {
+        query = query.or(`asset_code.ilike.%${searchTerm}%,brand.ilike.%${searchTerm}%,model.ilike.%${searchTerm}%,department.ilike.%${searchTerm}%,user_name.ilike.%${searchTerm}%`)
+      }
+      const { data, error, count } = await query.range(offset, offset + pageSize - 1)
       if (error) throw error
       setAssets(data || [])
+      setTotalAssets(count || 0)
       console.log('Index: Assets fetched successfully', data)
     } catch (error) {
       console.error('Error fetching assets:', error)
@@ -51,8 +161,23 @@ export default function Index() {
   }
 
   useEffect(() => {
+    fetchCategories()
     fetchAssets()
   }, [])
+
+  useEffect(() => {
+    // 添加防抖，避免频繁请求
+    const timer = setTimeout(() => {
+      // 重置页码到第一页
+      setPage(1)
+      fetchAssets()
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [selectedCategory, searchTerm])
+
+  useEffect(() => {
+    fetchAssets()
+  }, [page, pageSize])
 
   // 处理从详情页传来的编辑请求
   useEffect(() => {
@@ -65,17 +190,11 @@ export default function Index() {
     }
   }, [location.state?.editAssetId, assets])
 
-  const filteredAssets = assets.filter(asset =>
-    asset.asset_code?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    asset.brand?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    asset.model?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    asset.department?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    asset.user_name?.toLowerCase().includes(searchTerm.toLowerCase())
-  )
+  // 资产数据现在通过数据库查询直接过滤，不再需要前端过滤
 
   const handleSelectAll = (checked: boolean) => {
     if (checked) {
-      setSelectedIds(filteredAssets.map(asset => asset.id))
+      setSelectedIds(assets.map(asset => asset.id.toString()))
     } else {
       setSelectedIds([])
     }
@@ -110,7 +229,8 @@ export default function Index() {
       user_name: '',
       location: '',
       status: 'active',
-      notes: ''
+      notes: '',
+      category_id: 1
     })
   }
 
@@ -290,7 +410,8 @@ export default function Index() {
         user_name: asset.user_name || '',
         location: asset.location || '',
         status: asset.status || 'active',
-        notes: asset.notes || ''
+        notes: asset.notes || '',
+        category_id: asset.category_id || 1
       })
     } else {
       setFormData({
@@ -305,7 +426,8 @@ export default function Index() {
         user_name: asset.user_name || '',
         location: asset.location || '',
         status: asset.status || 'active',
-        notes: asset.notes || ''
+        notes: asset.notes || '',
+        category_id: asset.category_id || 1
       })
     }
     setIsEditDialogOpen(true)
@@ -585,36 +707,36 @@ export default function Index() {
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <h1 className="text-2xl font-bold">IT资产管理系统</h1>
           <div className="flex items-center gap-2">
-            <span className="text-gray-600">{user?.email}</span>
+            <span className="text-secondary-600">{user?.email}</span>
             {(user?.role === 'admin') && (
               <>
                 <button
                   onClick={() => setIsAddDialogOpen(true)}
-                  className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                  className="btn btn-primary"
                 >
                   新增设备
                 </button>
                 <button
                   onClick={() => navigate('/import')}
-                  className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
+                  className="btn btn-success"
                 >
                   批量导入
                 </button>
                 <button
                   onClick={handleBatchExportQR}
-                  className="px-4 py-2 bg-purple-500 text-white rounded hover:bg-purple-600"
+                  className="btn" style={{ backgroundColor: '#8b5cf6', color: 'white' }} hover:bg-opacity-90
                 >
                   批量导出二维码
                 </button>
                 <button
                   onClick={() => navigate('/history')}
-                  className="px-4 py-2 bg-yellow-500 text-white rounded hover:bg-yellow-600"
+                  className="btn btn-warning"
                 >
                   操作历史
                 </button>
                 <button
                   onClick={() => navigate('/users')}
-                  className="px-4 py-2 bg-indigo-500 text-white rounded hover:bg-indigo-600"
+                  className="btn" style={{ backgroundColor: '#6366f1', color: 'white' }} hover:bg-opacity-90
                 >
                   用户管理
                 </button>
@@ -622,7 +744,7 @@ export default function Index() {
             )}
             <button
               onClick={signOut}
-              className="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600"
+              className="btn btn-secondary"
             >
               退出
             </button>
@@ -631,93 +753,122 @@ export default function Index() {
       </header>
 
       <main className="container mx-auto px-4 py-8">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-          <div className="bg-white rounded-lg shadow p-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+          <div className="card">
             <div className="flex items-center gap-2">
-              <div className="bg-blue-100 p-2 rounded-full">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <div className="bg-primary-100 p-2 rounded-full">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-primary-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
                 </svg>
               </div>
               <div>
-                <p className="text-sm text-gray-500">资产总数</p>
+                <p className="text-sm text-secondary-500">资产总数</p>
                 <p className="text-2xl font-bold">{assets.length}</p>
               </div>
             </div>
           </div>
-          <div className="bg-white rounded-lg shadow p-4">
+          <div className="card">
             <div className="flex items-center gap-2">
-              <div className="bg-green-100 p-2 rounded-full">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <div className="bg-success-100 p-2 rounded-full">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-success-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
               </div>
               <div>
-                <p className="text-sm text-gray-500">使用中</p>
+                <p className="text-sm text-secondary-500">使用中</p>
                 <p className="text-2xl font-bold">{assets.filter(a => a.status === 'active').length}</p>
               </div>
             </div>
           </div>
-          <div className="bg-white rounded-lg shadow p-4">
+          <div className="card">
             <div className="flex items-center gap-2">
-              <div className="bg-yellow-100 p-2 rounded-full">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-yellow-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <div className="bg-warning-100 p-2 rounded-full">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-warning-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
               </div>
               <div>
-                <p className="text-sm text-gray-500">闲置</p>
+                <p className="text-sm text-secondary-500">闲置</p>
                 <p className="text-2xl font-bold">{assets.filter(a => a.status === 'idle').length}</p>
               </div>
             </div>
           </div>
-          <div className="bg-white rounded-lg shadow p-4">
+          <div className="card">
             <div className="flex items-center gap-2">
-              <div className="bg-red-100 p-2 rounded-full">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <div className="bg-danger-100 p-2 rounded-full">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-danger-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                 </svg>
               </div>
               <div>
-                <p className="text-sm text-gray-500">报废</p>
+                <p className="text-sm text-secondary-500">维修中</p>
                 <p className="text-2xl font-bold">{assets.filter(a => a.status === 'maintenance').length}</p>
               </div>
             </div>
           </div>
         </div>
 
-        <div className="bg-white rounded-lg shadow p-6 mb-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+          <div className="card">
+            <h3 className="text-lg font-semibold mb-4">资产状态分布</h3>
+            <div className="h-64 sm:h-80">
+              <Pie data={getStatusDistribution()} options={chartOptions} />
+            </div>
+          </div>
+          <div className="card">
+            <h3 className="text-lg font-semibold mb-4">资产分类分布</h3>
+            <div className="h-64 sm:h-80">
+              <Pie data={getCategoryDistribution()} options={chartOptions} />
+            </div>
+          </div>
+        </div>
+
+        <div className="card mb-6">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
             <div className="relative">
               <input
                 type="text"
                 placeholder="搜索资产编码、品牌、使用人..."
-                className="pl-10 pr-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="input pl-10"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
-              <div className="absolute left-3 top-2.5 text-gray-400">
+              <div className="absolute left-3 top-2.5 text-secondary-400">
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                 </svg>
               </div>
             </div>
-            {selectedIds.length > 0 && (
-              <div className="flex gap-2">
-                <button
-                  onClick={handleBatchDelete}
-                  className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
+            <div className="flex flex-col md:flex-row gap-4">
+              <div>
+                <select
+                  className="input"
+                  value={selectedCategory || ''}
+                  onChange={(e) => setSelectedCategory(e.target.value ? parseInt(e.target.value) : null)}
                 >
-                  批量删除 ({selectedIds.length})
-                </button>
-                <button
-                  onClick={handleBatchExportQR}
-                  className="px-4 py-2 bg-purple-500 text-white rounded hover:bg-purple-600"
-                >
-                  批量导出二维码 ({selectedIds.length})
-                </button>
+                  <option value="">全部分类</option>
+                  {categories.map(category => (
+                    <option key={category.id} value={category.id}>{category.name}</option>
+                  ))}
+                </select>
               </div>
-            )}
+              {selectedIds.length > 0 && (
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleBatchDelete}
+                    className="btn btn-danger"
+                  >
+                    批量删除 ({selectedIds.length})
+                  </button>
+                  <button
+                    onClick={handleBatchExportQR}
+                    className="btn" style={{ backgroundColor: '#8b5cf6', color: 'white' }} hover:bg-opacity-90
+                  >
+                    批量导出二维码 ({selectedIds.length})
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
 
           <div className="overflow-x-auto">
@@ -727,19 +878,20 @@ export default function Index() {
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     <input
                       type="checkbox"
-                      checked={selectedIds.length === filteredAssets.length && filteredAssets.length > 0}
+                      checked={selectedIds.length === assets.length && assets.length > 0}
                       onChange={(e) => handleSelectAll(e.target.checked)}
                       className="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50"
                     />
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">资产编码</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">资产分类</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">CPU</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">内存</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">存储</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">显卡</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">操作系统</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">GPU</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">系统</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">部门</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">用户</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">使用人</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">位置</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">品牌型号</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">状态</th>
@@ -749,18 +901,18 @@ export default function Index() {
               <tbody className="bg-white divide-y divide-gray-200">
                 {loading ? (
                   <tr>
-                    <td colSpan={13} className="px-4 py-8 text-center">
+                    <td colSpan={14} className="px-4 py-8 text-center">
                       加载中...
                     </td>
                   </tr>
-                ) : filteredAssets.length === 0 ? (
+                ) : assets.length === 0 ? (
                   <tr>
-                    <td colSpan={13} className="px-4 py-8 text-center">
+                    <td colSpan={14} className="px-4 py-8 text-center">
                       无资产数据
                     </td>
                   </tr>
                 ) : (
-                  filteredAssets.map((asset) => (
+                  assets.map((asset) => (
                     <tr 
                       key={asset.id} 
                       className="hover:bg-gray-50 cursor-pointer"
@@ -778,40 +930,45 @@ export default function Index() {
                         />
                       </td>
                       <td className="px-4 py-4 whitespace-nowrap">
-                        <div className="text-sm font-medium text-gray-900">{asset.asset_code}</div>
-                      </td>
-                      <td className="px-4 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-900">{asset.cpu}</div>
-                      </td>
-                      <td className="px-4 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-900">{asset.ram}</div>
-                      </td>
-                      <td className="px-4 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-900">{asset.storage}</div>
-                      </td>
-                      <td className="px-4 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-900">{asset.gpu || '-'}</div>
-                      </td>
-                      <td className="px-4 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-900">{asset.os}</div>
-                      </td>
-                      <td className="px-4 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-900">{asset.department}</div>
-                      </td>
-                      <td className="px-4 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-900">{asset.user_name}</div>
-                      </td>
-                      <td className="px-4 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-900">{asset.location}</div>
-                      </td>
-                      <td className="px-4 py-4">
-                        <div className="text-sm text-gray-900">{asset.brand} {asset.model}</div>
-                      </td>
-                      <td className="px-4 py-4 whitespace-nowrap">
-                        <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${asset.status === 'active' ? 'bg-green-100 text-green-800' : asset.status === 'idle' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'}`}>
-                          {asset.status === 'active' ? '使用中' : asset.status === 'idle' ? '闲置' : '维修中'}
-                        </span>
-                      </td>
+                      <div className="text-sm font-medium text-gray-900">{asset.asset_code}</div>
+                    </td>
+                    <td className="px-4 py-4 whitespace-nowrap">
+                      <div className="text-sm text-gray-900">
+                        {categories.find(c => c.id === asset.category_id)?.name || '未分类'}
+                      </div>
+                    </td>
+                    <td className="px-4 py-4 whitespace-nowrap">
+                      <div className="text-sm text-gray-900">{asset.cpu}</div>
+                    </td>
+                    <td className="px-4 py-4 whitespace-nowrap">
+                      <div className="text-sm text-gray-900">{asset.ram}</div>
+                    </td>
+                    <td className="px-4 py-4 whitespace-nowrap">
+                      <div className="text-sm text-gray-900">{asset.storage}</div>
+                    </td>
+                    <td className="px-4 py-4 whitespace-nowrap">
+                      <div className="text-sm text-gray-900">{asset.gpu || '-'}</div>
+                    </td>
+                    <td className="px-4 py-4 whitespace-nowrap">
+                      <div className="text-sm text-gray-900">{asset.os}</div>
+                    </td>
+                    <td className="px-4 py-4 whitespace-nowrap">
+                      <div className="text-sm text-gray-900">{asset.department}</div>
+                    </td>
+                    <td className="px-4 py-4 whitespace-nowrap">
+                      <div className="text-sm text-gray-900">{asset.user_name}</div>
+                    </td>
+                    <td className="px-4 py-4 whitespace-nowrap">
+                      <div className="text-sm text-gray-900">{asset.location}</div>
+                    </td>
+                    <td className="px-4 py-4">
+                      <div className="text-sm text-gray-900">{asset.brand} {asset.model}</div>
+                    </td>
+                    <td className="px-4 py-4 whitespace-nowrap">
+                      <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${asset.status === 'active' ? 'bg-green-100 text-green-800' : asset.status === 'idle' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'}`}>
+                        {asset.status === 'active' ? '使用中' : asset.status === 'idle' ? '闲置' : '维修中'}
+                      </span>
+                    </td>
                       <td className="px-4 py-4 whitespace-nowrap text-sm font-medium" onClick={(e) => e.stopPropagation()}>
                         <button
                           onClick={(e) => {
@@ -849,13 +1006,55 @@ export default function Index() {
               </tbody>
             </table>
           </div>
+          
+          {/* 分页控件 */}
+          <div className="flex flex-col md:flex-row justify-between items-center mt-6 gap-4">
+            <div className="text-sm text-gray-600">
+              显示 {((page - 1) * pageSize) + 1} 到 {Math.min(page * pageSize, totalAssets)} 条，共 {totalAssets} 条
+            </div>
+            <div className="flex items-center gap-2">
+              <select
+                className="input text-sm"
+                value={pageSize}
+                onChange={(e) => {
+                  setPageSize(parseInt(e.target.value))
+                  setPage(1)
+                }}
+                style={{ width: '100px' }}
+              >
+                <option value={5}>5条/页</option>
+                <option value={10}>10条/页</option>
+                <option value={20}>20条/页</option>
+                <option value={50}>50条/页</option>
+              </select>
+              <div className="flex items-center gap-1">
+                <button
+                  className="btn btn-secondary text-sm"
+                  onClick={() => setPage(prev => Math.max(prev - 1, 1))}
+                  disabled={page === 1}
+                >
+                  上一页
+                </button>
+                <span className="px-3 py-2 bg-gray-100 rounded text-sm">
+                  {page}
+                </span>
+                <button
+                  className="btn btn-secondary text-sm"
+                  onClick={() => setPage(prev => Math.min(prev + 1, Math.ceil(totalAssets / pageSize)))}
+                  disabled={page >= Math.ceil(totalAssets / pageSize)}
+                >
+                  下一页
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       </main>
 
       {/* 添加资产对话框 */}
       {isAddDialogOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl p-6 max-w-2xl w-full">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xl font-bold">新增资产</h2>
               <button
@@ -873,75 +1072,75 @@ export default function Index() {
                   <label className="block text-sm font-medium text-gray-700 mb-1">品牌</label>
                   <input
                     type="text"
-                    className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="input"
                     value={formData.brand}
                     onChange={(e) => setFormData({ ...formData, brand: e.target.value })}
                     required
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">型号</label>
+                  <label className="block text-sm font-medium text-secondary-700 mb-1">型号</label>
                   <input
                     type="text"
-                    className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="input"
                     value={formData.model}
                     onChange={(e) => setFormData({ ...formData, model: e.target.value })}
                     required
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">CPU</label>
+                  <label className="block text-sm font-medium text-secondary-700 mb-1">CPU</label>
                   <input
                     type="text"
-                    className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="input"
                     value={formData.cpu}
                     onChange={(e) => setFormData({ ...formData, cpu: e.target.value })}
                     required
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">内存</label>
+                  <label className="block text-sm font-medium text-secondary-700 mb-1">内存</label>
                   <input
                     type="text"
-                    className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="input"
                     value={formData.ram}
                     onChange={(e) => setFormData({ ...formData, ram: e.target.value })}
                     required
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">存储</label>
+                  <label className="block text-sm font-medium text-secondary-700 mb-1">存储</label>
                   <input
                     type="text"
-                    className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="input"
                     value={formData.storage}
                     onChange={(e) => setFormData({ ...formData, storage: e.target.value })}
                     required
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">显卡</label>
+                  <label className="block text-sm font-medium text-secondary-700 mb-1">显卡</label>
                   <input
                     type="text"
-                    className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="input"
                     value={formData.gpu}
                     onChange={(e) => setFormData({ ...formData, gpu: e.target.value })}
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">操作系统</label>
+                  <label className="block text-sm font-medium text-secondary-700 mb-1">操作系统</label>
                   <input
                     type="text"
-                    className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="input"
                     value={formData.os}
                     onChange={(e) => setFormData({ ...formData, os: e.target.value })}
                     required
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">状态</label>
+                  <label className="block text-sm font-medium text-secondary-700 mb-1">状态</label>
                   <select
-                    className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="input"
                     value={formData.status}
                     onChange={(e) => setFormData({ ...formData, status: e.target.value })}
                     required
@@ -952,30 +1151,43 @@ export default function Index() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">部门</label>
+                  <label className="block text-sm font-medium text-secondary-700 mb-1">资产分类</label>
+                  <select
+                    className="input"
+                    value={formData.category_id}
+                    onChange={(e) => setFormData({ ...formData, category_id: parseInt(e.target.value) })}
+                    required
+                  >
+                    {categories.map(category => (
+                      <option key={category.id} value={category.id}>{category.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-secondary-700 mb-1">部门</label>
                   <input
                     type="text"
-                    className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="input"
                     value={formData.department}
                     onChange={(e) => setFormData({ ...formData, department: e.target.value })}
                     required
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">使用人</label>
+                  <label className="block text-sm font-medium text-secondary-700 mb-1">使用人</label>
                   <input
                     type="text"
-                    className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="input"
                     value={formData.user_name}
                     onChange={(e) => setFormData({ ...formData, user_name: e.target.value })}
                     required
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">位置</label>
+                  <label className="block text-sm font-medium text-secondary-700 mb-1">位置</label>
                   <input
                     type="text"
-                    className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="input"
                     value={formData.location}
                     onChange={(e) => setFormData({ ...formData, location: e.target.value })}
                     required
@@ -983,9 +1195,9 @@ export default function Index() {
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">备注</label>
+                <label className="block text-sm font-medium text-secondary-700 mb-1">备注</label>
                 <textarea
-                  className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="input"
                   value={formData.notes}
                   onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
                   rows={3}
@@ -995,13 +1207,13 @@ export default function Index() {
                 <button
                   type="button"
                   onClick={() => setIsAddDialogOpen(false)}
-                  className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
+                  className="btn btn-secondary"
                 >
                   取消
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                  className="btn btn-primary"
                 >
                   保存
                 </button>
@@ -1013,8 +1225,8 @@ export default function Index() {
 
       {/* 编辑资产对话框 */}
       {isEditDialogOpen && editingAsset && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl p-6 max-w-2xl w-full">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xl font-bold">编辑资产</h2>
               <button
@@ -1110,6 +1322,19 @@ export default function Index() {
                         <option value="active">使用中</option>
                         <option value="idle">闲置</option>
                         <option value="maintenance">维修中</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">资产分类</label>
+                      <select
+                        className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        value={formData.category_id}
+                        onChange={(e) => setFormData({ ...formData, category_id: parseInt(e.target.value) })}
+                        required
+                      >
+                        {categories.map(category => (
+                          <option key={category.id} value={category.id}>{category.name}</option>
+                        ))}
                       </select>
                     </div>
                   </>
