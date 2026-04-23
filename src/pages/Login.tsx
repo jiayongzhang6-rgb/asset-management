@@ -4,7 +4,7 @@ import { useAuth } from '../App'
 
 export default function Login() {
   const navigate = useNavigate()
-  const { signIn, signUp } = useAuth()
+  const { signIn, signUp, pendingRedirect, setPendingRedirect } = useAuth()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [isLoading, setIsLoading] = useState(false)
@@ -19,10 +19,23 @@ export default function Login() {
     try {
       if (isSignUp) {
         await signUp(email, password)
-        alert('注册成功！请检查邮箱确认账户')
+        alert('注册成功！')
+        // 注册成功后，如果有待跳转页面，跳转到该页面
+        if (pendingRedirect) {
+          navigate(pendingRedirect)
+          setPendingRedirect(null)
+        } else {
+          navigate('/')
+        }
       } else {
         await signIn(email, password)
-        navigate('/')
+        // 登录成功后，如果有待跳转页面，跳转到该页面
+        if (pendingRedirect) {
+          navigate(pendingRedirect)
+          setPendingRedirect(null)
+        } else {
+          navigate('/')
+        }
       }
     } catch (err: any) {
       setError(err.message || (isSignUp ? '注册失败' : '登录失败'))
@@ -37,6 +50,11 @@ export default function Login() {
         <h2 className="text-2xl font-bold text-center mb-6">
           {isSignUp ? '注册账户' : '登录'}
         </h2>
+        {pendingRedirect && (
+          <div className="mb-4 p-2 bg-blue-100 text-blue-700 rounded">
+            请先登录以查看资产详情
+          </div>
+        )}
         {error && (
           <div className="mb-4 p-2 bg-red-100 text-red-700 rounded">
             {error}
@@ -87,7 +105,10 @@ export default function Login() {
         </div>
         <div className="mt-4">
           <button
-            onClick={() => navigate('/')}
+            onClick={() => {
+              setPendingRedirect(null)
+              navigate('/')
+            }}
             className="w-full border border-gray-300 text-gray-700 py-2 px-4 rounded-md hover:bg-gray-100"
             disabled={isLoading}
           >

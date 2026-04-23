@@ -1,4 +1,4 @@
-﻿import { BrowserRouter, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
+import { BrowserRouter, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import React, { createContext, useContext, useState, useEffect } from 'react'
 import { supabase } from './lib/supabase'
 import Index from './pages/Index'
@@ -16,6 +16,8 @@ interface AuthContextType {
   signUp: (email: string, password: string) => Promise<void>
   signOut: () => Promise<void>
   isAuthenticated: boolean
+  pendingRedirect: string | null
+  setPendingRedirect: (url: string | null) => void
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -35,6 +37,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   })
 
   const [loading, setLoading] = useState(false)
+  const [pendingRedirect, setPendingRedirect] = useState<string | null>(null)
 
   // 2. 修正后的登录/创建逻辑
   const signIn = async (email: string, password: string) => {
@@ -53,7 +56,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (insertError) throw insertError
         userData = data || { email, role }
       }
-      
+
       setUser(userData)
       // 存储到localStorage
       localStorage.setItem('user', JSON.stringify(userData))
@@ -81,7 +84,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (insertError) throw insertError
         userData = data || { email, role }
       }
-      
+
       setUser(userData)
       // 存储到localStorage
       localStorage.setItem('user', JSON.stringify(userData))
@@ -109,6 +112,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         signUp,
         signOut,
         isAuthenticated: !!user,
+        pendingRedirect,
+        setPendingRedirect,
       }}
     >
       {children}
@@ -128,7 +133,7 @@ export function useAuth() {
 function URLHandler() {
   const location = useLocation()
   const navigate = useNavigate()
-  const { isAuthenticated } = useAuth()
+  const { isAuthenticated, setPendingRedirect } = useAuth()
 
   useEffect(() => {
     // 检查URL参数
@@ -137,10 +142,16 @@ function URLHandler() {
     const id = params.get('id')
 
     if (action === 'edit' && id) {
-      // 跳转到资产详情页
-      navigate(`/asset/${id}`)
+      // 如果用户已登录，直接跳转到资产详情页
+      if (isAuthenticated) {
+        navigate(`/asset/${id}`)
+      } else {
+        // 如果用户未登录，保存目标页面，等登录后再跳转
+        setPendingRedirect(`/asset/${id}`)
+        navigate('/login')
+      }
     }
-  }, [location.search, navigate, isAuthenticated])
+  }, [location.search, navigate, isAuthenticated, setPendingRedirect])
 
   return null
 }

@@ -7,14 +7,16 @@ import * as QRCode from 'qrcode'
 export default function AssetDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
-  const { isAuthenticated } = useAuth()
+  const { isAuthenticated, user } = useAuth()
   const [asset, setAsset] = useState(null)
   const [loading, setLoading] = useState(true)
   const [qrcodeUrl, setQrcodeUrl] = useState('')
+  const [assetHistory, setAssetHistory] = useState<any[]>([])
 
   useEffect(() => {
     if (id) {
       fetchAsset()
+      fetchAssetHistory()
     }
   }, [id])
 
@@ -53,12 +55,36 @@ export default function AssetDetail() {
     }
   }
 
+  const fetchAssetHistory = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('operation_history')
+        .select('*')
+        .eq('asset_id', id)
+        .order('created_at', { ascending: false })
+      if (error) throw error
+      setAssetHistory(data || [])
+    } catch (error) {
+      console.error('Error fetching asset history:', error)
+    }
+  }
+
   const handleDelete = async () => {
     if (asset && confirm('确定要删除这个资产吗？')) {
       try {
-        const { data, error } = await supabase.from('assets').delete().eq('id', asset.id)
+        const { error } = await supabase.from('assets').delete().eq('id', asset.id)
         if (error) throw error
-        
+
+        // 记录删除操作
+        if (user) {
+          await supabase.from('operation_history').insert({
+            asset_id: asset.id,
+            operation_type: 'delete',
+            old_data: asset,
+            user_email: user.email
+          })
+        }
+
         // 模拟删除操作
         setTimeout(() => {
           navigate('/')
@@ -87,6 +113,27 @@ export default function AssetDetail() {
         {labels[status] || status}
       </span>
     )
+  }
+
+  const getOperationDetails = (item: any) => {
+    if (item.operation_type === 'create') {
+      return `创建了资产\n使用人: ${item.new_data.user_name}\n部门: ${item.new_data.department}\n位置: ${item.new_data.location}`
+    } else if (item.operation_type === 'update') {
+      let details = `更新了资产\n`
+      if (item.old_data.user_name !== item.new_data.user_name) {
+        details += `使用人: ${item.old_data.user_name} → ${item.new_data.user_name}\n`
+      }
+      if (item.old_data.department !== item.new_data.department) {
+        details += `部门: ${item.old_data.department} → ${item.new_data.department}\n`
+      }
+      if (item.old_data.location !== item.new_data.location) {
+        details += `位置: ${item.old_data.location} → ${item.new_data.location}\n`
+      }
+      return details || '无变化'
+    } else if (item.operation_type === 'delete') {
+      return `删除了资产\n使用人: ${item.old_data.user_name}\n部门: ${item.old_data.department}\n位置: ${item.old_data.location}`
+    }
+    return JSON.stringify(item, null, 2)
   }
 
   if (loading) {
@@ -118,7 +165,7 @@ export default function AssetDetail() {
             </button>
             <h1 className="text-2xl font-bold">资产详情</h1>
           </div>
-          {isAuthenticated && (
+          {isAuthenticated && user && user.role === 'admin' && (
             <div className="flex items-center gap-2">
               <button
                 onClick={handleDelete}
@@ -222,6 +269,54 @@ export default function AssetDetail() {
           </div>
         </div>
 
+        {/* 资产使用历史 */}
+        <div className="mt-6 bg-white rounded-lg shadow p-6">
+          <h2 className="text-xl font-semibold mb-4">使用历史</h2>
+          {assetHistory.length > 0 ? (
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">时间</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">操作类型</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">操作人</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">详情</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {assetHistory.map((item) => (
+                    <tr key={item.id}>
+                      <td className="px-4 py-3 text-sm text-gray-900">
+                        {new Date(item.created_at).toLocaleString('zh-CN')}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-900">
+                        {item.operation_type === 'create' && '创建'}
+                        {item.operation_type === 'update' && '更新'}
+                        {item.operation_type === 'delete' && '删除'}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-900">
+                        {item.user_email}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-900">
+                        <button
+                          onClick={() => alert(getOperationDetails(item))}
+                          className="text-blue-500 hover:underline"
+                        >
+                          查看详情
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="text-center py-8 text-gray-500">
+              暂无使用历史记录
+            </div>
+          )}
+        </div>
+
         <div className="mt-6 bg-white rounded-lg shadow p-6">
           <h2 className="text-xl font-semibold mb-4">资产二维码</h2>
           <div className="flex justify-center">
@@ -235,6 +330,9 @@ export default function AssetDetail() {
               )}
             </div>
           </div>
+          <p className="text-center text-sm text-gray-500 mt-4">
+            扫描二维码查看资产详情
+          </p>
         </div>
       </main>
     </div>
