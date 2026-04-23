@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import React, { useState, useEffect } from 'react'
+﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import React, { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '../App'
 import { supabase, type Asset, type MaintenanceRecord } from '../lib/supabase'
@@ -146,9 +146,9 @@ export default function AssetDetail() {
             if (historyError.message.includes('bigint')) {
               console.log('AssetDetail: Trying with numeric asset_id')
               try {
-                const numericAssetId = Date.now()
+                // 使用原始资产ID，确保资产ID不会变
                 const fallbackHistoryData = {
-                  asset_id: numericAssetId,
+                  asset_id: asset.id,
                   operation_type: 'update',
                   user_email: user.email,
                   created_at: new Date().toISOString()
@@ -211,9 +211,9 @@ export default function AssetDetail() {
             if (historyError.message.includes('bigint')) {
               console.log('AssetDetail: Trying with numeric asset_id')
               try {
-                const numericAssetId = Date.now()
+                // 使用原始资产ID，确保资产ID不会变
                 const fallbackHistoryData = {
-                  asset_id: numericAssetId,
+                  asset_id: asset.id,
                   operation_type: 'delete',
                   user_email: user.email,
                   created_at: new Date().toISOString()
@@ -726,19 +726,7 @@ export default function AssetDetail() {
                         <option value="maintenance">维修中</option>
                       </select>
                     </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">资产分类</label>
-                      <select
-                        className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        value={formData.category_id}
-                        onChange={(e) => setFormData({ ...formData, category_id: parseInt(e.target.value) })}
-                        required
-                      >
-                        {categories.map(category => (
-                          <option key={category.id} value={category.id}>{category.name}</option>
-                        ))}
-                      </select>
-                    </div>
+
                   </>
                 )}
                 <div>
