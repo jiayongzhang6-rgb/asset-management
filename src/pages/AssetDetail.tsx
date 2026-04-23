@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import React, { useState, useEffect } from 'react'
+﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import React, { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '../App'
 import { supabase, type Asset, type MaintenanceRecord } from '../lib/supabase'
@@ -69,7 +69,7 @@ export default function AssetDetail() {
           const controller = new AbortController()
           const timeoutId = setTimeout(() => controller.abort(), 10000) // 10秒超时
           
-          const result = await supabase.from('assets').select('*').eq('id', assetId).single()
+          const result = await supabase.from('assets').select('*').eq('id', assetId).single({ signal: controller.signal })
           clearTimeout(timeoutId)
           
           data = result.data
@@ -200,7 +200,7 @@ export default function AssetDetail() {
       }
       
       console.log('AssetDetail: Updating asset with data:', updateData)
-      const { data, error } = await supabase.from('assets').update(updateData).eq('id', asset.id)
+      const { data, error } = await supabase.from('assets').update(updateData).eq('id', parseInt(asset.id))
       if (error) throw error
       console.log('AssetDetail: Asset updated successfully')
       
@@ -266,7 +266,7 @@ export default function AssetDetail() {
   
   if (asset && confirm('确定要删除这个资产吗？')) {
     try {
-      const { data, error } = await supabase.from('assets').delete().eq('id', asset.id)
+      const { data, error } = await supabase.from('assets').delete().eq('id', parseInt(asset.id))
       if (error) throw error
       
       // 记录操作历史
@@ -401,7 +401,7 @@ export default function AssetDetail() {
           .from('maintenance_records')
           .insert({
             ...maintenanceFormData,
-            asset_id: asset.id
+            asset_id: parseInt(asset.id)
           })
         if (error) throw error
         setIsMaintenanceDialogOpen(false)
