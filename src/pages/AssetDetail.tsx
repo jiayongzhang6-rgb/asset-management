@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import React, { useState, useEffect } from 'react'
+﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import React, { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '../App'
 import { supabase, type Asset, type MaintenanceRecord } from '../lib/supabase'
@@ -43,33 +43,76 @@ export default function AssetDetail() {
 
   // 从Supabase中获取资产数据
   const fetchAsset = async () => {
-    if (!id) return
+    console.log('AssetDetail: fetchAsset called with id:', id)
+    if (!id) {
+      console.error('AssetDetail: No id provided')
+      return
+    }
     setLoading(true)
     try {
       const assetId = parseInt(id)
       if (isNaN(assetId)) {
-        console.error('Invalid asset ID:', id)
+        console.error('AssetDetail: Invalid asset ID:', id)
         return
       }
+      console.log('AssetDetail: Fetching asset with id:', assetId)
+      
+      // 尝试获取资产数据
       const { data, error } = await supabase.from('assets').select('*').eq('id', assetId).single()
-      if (error) throw error
-      setAsset(data)
-      setFormData({
-        brand: data.brand || '',
-        model: data.model || '',
-        cpu: data.cpu || '',
-        ram: data.ram || '',
-        storage: data.storage || '',
-        gpu: data.gpu || '',
-        os: data.os || '',
-        department: data.department || '',
-        user_name: data.user_name || '',
-        location: data.location || '',
-        status: data.status || 'active',
-        notes: data.notes || ''
-      })
+      
+      if (error) {
+        console.error('AssetDetail: Error fetching asset:', error)
+        // 网络错误时，尝试重新获取
+        if (error.message.includes('connection') || error.message.includes('network')) {
+          console.log('AssetDetail: Retrying to fetch asset...')
+          // 等待1秒后重试
+          await new Promise(resolve => setTimeout(resolve, 1000))
+          const { data: retryData, error: retryError } = await supabase.from('assets').select('*').eq('id', assetId).single()
+          if (retryError) {
+            console.error('AssetDetail: Retry error fetching asset:', retryError)
+            throw retryError
+          }
+          console.log('AssetDetail: Asset fetched successfully on retry:', retryData)
+          setAsset(retryData)
+          setFormData({
+            brand: retryData.brand || '',
+            model: retryData.model || '',
+            cpu: retryData.cpu || '',
+            ram: retryData.ram || '',
+            storage: retryData.storage || '',
+            gpu: retryData.gpu || '',
+            os: retryData.os || '',
+            department: retryData.department || '',
+            user_name: retryData.user_name || '',
+            location: retryData.location || '',
+            status: retryData.status || 'active',
+            notes: retryData.notes || ''
+          })
+        } else {
+          throw error
+        }
+      } else {
+        console.log('AssetDetail: Asset fetched successfully:', data)
+        setAsset(data)
+        setFormData({
+          brand: data.brand || '',
+          model: data.model || '',
+          cpu: data.cpu || '',
+          ram: data.ram || '',
+          storage: data.storage || '',
+          gpu: data.gpu || '',
+          os: data.os || '',
+          department: data.department || '',
+          user_name: data.user_name || '',
+          location: data.location || '',
+          status: data.status || 'active',
+          notes: data.notes || ''
+        })
+      }
     } catch (error) {
-      console.error('Error fetching asset:', error)
+      console.error('AssetDetail: Exception fetching asset:', error)
+      // 显示更友好的错误信息
+      alert('无法获取资产数据，请检查网络连接后重试')
     } finally {
       setLoading(false)
     }
