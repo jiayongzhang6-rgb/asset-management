@@ -70,7 +70,8 @@ export default function AssetDetail() {
   }
 
   const handleEdit = () => {
-    navigate(`/asset/${id}/edit`)
+    // 返回到首页并触发编辑对话框
+    navigate('/', { state: { editAssetId: id } })
   }
 
   const handleDelete = async () => {

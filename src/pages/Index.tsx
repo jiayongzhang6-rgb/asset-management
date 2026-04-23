@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../App'
 import { supabase, type Asset } from '../lib/supabase'
 
 export default function Index() {
   const navigate = useNavigate()
+  const location = useLocation()
   const { isAuthenticated, user, signOut, loading: authLoading } = useAuth()
   const [assets, setAssets] = useState<Asset[]>([])
   const [loading, setLoading] = useState(false)
@@ -48,6 +49,17 @@ export default function Index() {
     fetchAssets()
   }, [])
 
+  // 处理从详情页传来的编辑请求
+  useEffect(() => {
+    const editAssetId = location.state?.editAssetId
+    if (editAssetId) {
+      const asset = assets.find(a => a.id === parseInt(editAssetId))
+      if (asset) {
+        handleEdit(asset)
+      }
+    }
+  }, [location.state?.editAssetId, assets])
+
   const filteredAssets = assets.filter(asset =>
     asset.asset_code?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     asset.brand?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -78,6 +90,23 @@ export default function Index() {
     const month = String(date.getMonth() + 1).padStart(2, '0')
     const count = String(assets.length + 1).padStart(3, '0')
     return `PC-${year}-${month}-${count}`
+  }
+
+  const resetForm = () => {
+    setFormData({
+      brand: '',
+      model: '',
+      cpu: '',
+      ram: '',
+      storage: '',
+      gpu: '',
+      os: '',
+      department: '',
+      user_name: '',
+      location: '',
+      status: 'active',
+      notes: ''
+    })
   }
 
   const handleAddSubmit = async (e: React.FormEvent) => {
@@ -253,57 +282,34 @@ export default function Index() {
             })
           }
         }
+        
         await fetchAssets()
         setSelectedIds([])
-        alert('资产删除成功')
+        alert('资产批量删除成功')
       } catch (error) {
-        console.error('Error deleting assets:', error)
-        alert('资产删除失败')
+        console.error('Error batch deleting assets:', error)
+        alert('资产批量删除失败')
       }
     }
   }
 
-  const resetForm = () => {
-    setFormData({
-      brand: '',
-      model: '',
-      cpu: '',
-      ram: '',
-      storage: '',
-      gpu: '',
-      os: '',
-      department: '',
-      user_name: '',
-      location: '',
-      status: 'active',
-      notes: ''
-    })
-  }
-
-  const handleSignOut = async () => {
-    try {
-      await signOut()
-      navigate('/login')
-    } catch (error) {
-      console.error('Error signing out:', error)
-    }
-  }
-
   const handleBatchExportQR = async () => {
+    // 权限控制：只有管理员可以批量导出二维码
+    if (user && user.role !== 'admin') {
+      alert('只有管理员可以批量导出二维码')
+      return
+    }
+    
     if (selectedIds.length === 0) {
       alert('请选择要导出二维码的资产')
       return
     }
-
     try {
-      // 导入QRCode库
       const QRCode = (await import('qrcode')).default
-      
-      // 为每个选中的资产生成二维码
       const qrPromises = selectedIds.map(async (id) => {
         const asset = assets.find(a => a.id === id)
         if (asset) {
-          const qrData = `${window.location.origin}/asset/${asset.id}`
+          const qrData = `${window.location.origin}?action=edit&id=${asset.id}`
           const url = await QRCode.toDataURL(qrData, {
             width: 200,
             margin: 2
@@ -312,89 +318,87 @@ export default function Index() {
         }
         return null
       })
-
       const qrResults = await Promise.all(qrPromises)
-      const validResults = qrResults.filter(result => result !== null)
-
-      // 创建一个包含所有二维码的HTML页面
-      let html = `
+      const validResults = qrResults.filter((result): result is { asset: Asset; url: string } => result !== null)
+      
+      // 生成HTML页面
+      const html = `
         <!DOCTYPE html>
-        <html>
+        <html lang="zh-CN">
         <head>
-          <title>资产二维码</title>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>资产二维码批量导出</title>
           <style>
             body {
               font-family: Arial, sans-serif;
               margin: 20px;
+              background-color: #f5f5f5;
             }
-            .qr-container {
-              display: inline-block;
-              margin: 10px;
+            .container {
+              max-width: 1200px;
+              margin: 0 auto;
+            }
+            h1 {
               text-align: center;
-              page-break-inside: avoid;
+              color: #333;
+            }
+            .qr-grid {
+              display: grid;
+              grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+              gap: 20px;
+              margin-top: 30px;
+            }
+            .qr-item {
+              background: white;
+              padding: 20px;
+              border-radius: 8px;
+              box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+              text-align: center;
             }
             .qr-code {
-              border: 1px solid #ddd;
-              padding: 10px;
-              background: white;
+              margin: 0 auto 10px;
             }
             .asset-info {
-              margin-top: 10px;
-              font-size: 12px;
-              max-width: 200px;
+              font-size: 14px;
+              color: #666;
             }
-            @media print {
-              body {
-                margin: 0;
-              }
-              .qr-container {
-                margin: 20px;
-              }
+            .asset-code {
+              font-weight: bold;
+              color: #333;
+              margin-bottom: 5px;
             }
           </style>
         </head>
         <body>
-          <h1>资产二维码</h1>
-          <div class="qr-grid">
-      `
-
-      validResults.forEach((result: any) => {
-        html += `
-          <div class="qr-container">
-            <div class="qr-code">
-              <img src="${result.url}" alt="${result.asset.asset_code}" />
+          <div class="container">
+            <h1>资产二维码批量导出</h1>
+            <div class="qr-grid">
+              ${validResults.map(({ asset, url }) => `
+                <div class="qr-item">
+                  <div class="asset-code">${asset.asset_code}</div>
+                  <div class="asset-info">${asset.brand} ${asset.model}</div>
+                  <div class="asset-info">${asset.user_name}</div>
+                  <img class="qr-code" src="${url}" alt="${asset.asset_code}" width="200" height="200">
+                </div>
+              `).join('')}
             </div>
-            <div class="asset-info">
-              <p><strong>资产编码:</strong> ${result.asset.asset_code}</p>
-              <p><strong>品牌:</strong> ${result.asset.brand}</p>
-              <p><strong>型号:</strong> ${result.asset.model}</p>
-              <p><strong>使用人:</strong> ${result.asset.user_name}</p>
-            </div>
-          </div>
-        `
-      })
-
-      html += `
           </div>
         </body>
         </html>
       `
-
-      // 创建一个Blob对象
+      
+      // 创建并下载文件
       const blob = new Blob([html], { type: 'text/html' })
       const url = URL.createObjectURL(blob)
-
-      // 创建一个a标签并点击它来下载
       const a = document.createElement('a')
       a.href = url
-      a.download = `资产二维码_${new Date().toISOString().slice(0, 10)}.html`
+      a.download = `资产二维码_${new Date().toISOString().split('T')[0]}.html`
       document.body.appendChild(a)
       a.click()
       document.body.removeChild(a)
-
-      // 释放URL对象
       URL.revokeObjectURL(url)
-
+      
       alert('二维码导出成功')
     } catch (error) {
       console.error('Error exporting QR codes:', error)
@@ -402,25 +406,7 @@ export default function Index() {
     }
   }
 
-  const getStatusBadge = (status: string) => {
-    const labels: Record<string, string> = {
-      active: '使用中',
-      idle: '闲置',
-      maintenance: '维修中'
-    }
-    const colors: Record<string, string> = {
-      active: 'bg-green-100 text-green-800',
-      idle: 'bg-yellow-100 text-yellow-800',
-      maintenance: 'bg-red-100 text-red-800'
-    }
-    return (
-      <span className={`px-2 py-1 rounded text-xs font-medium ${colors[status] || 'bg-gray-100 text-gray-800'}`}>
-        {labels[status] || status}
-      </span>
-    )
-  }
-
-  if (authLoading || loading) {
+  if (authLoading) {
     return (
       <div className="flex items-center justify-center h-screen">
         <div className="text-lg">加载中...</div>
@@ -428,68 +414,64 @@ export default function Index() {
     )
   }
 
+  if (!isAuthenticated) {
+    navigate('/login')
+    return null
+  }
+
   return (
     <div className="min-h-screen bg-gray-100">
-      <header className="bg-blue-600 text-white shadow">
-        <div className="container mx-auto px-4 py-3 flex items-center justify-between">
-          <h1 className="text-xl font-bold">IT资产管理系统</h1>
-          <div className="flex items-center gap-3">
-            {isAuthenticated ? (
+      <header className="bg-white shadow">
+        <div className="container mx-auto px-4 py-4 flex items-center justify-between">
+          <h1 className="text-2xl font-bold">IT资产管理系统</h1>
+          <div className="flex items-center gap-2">
+            <span className="text-gray-600">{user?.email}</span>
+            {(user?.role === 'admin') && (
               <>
-                <span className="text-sm">{user?.email}</span>
-                {user && user.role === 'admin' && (
-                  <>
-                    <button
-                      onClick={() => navigate('/import')}
-                      className="px-3 py-1 bg-white text-blue-600 rounded text-sm hover:bg-gray-100"
-                    >
-                      批量导入
-                    </button>
-                    <button
-                      onClick={() => setIsAddDialogOpen(true)}
-                      className="px-3 py-1 bg-white text-blue-600 rounded text-sm hover:bg-gray-100"
-                    >
-                      + 新增设备
-                    </button>
-                    <button
-                      onClick={() => navigate('/history')}
-                      className="px-3 py-1 bg-white text-blue-600 rounded text-sm hover:bg-gray-100"
-                    >
-                      操作历史
-                    </button>
-                    <button
-                      onClick={handleBatchExportQR}
-                      className="px-3 py-1 bg-white text-blue-600 rounded text-sm hover:bg-gray-100"
-                    >
-                      批量导出二维码
-                    </button>
-                  </>
-                )}
                 <button
-                  onClick={handleSignOut}
-                  className="px-3 py-1 bg-white text-blue-600 rounded text-sm hover:bg-gray-100"
+                  onClick={() => setIsAddDialogOpen(true)}
+                  className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
                 >
-                  退出
+                  新增设备
+                </button>
+                <button
+                  onClick={() => navigate('/import')}
+                  className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
+                >
+                  批量导入
+                </button>
+                <button
+                  onClick={handleBatchExportQR}
+                  className="px-4 py-2 bg-purple-500 text-white rounded hover:bg-purple-600"
+                >
+                  批量导出二维码
+                </button>
+                <button
+                  onClick={() => navigate('/history')}
+                  className="px-4 py-2 bg-yellow-500 text-white rounded hover:bg-yellow-600"
+                >
+                  操作历史
                 </button>
               </>
-            ) : (
-              <button
-                onClick={() => navigate('/login')}
-                className="px-3 py-1 bg-white text-blue-600 rounded text-sm hover:bg-gray-100"
-              >
-                登录
-              </button>
             )}
+            <button
+              onClick={signOut}
+              className="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600"
+            >
+              退出
+            </button>
           </div>
         </div>
       </header>
 
-      <main className="container mx-auto px-4 py-6">
+      <main className="container mx-auto px-4 py-8">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
           <div className="bg-white rounded-lg shadow p-4">
-            <div className="flex items-center gap-3">
-              <div className="p-3 bg-blue-100 rounded-lg">
-                <i className="fa fa-desktop text-blue-600 text-xl"></i>
+            <div className="flex items-center gap-2">
+              <div className="bg-blue-100 p-2 rounded-full">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
+                </svg>
               </div>
               <div>
                 <p className="text-sm text-gray-500">资产总数</p>
@@ -498,9 +480,11 @@ export default function Index() {
             </div>
           </div>
           <div className="bg-white rounded-lg shadow p-4">
-            <div className="flex items-center gap-3">
-              <div className="p-3 bg-green-100 rounded-lg">
-                <i className="fa fa-check-circle text-green-600 text-xl"></i>
+            <div className="flex items-center gap-2">
+              <div className="bg-green-100 p-2 rounded-full">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
               </div>
               <div>
                 <p className="text-sm text-gray-500">使用中</p>
@@ -509,9 +493,11 @@ export default function Index() {
             </div>
           </div>
           <div className="bg-white rounded-lg shadow p-4">
-            <div className="flex items-center gap-3">
-              <div className="p-3 bg-yellow-100 rounded-lg">
-                <i className="fa fa-clock-o text-yellow-600 text-xl"></i>
+            <div className="flex items-center gap-2">
+              <div className="bg-yellow-100 p-2 rounded-full">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-yellow-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
               </div>
               <div>
                 <p className="text-sm text-gray-500">闲置</p>
@@ -520,9 +506,11 @@ export default function Index() {
             </div>
           </div>
           <div className="bg-white rounded-lg shadow p-4">
-            <div className="flex items-center gap-3">
-              <div className="p-3 bg-red-100 rounded-lg">
-                <i className="fa fa-trash text-red-600 text-xl"></i>
+            <div className="flex items-center gap-2">
+              <div className="bg-red-100 p-2 rounded-full">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
               </div>
               <div>
                 <p className="text-sm text-gray-500">报废</p>
@@ -532,35 +520,37 @@ export default function Index() {
           </div>
         </div>
 
-        <div className="bg-white rounded-lg shadow p-6">
-          <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center gap-4">
-              <div className="relative">
-                <input
-                  type="text"
-                  placeholder="搜索资产编码、品牌、使用人..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10 pr-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-                <svg className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <div className="bg-white rounded-lg shadow p-6 mb-6">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="搜索资产编码、品牌、使用人..."
+                className="pl-10 pr-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+              <div className="absolute left-3 top-2.5 text-gray-400">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                 </svg>
               </div>
-              <select className="px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
-                <option value="">全部部门</option>
-              </select>
-              <select className="px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
-                <option value="">全部状态</option>
-              </select>
             </div>
-            {isAuthenticated && selectedIds.length > 0 && (
-              <button
-                onClick={handleBatchDelete}
-                className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
-              >
-                删除选中 ({selectedIds.length})
-              </button>
+            {selectedIds.length > 0 && (
+              <div className="flex gap-2">
+                <button
+                  onClick={handleBatchDelete}
+                  className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
+                >
+                  批量删除 ({selectedIds.length})
+                </button>
+                <button
+                  onClick={handleBatchExportQR}
+                  className="px-4 py-2 bg-purple-500 text-white rounded hover:bg-purple-600"
+                >
+                  批量导出二维码 ({selectedIds.length})
+                </button>
+              </div>
             )}
           </div>
 
@@ -568,15 +558,13 @@ export default function Index() {
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-12">
-                    {isAuthenticated && (
-                      <input
-                        type="checkbox"
-                        checked={selectedIds.length === filteredAssets.length && filteredAssets.length > 0}
-                        onChange={(e) => handleSelectAll(e.target.checked)}
-                        className="rounded text-blue-600 focus:ring-blue-500"
-                      />
-                    )}
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.length === filteredAssets.length && filteredAssets.length > 0}
+                      onChange={(e) => handleSelectAll(e.target.checked)}
+                      className="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50"
+                    />
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">资产编码</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">CPU</th>
@@ -589,375 +577,419 @@ export default function Index() {
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">位置</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">品牌型号</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">状态</th>
-                  {isAuthenticated && <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">操作</th>}
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">操作</th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {filteredAssets.map((asset) => (
-                  <tr key={asset.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => navigate(`/asset/${asset.id}`)}>
-                    <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
-                      {isAuthenticated && (
+                {loading ? (
+                  <tr>
+                    <td colSpan={13} className="px-4 py-8 text-center">
+                      加载中...
+                    </td>
+                  </tr>
+                ) : filteredAssets.length === 0 ? (
+                  <tr>
+                    <td colSpan={13} className="px-4 py-8 text-center">
+                      无资产数据
+                    </td>
+                  </tr>
+                ) : (
+                  filteredAssets.map((asset) => (
+                    <tr key={asset.id} className="hover:bg-gray-50">
+                      <td className="px-4 py-4 whitespace-nowrap">
                         <input
                           type="checkbox"
                           checked={selectedIds.includes(asset.id)}
                           onChange={(e) => handleSelectOne(asset.id, e.target.checked)}
-                          className="rounded text-blue-600 focus:ring-blue-500"
+                          className="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50"
                         />
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-sm font-medium text-gray-900">{asset.asset_code}</td>
-                    <td className="px-4 py-3 text-sm text-gray-900">{asset.cpu}</td>
-                    <td className="px-4 py-3 text-sm text-gray-900">{asset.ram}</td>
-                    <td className="px-4 py-3 text-sm text-gray-900">{asset.storage}</td>
-                    <td className="px-4 py-3 text-sm text-gray-900">{asset.gpu || '-'}</td>
-                    <td className="px-4 py-3 text-sm text-gray-900">{asset.os}</td>
-                    <td className="px-4 py-3 text-sm text-gray-900">{asset.department}</td>
-                    <td className="px-4 py-3 text-sm text-gray-900">{asset.user_name}</td>
-                    <td className="px-4 py-3 text-sm text-gray-900">{asset.location}</td>
-                    <td className="px-4 py-3 text-sm text-gray-900">{asset.brand} {asset.model}</td>
-                    <td className="px-4 py-3 text-sm">{getStatusBadge(asset.status)}</td>
-                    {isAuthenticated && (
-                      <td className="px-4 py-3 text-sm" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={() => handleEdit(asset)}
-                            className="text-blue-500 hover:underline"
-                          >
-                            编辑
-                          </button>
+                      </td>
+                      <td className="px-4 py-4 whitespace-nowrap">
+                        <div className="text-sm font-medium text-gray-900">{asset.asset_code}</div>
+                      </td>
+                      <td className="px-4 py-4 whitespace-nowrap">
+                        <div className="text-sm text-gray-900">{asset.cpu}</div>
+                      </td>
+                      <td className="px-4 py-4 whitespace-nowrap">
+                        <div className="text-sm text-gray-900">{asset.ram}</div>
+                      </td>
+                      <td className="px-4 py-4 whitespace-nowrap">
+                        <div className="text-sm text-gray-900">{asset.storage}</div>
+                      </td>
+                      <td className="px-4 py-4 whitespace-nowrap">
+                        <div className="text-sm text-gray-900">{asset.gpu || '-'}</div>
+                      </td>
+                      <td className="px-4 py-4 whitespace-nowrap">
+                        <div className="text-sm text-gray-900">{asset.os}</div>
+                      </td>
+                      <td className="px-4 py-4 whitespace-nowrap">
+                        <div className="text-sm text-gray-900">{asset.department}</div>
+                      </td>
+                      <td className="px-4 py-4 whitespace-nowrap">
+                        <div className="text-sm text-gray-900">{asset.user_name}</div>
+                      </td>
+                      <td className="px-4 py-4 whitespace-nowrap">
+                        <div className="text-sm text-gray-900">{asset.location}</div>
+                      </td>
+                      <td className="px-4 py-4">
+                        <div className="text-sm text-gray-900">{asset.brand} {asset.model}</div>
+                      </td>
+                      <td className="px-4 py-4 whitespace-nowrap">
+                        <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${asset.status === 'active' ? 'bg-green-100 text-green-800' : asset.status === 'idle' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'}`}>
+                          {asset.status === 'active' ? '使用中' : asset.status === 'idle' ? '闲置' : '维修中'}
+                        </span>
+                      </td>
+                      <td className="px-4 py-4 whitespace-nowrap text-sm font-medium">
+                        <button
+                          onClick={() => navigate(`/asset/${asset.id}`)}
+                          className="text-blue-600 hover:text-blue-900 mr-3"
+                        >
+                          详情
+                        </button>
+                        <button
+                          onClick={() => handleEdit(asset)}
+                          className="text-green-600 hover:text-green-900 mr-3"
+                        >
+                          编辑
+                        </button>
+                        {user?.role === 'admin' && (
                           <button
                             onClick={() => handleDelete(asset.id)}
-                            className="text-red-500 hover:underline"
+                            className="text-red-600 hover:text-red-900"
                           >
                             删除
                           </button>
-                        </div>
+                        )}
                       </td>
-                    )}
-                  </tr>
-                ))}
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
-          {filteredAssets.length === 0 && (
-            <div className="text-center py-8 text-gray-500">
-              没有找到资产
-            </div>
-          )}
         </div>
       </main>
 
       {/* 添加资产对话框 */}
       {isAddDialogOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg shadow-lg max-w-2xl w-full max-h-[80vh] overflow-y-auto">
-            <div className="p-6">
-              <h3 className="text-xl font-semibold mb-4">添加新资产</h3>
-              <form onSubmit={handleAddSubmit} className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-gray-700 mb-2">品牌</label>
-                    <input
-                      type="text"
-                      value={formData.brand}
-                      onChange={(e) => setFormData({ ...formData, brand: e.target.value })}
-                      className="w-full px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-gray-700 mb-2">型号</label>
-                    <input
-                      type="text"
-                      value={formData.model}
-                      onChange={(e) => setFormData({ ...formData, model: e.target.value })}
-                      className="w-full px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-gray-700 mb-2">CPU</label>
-                    <input
-                      type="text"
-                      value={formData.cpu}
-                      onChange={(e) => setFormData({ ...formData, cpu: e.target.value })}
-                      className="w-full px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-gray-700 mb-2">内存</label>
-                    <input
-                      type="text"
-                      value={formData.ram}
-                      onChange={(e) => setFormData({ ...formData, ram: e.target.value })}
-                      className="w-full px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-gray-700 mb-2">存储</label>
-                    <input
-                      type="text"
-                      value={formData.storage}
-                      onChange={(e) => setFormData({ ...formData, storage: e.target.value })}
-                      className="w-full px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-gray-700 mb-2">显卡</label>
-                    <input
-                      type="text"
-                      value={formData.gpu}
-                      onChange={(e) => setFormData({ ...formData, gpu: e.target.value })}
-                      className="w-full px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-gray-700 mb-2">操作系统</label>
-                    <input
-                      type="text"
-                      value={formData.os}
-                      onChange={(e) => setFormData({ ...formData, os: e.target.value })}
-                      className="w-full px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-gray-700 mb-2">部门</label>
-                    <input
-                      type="text"
-                      value={formData.department}
-                      onChange={(e) => setFormData({ ...formData, department: e.target.value })}
-                      className="w-full px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-gray-700 mb-2">用户</label>
-                    <input
-                      type="text"
-                      value={formData.user_name}
-                      onChange={(e) => setFormData({ ...formData, user_name: e.target.value })}
-                      className="w-full px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-gray-700 mb-2">位置</label>
-                    <input
-                      type="text"
-                      value={formData.location}
-                      onChange={(e) => setFormData({ ...formData, location: e.target.value })}
-                      className="w-full px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-gray-700 mb-2">状态</label>
-                    <select
-                      value={formData.status}
-                      onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-                      className="w-full px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value="active">使用中</option>
-                      <option value="idle">闲置</option>
-                      <option value="maintenance">维修中</option>
-                    </select>
-                  </div>
-                </div>
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl p-6 max-w-2xl w-full">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold">新增资产</h2>
+              <button
+                onClick={() => setIsAddDialogOpen(false)}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <form onSubmit={handleAddSubmit} className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-gray-700 mb-2">备注</label>
-                  <textarea
-                    value={formData.notes}
-                    onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                    className="w-full px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    rows={3}
+                  <label className="block text-sm font-medium text-gray-700 mb-1">品牌</label>
+                  <input
+                    type="text"
+                    className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={formData.brand}
+                    onChange={(e) => setFormData({ ...formData, brand: e.target.value })}
+                    required
                   />
                 </div>
-                <div className="flex gap-2">
-                  <button type="submit" className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 flex-1">
-                    添加资产
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsAddDialogOpen(false)
-                      resetForm()
-                    }}
-                    className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
-                  >
-                    取消
-                  </button>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">型号</label>
+                  <input
+                    type="text"
+                    className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={formData.model}
+                    onChange={(e) => setFormData({ ...formData, model: e.target.value })}
+                    required
+                  />
                 </div>
-              </form>
-            </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">CPU</label>
+                  <input
+                    type="text"
+                    className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={formData.cpu}
+                    onChange={(e) => setFormData({ ...formData, cpu: e.target.value })}
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">内存</label>
+                  <input
+                    type="text"
+                    className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={formData.ram}
+                    onChange={(e) => setFormData({ ...formData, ram: e.target.value })}
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">存储</label>
+                  <input
+                    type="text"
+                    className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={formData.storage}
+                    onChange={(e) => setFormData({ ...formData, storage: e.target.value })}
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">显卡</label>
+                  <input
+                    type="text"
+                    className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={formData.gpu}
+                    onChange={(e) => setFormData({ ...formData, gpu: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">操作系统</label>
+                  <input
+                    type="text"
+                    className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={formData.os}
+                    onChange={(e) => setFormData({ ...formData, os: e.target.value })}
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">状态</label>
+                  <select
+                    className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={formData.status}
+                    onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+                    required
+                  >
+                    <option value="active">使用中</option>
+                    <option value="idle">闲置</option>
+                    <option value="maintenance">维修中</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">部门</label>
+                  <input
+                    type="text"
+                    className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={formData.department}
+                    onChange={(e) => setFormData({ ...formData, department: e.target.value })}
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">使用人</label>
+                  <input
+                    type="text"
+                    className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={formData.user_name}
+                    onChange={(e) => setFormData({ ...formData, user_name: e.target.value })}
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">位置</label>
+                  <input
+                    type="text"
+                    className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={formData.location}
+                    onChange={(e) => setFormData({ ...formData, location: e.target.value })}
+                    required
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">备注</label>
+                <textarea
+                  className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  value={formData.notes}
+                  onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                  rows={3}
+                />
+              </div>
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsAddDialogOpen(false)}
+                  className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
+                >
+                  取消
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                >
+                  保存
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
 
       {/* 编辑资产对话框 */}
-      {isEditDialogOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg shadow-lg max-w-2xl w-full max-h-[80vh] overflow-y-auto">
-            <div className="p-6">
-              <h3 className="text-xl font-semibold mb-4">编辑资产</h3>
-              <form onSubmit={handleEditSubmit} className="space-y-4">
-                {/* 管理员可以修改所有信息 */}
-                {user && user.role === 'admin' && (
-                  <div className="grid grid-cols-2 gap-4">
+      {isEditDialogOpen && editingAsset && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl p-6 max-w-2xl w-full">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold">编辑资产</h2>
+              <button
+                onClick={() => setIsEditDialogOpen(false)}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <form onSubmit={handleEditSubmit} className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {user?.role === 'admin' && (
+                  <>
                     <div>
-                      <label className="block text-gray-700 mb-2">品牌</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">品牌</label>
                       <input
                         type="text"
+                        className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                         value={formData.brand}
                         onChange={(e) => setFormData({ ...formData, brand: e.target.value })}
-                        className="w-full px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                         required
                       />
                     </div>
                     <div>
-                      <label className="block text-gray-700 mb-2">型号</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">型号</label>
                       <input
                         type="text"
+                        className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                         value={formData.model}
                         onChange={(e) => setFormData({ ...formData, model: e.target.value })}
-                        className="w-full px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                         required
                       />
                     </div>
                     <div>
-                      <label className="block text-gray-700 mb-2">CPU</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">CPU</label>
                       <input
                         type="text"
+                        className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                         value={formData.cpu}
                         onChange={(e) => setFormData({ ...formData, cpu: e.target.value })}
-                        className="w-full px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                         required
                       />
                     </div>
                     <div>
-                      <label className="block text-gray-700 mb-2">内存</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">内存</label>
                       <input
                         type="text"
+                        className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                         value={formData.ram}
                         onChange={(e) => setFormData({ ...formData, ram: e.target.value })}
-                        className="w-full px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                         required
                       />
                     </div>
                     <div>
-                      <label className="block text-gray-700 mb-2">存储</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">存储</label>
                       <input
                         type="text"
+                        className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                         value={formData.storage}
                         onChange={(e) => setFormData({ ...formData, storage: e.target.value })}
-                        className="w-full px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                         required
                       />
                     </div>
                     <div>
-                      <label className="block text-gray-700 mb-2">显卡</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">显卡</label>
                       <input
                         type="text"
+                        className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                         value={formData.gpu}
                         onChange={(e) => setFormData({ ...formData, gpu: e.target.value })}
-                        className="w-full px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                       />
                     </div>
                     <div>
-                      <label className="block text-gray-700 mb-2">操作系统</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">操作系统</label>
                       <input
                         type="text"
+                        className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                         value={formData.os}
                         onChange={(e) => setFormData({ ...formData, os: e.target.value })}
-                        className="w-full px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                         required
                       />
                     </div>
-                  </div>
-                )}
-                
-                {/* 所有用户都可以修改的信息 */}
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-gray-700 mb-2">部门</label>
-                    <input
-                      type="text"
-                      value={formData.department}
-                      onChange={(e) => setFormData({ ...formData, department: e.target.value })}
-                      className="w-full px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-gray-700 mb-2">用户</label>
-                    <input
-                      type="text"
-                      value={formData.user_name}
-                      onChange={(e) => setFormData({ ...formData, user_name: e.target.value })}
-                      className="w-full px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-gray-700 mb-2">位置</label>
-                    <input
-                      type="text"
-                      value={formData.location}
-                      onChange={(e) => setFormData({ ...formData, location: e.target.value })}
-                      className="w-full px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      required
-                    />
-                  </div>
-                  {user && user.role === 'admin' && (
                     <div>
-                      <label className="block text-gray-700 mb-2">状态</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">状态</label>
                       <select
+                        className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                         value={formData.status}
                         onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-                        className="w-full px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        required
                       >
                         <option value="active">使用中</option>
                         <option value="idle">闲置</option>
                         <option value="maintenance">维修中</option>
                       </select>
                     </div>
-                  )}
-                </div>
-                
-                {/* 管理员可以修改备注 */}
-                {user && user.role === 'admin' && (
-                  <div>
-                    <label className="block text-gray-700 mb-2">备注</label>
-                    <textarea
-                      value={formData.notes}
-                      onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                      className="w-full px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      rows={3}
-                    />
-                  </div>
+                  </>
                 )}
-                
-                <div className="flex gap-2">
-                  <button type="submit" className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 flex-1">
-                    更新资产
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsEditDialogOpen(false)
-                      setEditingAsset(null)
-                      resetForm()
-                    }}
-                    className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
-                  >
-                    取消
-                  </button>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">部门</label>
+                  <input
+                    type="text"
+                    className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={formData.department}
+                    onChange={(e) => setFormData({ ...formData, department: e.target.value })}
+                    required
+                  />
                 </div>
-              </form>
-            </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">使用人</label>
+                  <input
+                    type="text"
+                    className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={formData.user_name}
+                    onChange={(e) => setFormData({ ...formData, user_name: e.target.value })}
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">位置</label>
+                  <input
+                    type="text"
+                    className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={formData.location}
+                    onChange={(e) => setFormData({ ...formData, location: e.target.value })}
+                    required
+                  />
+                </div>
+              </div>
+              {user?.role === 'admin' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">备注</label>
+                  <textarea
+                    className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={formData.notes}
+                    onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                    rows={3}
+                  />
+                </div>
+              )}
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsEditDialogOpen(false)}
+                  className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
+                >
+                  取消
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                >
+                  保存
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
