@@ -47,21 +47,11 @@ export default function OperationHistory() {
 
   const getOperationDetails = (item: any) => {
     if (item.operation_type === 'create') {
-      return `创建了资产\n使用人: ${item.new_data.user_name}\n部门: ${item.new_data.department}\n位置: ${item.new_data.location}`
+      return `创建了资产\n资产ID: ${item.asset_id}\n操作人: ${item.user_email}\n时间: ${new Date(item.created_at).toLocaleString('zh-CN')}`
     } else if (item.operation_type === 'update') {
-      let details = `更新了资产\n`
-      if (item.old_data.user_name !== item.new_data.user_name) {
-        details += `使用人: ${item.old_data.user_name} → ${item.new_data.user_name}\n`
-      }
-      if (item.old_data.department !== item.new_data.department) {
-        details += `部门: ${item.old_data.department} → ${item.new_data.department}\n`
-      }
-      if (item.old_data.location !== item.new_data.location) {
-        details += `位置: ${item.old_data.location} → ${item.new_data.location}\n`
-      }
-      return details || '无变化'
+      return `更新了资产\n资产ID: ${item.asset_id}\n操作人: ${item.user_email}\n时间: ${new Date(item.created_at).toLocaleString('zh-CN')}`
     } else if (item.operation_type === 'delete') {
-      return `删除了资产\n使用人: ${item.old_data.user_name}\n部门: ${item.old_data.department}\n位置: ${item.old_data.location}`
+      return `删除了资产\n资产ID: ${item.asset_id}\n操作人: ${item.user_email}\n时间: ${new Date(item.created_at).toLocaleString('zh-CN')}`
     }
     return JSON.stringify(item, null, 2)
   }

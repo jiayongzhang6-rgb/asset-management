@@ -223,14 +223,13 @@ export default function Index() {
             if (historyError.message.includes('bigint')) {
               console.log('Index: Trying with numeric asset_id')
               try {
-                // 尝试从UUID中提取数字部分或使用时间戳
-                const numericAssetId = Date.now()
-                const fallbackHistoryData = {
-                  asset_id: numericAssetId,
-                  operation_type: 'create',
-                  user_email: user.email,
-                  created_at: new Date().toISOString()
-                }
+                  // 使用原始资产ID，确保资产ID不会变
+                  const fallbackHistoryData = {
+                    asset_id: data[0].id,
+                    operation_type: 'create',
+                    user_email: user.email,
+                    created_at: new Date().toISOString()
+                  }
                 const { data: fallbackResult, error: fallbackError } = await supabase.from('operation_history').insert(fallbackHistoryData)
                 if (fallbackError) {
                   console.error('Index: Fallback error recording operation history:', fallbackError)
@@ -305,10 +304,9 @@ export default function Index() {
               if (historyError.message.includes('bigint')) {
                 console.log('Index: Trying with numeric asset_id')
                 try {
-                  // 尝试从UUID中提取数字部分或使用时间戳
-                  const numericAssetId = Date.now()
+                  // 使用原始资产ID，确保资产ID不会变
                   const fallbackHistoryData = {
-                    asset_id: numericAssetId,
+                    asset_id: editingAsset.id,
                     operation_type: 'update',
                     user_email: user.email,
                     created_at: new Date().toISOString()
@@ -423,10 +421,9 @@ export default function Index() {
               if (historyError.message.includes('bigint')) {
                 console.log('Index: Trying with numeric asset_id')
                 try {
-                  // 尝试从UUID中提取数字部分或使用时间戳
-                  const numericAssetId = Date.now()
+                  // 使用原始资产ID，确保资产ID不会变
                   const fallbackHistoryData = {
-                    asset_id: numericAssetId,
+                    asset_id: id,
                     operation_type: 'delete',
                     user_email: user.email,
                     created_at: new Date().toISOString()
@@ -501,9 +498,9 @@ export default function Index() {
               if (historyError) {
                 // 如果是类型错误，尝试使用ID的数字部分
                 if (historyError.message.includes('bigint')) {
-                  const numericAssetId = Date.now()
+                  // 使用原始资产ID，确保资产ID不会变
                   const fallbackHistoryData = {
-                    asset_id: numericAssetId,
+                    asset_id: id,
                     operation_type: 'delete',
                     user_email: user.email,
                     created_at: new Date().toISOString()
@@ -762,14 +759,7 @@ export default function Index() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-          <div className="card">
-            <h3 className="text-lg font-semibold mb-4">资产状态分布</h3>
-            <div className="h-64 sm:h-80">
-              <Pie data={getStatusDistribution()} options={chartOptions} />
-            </div>
-          </div>
-        </div>
+
 
         <div className="card mb-6">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
