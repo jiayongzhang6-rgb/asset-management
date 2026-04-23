@@ -69,6 +69,10 @@ export default function AssetDetail() {
     }
   }
 
+  const handleEdit = () => {
+    navigate(`/asset/${id}/edit`)
+  }
+
   const handleDelete = async () => {
     if (asset && confirm('确定要删除这个资产吗？')) {
       try {
@@ -165,14 +169,22 @@ export default function AssetDetail() {
             </button>
             <h1 className="text-2xl font-bold">资产详情</h1>
           </div>
-          {isAuthenticated && user && user.role === 'admin' && (
+          {isAuthenticated && (
             <div className="flex items-center gap-2">
               <button
-                onClick={handleDelete}
-                className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
+                onClick={handleEdit}
+                className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
               >
-                删除
+                编辑
               </button>
+              {user && user.role === 'admin' && (
+                <button
+                  onClick={handleDelete}
+                  className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
+                >
+                  删除
+                </button>
+              )}
             </div>
           )}
         </div>
