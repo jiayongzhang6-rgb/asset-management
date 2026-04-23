@@ -117,19 +117,32 @@ export default function AssetDetail() {
           }
         }
         
+        console.log('AssetDetail: Updating asset with data:', updateData)
         const { data, error } = await supabase.from('assets').update(updateData).eq('id', asset.id)
         if (error) throw error
+        console.log('AssetDetail: Asset updated successfully')
         
         // 记录操作历史
         if (user) {
-          await supabase.from('operation_history').insert({
-            asset_id: asset.id,
-            operation_type: 'update',
-            old_data: asset,
-            new_data: updateData,
-            user_email: user.email
-          })
-          console.log('Operation history recorded for update')
+          console.log('AssetDetail: Recording operation history for update')
+          try {
+            const { data: historyData, error: historyError } = await supabase.from('operation_history').insert({
+              asset_id: asset.id,
+              operation_type: 'update',
+              old_data: asset,
+              new_data: updateData,
+              user_email: user.email
+            })
+            if (historyError) {
+              console.error('AssetDetail: Error recording operation history:', historyError)
+              alert('资产更新成功，但操作历史记录失败')
+            } else {
+              console.log('AssetDetail: Operation history recorded successfully for update:', historyData)
+            }
+          } catch (historyError) {
+            console.error('AssetDetail: Exception recording operation history:', historyError)
+            alert('资产更新成功，但操作历史记录失败')
+          }
         }
         
         await fetchAsset()
@@ -151,12 +164,24 @@ export default function AssetDetail() {
 
         // 记录删除操作
         if (user) {
-          await supabase.from('operation_history').insert({
-            asset_id: asset.id,
-            operation_type: 'delete',
-            old_data: asset,
-            user_email: user.email
-          })
+          console.log('AssetDetail: Recording operation history for delete')
+          try {
+            const { data: historyData, error: historyError } = await supabase.from('operation_history').insert({
+              asset_id: asset.id,
+              operation_type: 'delete',
+              old_data: asset,
+              user_email: user.email
+            })
+            if (historyError) {
+              console.error('AssetDetail: Error recording operation history:', historyError)
+              alert('资产删除成功，但操作历史记录失败')
+            } else {
+              console.log('AssetDetail: Operation history recorded successfully for delete:', historyData)
+            }
+          } catch (historyError) {
+            console.error('AssetDetail: Exception recording operation history:', historyError)
+            alert('资产删除成功，但操作历史记录失败')
+          }
         }
 
         // 模拟删除操作

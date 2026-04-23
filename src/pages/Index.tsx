@@ -116,18 +116,31 @@ export default function Index() {
         ...formData,
         asset_code: generateAssetCode()
       }
+      console.log('Index: Creating asset with data:', assetData)
       const { data, error } = await supabase.from('assets').insert(assetData)
       if (error) throw error
+      console.log('Index: Asset created successfully:', data)
       
       // 记录操作历史
       if (user) {
-        await supabase.from('operation_history').insert({
-          asset_id: data[0].id,
-          operation_type: 'create',
-          new_data: assetData,
-          user_email: user.email
-        })
-        console.log('Operation history recorded for create')
+        console.log('Index: Recording operation history for create')
+        try {
+          const { data: historyData, error: historyError } = await supabase.from('operation_history').insert({
+            asset_id: data[0].id,
+            operation_type: 'create',
+            new_data: assetData,
+            user_email: user.email
+          })
+          if (historyError) {
+            console.error('Index: Error recording operation history:', historyError)
+            alert('资产创建成功，但操作历史记录失败')
+          } else {
+            console.log('Index: Operation history recorded successfully for create:', historyData)
+          }
+        } catch (historyError) {
+          console.error('Index: Exception recording operation history:', historyError)
+          alert('资产创建成功，但操作历史记录失败')
+        }
       }
       
       await fetchAssets()
@@ -154,19 +167,32 @@ export default function Index() {
           }
         }
         
+        console.log('Index: Updating asset with data:', updateData)
         const { data, error } = await supabase.from('assets').update(updateData).eq('id', editingAsset.id)
         if (error) throw error
+        console.log('Index: Asset updated successfully')
         
         // 记录操作历史
         if (user) {
-          await supabase.from('operation_history').insert({
-            asset_id: editingAsset.id,
-            operation_type: 'update',
-            old_data: editingAsset,
-            new_data: updateData,
-            user_email: user.email
-          })
-          console.log('Operation history recorded for update')
+          console.log('Index: Recording operation history for update')
+          try {
+            const { data: historyData, error: historyError } = await supabase.from('operation_history').insert({
+              asset_id: editingAsset.id,
+              operation_type: 'update',
+              old_data: editingAsset,
+              new_data: updateData,
+              user_email: user.email
+            })
+            if (historyError) {
+              console.error('Index: Error recording operation history:', historyError)
+              alert('资产更新成功，但操作历史记录失败')
+            } else {
+              console.log('Index: Operation history recorded successfully for update:', historyData)
+            }
+          } catch (historyError) {
+            console.error('Index: Exception recording operation history:', historyError)
+            alert('资产更新成功，但操作历史记录失败')
+          }
         }
         
         await fetchAssets()
@@ -236,13 +262,24 @@ export default function Index() {
         
         // 记录操作历史
         if (user) {
-          await supabase.from('operation_history').insert({
-            asset_id: id,
-            operation_type: 'delete',
-            old_data: asset,
-            user_email: user.email
-          })
-          console.log('Operation history recorded for delete')
+          console.log('Index: Recording operation history for delete')
+          try {
+            const { data: historyData, error: historyError } = await supabase.from('operation_history').insert({
+              asset_id: id,
+              operation_type: 'delete',
+              old_data: asset,
+              user_email: user.email
+            })
+            if (historyError) {
+              console.error('Index: Error recording operation history:', historyError)
+              alert('资产删除成功，但操作历史记录失败')
+            } else {
+              console.log('Index: Operation history recorded successfully for delete:', historyData)
+            }
+          } catch (historyError) {
+            console.error('Index: Exception recording operation history:', historyError)
+            alert('资产删除成功，但操作历史记录失败')
+          }
         }
         
         await fetchAssets()
@@ -277,12 +314,16 @@ export default function Index() {
           
           // 记录操作历史
           if (user) {
-            await supabase.from('operation_history').insert({
-              asset_id: id,
-              operation_type: 'delete',
-              old_data: asset,
-              user_email: user.email
-            })
+            try {
+              await supabase.from('operation_history').insert({
+                asset_id: id,
+                operation_type: 'delete',
+                old_data: asset,
+                user_email: user.email
+              })
+            } catch (historyError) {
+              console.error('Index: Error recording operation history for delete:', historyError)
+            }
           }
         }
         
