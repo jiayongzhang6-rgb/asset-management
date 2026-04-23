@@ -11,6 +11,7 @@ export default function AssetDetail() {
   const [loading, setLoading] = useState(false)
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
   const [isQRDialogOpen, setIsQRDialogOpen] = useState(false)
+  const [qrCodeUrl, setQrCodeUrl] = useState('')
   const [assetHistory, setAssetHistory] = useState<any[]>([])
   const [formData, setFormData] = useState({
     brand: '',
@@ -189,6 +190,7 @@ export default function AssetDetail() {
         width: 300,
         margin: 2
       })
+      setQrCodeUrl(url)
       return url
     } catch (error) {
       console.error('Error generating QR code:', error)
@@ -197,8 +199,8 @@ export default function AssetDetail() {
   }
 
   const handleGenerateQR = async () => {
-    const qrCodeUrl = await generateQRCode()
-    if (qrCodeUrl) {
+    const url = await generateQRCode()
+    if (url) {
       setIsQRDialogOpen(true)
     }
   }
@@ -602,18 +604,19 @@ export default function AssetDetail() {
             <div className="text-center">
               <p className="mb-4">扫描二维码查看资产详情</p>
               <div className="mb-4">
-                <img
-                  src={`data:image/svg+xml;base64,${btoa(`
-                    <svg xmlns="http://www.w3.org/2000/svg" width="300" height="300" viewBox="0 0 300 300">
-                      <rect width="300" height="300" fill="white"/>
-                      <text x="150" y="150" font-family="Arial" font-size="12" text-anchor="middle" fill="black">
-                        {asset.asset_code}
-                      </text>
-                    </svg>
-                  `)}`}
-                  alt="QR Code"
-                  className="mx-auto"
-                />
+                {qrCodeUrl ? (
+                  <img
+                    src={qrCodeUrl}
+                    alt="QR Code"
+                    className="mx-auto"
+                    width={300}
+                    height={300}
+                  />
+                ) : (
+                  <div className="flex items-center justify-center h-64 bg-gray-100 rounded">
+                    <div className="text-gray-500">生成中...</div>
+                  </div>
+                )}
               </div>
               <p className="text-sm text-gray-500">{asset.asset_code}</p>
             </div>

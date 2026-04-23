@@ -10,7 +10,7 @@ if (!supabaseUrl || !supabaseAnonKey) {
 export const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
 export type Asset = {
-  id: number
+  id: string
   asset_code: string
   brand: string
   model: string
