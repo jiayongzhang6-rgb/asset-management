@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import React, { useState, useEffect } from 'react'
+﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import React, { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '../App'
 import { supabase, type Asset, type MaintenanceRecord } from '../lib/supabase'
@@ -486,34 +486,34 @@ export default function AssetDetail() {
 
   return (
     <div className="min-h-screen bg-gray-100">
-      <header className="bg-white shadow">
-        <div className="container mx-auto px-4 py-4 flex items-center justify-between">
+      <header className="bg-blue-600 text-white">
+        <div className="container mx-auto px-4 py-3 flex items-center justify-between">
           <h1 className="text-2xl font-bold">IT资产管理系统</h1>
           <div className="flex items-center gap-2">
-            <span className="text-gray-600">{user?.email}</span>
+            <span>{user?.email}</span>
             {(user?.role === 'admin') && (
               <>
                 <button
                   onClick={() => navigate('/')}
-                  className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                  className="bg-white text-blue-600 px-3 py-1 rounded text-sm font-medium hover:bg-blue-50"
                 >
                   返回列表
                 </button>
                 <button
                   onClick={() => navigate('/import')}
-                  className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
+                  className="bg-white text-blue-600 px-3 py-1 rounded text-sm font-medium hover:bg-blue-50"
                 >
                   批量导入
                 </button>
                 <button
                   onClick={() => navigate('/history')}
-                  className="px-4 py-2 bg-yellow-500 text-white rounded hover:bg-yellow-600"
+                  className="bg-white text-blue-600 px-3 py-1 rounded text-sm font-medium hover:bg-blue-50"
                 >
                   操作历史
                 </button>
                 <button
                   onClick={() => navigate('/users')}
-                  className="px-4 py-2 bg-indigo-500 text-white rounded hover:bg-indigo-600"
+                  className="bg-white text-blue-600 px-3 py-1 rounded text-sm font-medium hover:bg-blue-50"
                 >
                   用户管理
                 </button>
@@ -521,7 +521,7 @@ export default function AssetDetail() {
             )}
             <button
               onClick={signOut}
-              className="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600"
+              className="bg-white text-blue-600 px-3 py-1 rounded text-sm font-medium hover:bg-blue-50"
             >
               退出
             </button>
@@ -535,7 +535,7 @@ export default function AssetDetail() {
             <div className="flex items-center gap-2">
               <button
                 onClick={() => navigate('/')}
-                className="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600"
+                className="bg-white text-blue-600 px-3 py-1 rounded text-sm font-medium hover:bg-blue-50 border border-blue-200"
               >
                 返回列表
               </button>
@@ -544,20 +544,20 @@ export default function AssetDetail() {
             <div className="flex gap-2">
               <button
                 onClick={() => setIsEditDialogOpen(true)}
-                className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                className="bg-white text-blue-600 px-3 py-1 rounded text-sm font-medium hover:bg-blue-50 border border-blue-200"
               >
                 编辑
               </button>
               <button
                 onClick={handleGenerateQR}
-                className="px-4 py-2 bg-purple-500 text-white rounded hover:bg-purple-600"
+                className="bg-white text-blue-600 px-3 py-1 rounded text-sm font-medium hover:bg-blue-50 border border-blue-200"
               >
                 查看二维码
               </button>
               {user?.role === 'admin' && (
                 <button
                   onClick={handleAddMaintenance}
-                  className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
+                  className="bg-white text-blue-600 px-3 py-1 rounded text-sm font-medium hover:bg-blue-50 border border-blue-200"
                 >
                   添加维修记录
                 </button>
@@ -565,7 +565,7 @@ export default function AssetDetail() {
               {user?.role === 'admin' && (
                 <button
                   onClick={handleDelete}
-                  className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
+                  className="bg-white text-red-600 px-3 py-1 rounded text-sm font-medium hover:bg-red-50 border border-red-200"
                 >
                   删除
                 </button>

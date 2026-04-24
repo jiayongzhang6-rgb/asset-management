@@ -612,6 +612,69 @@ export default function Index() {
     }
   }
 
+  // 批量导出设备数据
+  const handleBatchExportDevices = async () => {
+    // 权限控制：只有管理员可以批量导出设备
+    if (user && user.role !== 'admin') {
+      alert('只有管理员可以批量导出设备')
+      return
+    }
+    
+    if (selectedIds.length === 0) {
+      alert('请选择要导出的设备')
+      return
+    }
+    
+    try {
+      console.log('Index: Starting batch device export for', selectedIds.length, 'assets')
+      
+      // 筛选出选中的资产
+      const selectedAssets = assets.filter(asset => selectedIds.includes(asset.id))
+      
+      if (selectedAssets.length === 0) {
+        alert('没有找到可导出的设备')
+        return
+      }
+      
+      // 生成CSV内容
+      const headers = ['资产编码', '品牌', '型号', 'CPU', '内存', '存储', '显卡', '操作系统', '部门', '使用人', '位置', '状态', '备注']
+      const csvContent = [
+        headers.join(','),
+        ...selectedAssets.map(asset => [
+          asset.asset_code,
+          asset.brand,
+          asset.model,
+          asset.cpu,
+          formatMemory(asset.ram),
+          formatStorage(asset.storage),
+          asset.gpu || '-',
+          asset.os,
+          asset.department,
+          asset.user_name,
+          asset.location,
+          asset.status === 'active' ? '使用中' : asset.status === 'idle' ? '闲置' : '维修中',
+          asset.notes || ''
+        ].map(field => `"${field}"`).join(','))
+      ].join('\n')
+      
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `设备导出_${new Date().toISOString().split('T')[0]}.csv`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+      
+      alert('设备导出成功')
+      console.log('Index: Batch device export completed successfully')
+    } catch (error) {
+      console.error('Error exporting devices:', error)
+      alert('设备导出失败')
+    }
+  }
+
   // 检查认证状态并导航
   useEffect(() => {
     if (!isAuthenticated) {
@@ -652,7 +715,7 @@ export default function Index() {
                   onClick={() => navigate('/users')}
                   className="bg-white text-blue-600 px-3 py-1 rounded text-sm font-medium hover:bg-blue-50"
                 >
-                  设置
+                  用户管理
                 </button>
                 <button
                   onClick={() => navigate('/history')}
@@ -741,7 +804,7 @@ export default function Index() {
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
             </div>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <select
                 className="px-3 py-2 border rounded text-sm"
                 value={departmentFilter}
@@ -763,6 +826,28 @@ export default function Index() {
                 <option value="idle">闲置</option>
                 <option value="maintenance">维修中</option>
               </select>
+              {selectedIds.length > 0 && (
+                <>
+                  <button
+                    onClick={handleBatchDelete}
+                    className="px-3 py-2 bg-red-500 text-white rounded text-sm hover:bg-red-600"
+                  >
+                    批量删除 ({selectedIds.length})
+                  </button>
+                  <button
+                    onClick={handleBatchExportQR}
+                    className="px-3 py-2 bg-purple-500 text-white rounded text-sm hover:bg-purple-600"
+                  >
+                    批量导出二维码 ({selectedIds.length})
+                  </button>
+                  <button
+                    onClick={handleBatchExportDevices}
+                    className="px-3 py-2 bg-green-500 text-white rounded text-sm hover:bg-green-600"
+                  >
+                    批量导出设备 ({selectedIds.length})
+                  </button>
+                </>
+              )}
             </div>
           </div>
 
