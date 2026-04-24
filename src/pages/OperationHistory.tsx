@@ -8,7 +8,7 @@ export default function OperationHistory() {
   const { isAuthenticated, user, signOut } = useAuth()
   const [history, setHistory] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
-  const [assetIdFilter, setAssetIdFilter] = useState('')
+  const [assetCodeFilter, setAssetCodeFilter] = useState('')
   const [filteredHistory, setFilteredHistory] = useState<any[]>([])
 
   useEffect(() => {
@@ -20,12 +20,12 @@ export default function OperationHistory() {
   }, [isAuthenticated, navigate])
 
   useEffect(() => {
-    if (assetIdFilter) {
-      setFilteredHistory(history.filter(item => item.asset_id.toString().includes(assetIdFilter)))
+    if (assetCodeFilter) {
+      setFilteredHistory(history.filter(item => item.asset_code.includes(assetCodeFilter)))
     } else {
       setFilteredHistory(history)
     }
-  }, [assetIdFilter, history])
+  }, [assetCodeFilter, history])
 
   const fetchHistory = async () => {
     setLoading(true)
@@ -47,29 +47,18 @@ export default function OperationHistory() {
 
   const getOperationDetails = (item: any) => {
     if (item.operation_type === 'create') {
-      return `创建了资产\n资产ID: ${item.asset_id}\n操作人: ${item.user_email}\n时间: ${new Date(item.created_at).toLocaleString('zh-CN')}`
+      return `创建了资产\n资产编码: ${item.asset_code}\n操作人: ${item.user_email}\n时间: ${new Date(item.created_at).toLocaleString('zh-CN')}`
     } else if (item.operation_type === 'update') {
-      return `更新了资产\n资产ID: ${item.asset_id}\n操作人: ${item.user_email}\n时间: ${new Date(item.created_at).toLocaleString('zh-CN')}`
+      return `更新了资产\n资产编码: ${item.asset_code}\n操作人: ${item.user_email}\n时间: ${new Date(item.created_at).toLocaleString('zh-CN')}`
     } else if (item.operation_type === 'delete') {
-      return `删除了资产\n资产ID: ${item.asset_id}\n操作人: ${item.user_email}\n时间: ${new Date(item.created_at).toLocaleString('zh-CN')}`
+      return `删除了资产\n资产编码: ${item.asset_code}\n操作人: ${item.user_email}\n时间: ${new Date(item.created_at).toLocaleString('zh-CN')}`
     }
     return JSON.stringify(item, null, 2)
   }
 
-  const viewAsset = async (assetId: number) => {
+  const viewAsset = async (assetCode: string) => {
     try {
-      const { data, error } = await supabase
-        .from('assets')
-        .select('asset_code')
-        .eq('id', assetId)
-        .single()
-      if (error) {
-        console.error('Error fetching asset code:', error)
-        return
-      }
-      if (data && data.asset_code) {
-        navigate(`/asset/${data.asset_code}`)
-      }
+      navigate(`/asset/${assetCode}`)
     } catch (error) {
       console.error('Error viewing asset:', error)
     }
@@ -115,10 +104,10 @@ export default function OperationHistory() {
             <div className="relative">
               <input
                 type="text"
-                placeholder="按资产ID筛选"
+                placeholder="按资产编码筛选"
                 className="pl-10 pr-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                value={assetIdFilter}
-                onChange={(e) => setAssetIdFilter(e.target.value)}
+                value={assetCodeFilter}
+                onChange={(e) => setAssetCodeFilter(e.target.value)}
               />
               <div className="absolute left-3 top-2.5 text-gray-400">
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -142,7 +131,7 @@ export default function OperationHistory() {
                 <thead className="bg-gray-50">
                   <tr>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">时间</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">资产ID</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">资产编码</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">操作类型</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">操作人</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">详情</th>
@@ -156,7 +145,7 @@ export default function OperationHistory() {
                         {new Date(item.created_at).toLocaleString('zh-CN')}
                       </td>
                       <td className="px-4 py-3 text-sm text-gray-900">
-                        {item.asset_id}
+                        {item.asset_code}
                       </td>
                       <td className="px-4 py-3 text-sm text-gray-900">
                         {item.operation_type === 'create' && '创建'}
@@ -176,7 +165,7 @@ export default function OperationHistory() {
                       </td>
                       <td className="px-4 py-3 text-sm font-medium">
                         <button
-                          onClick={() => viewAsset(item.asset_id)}
+                          onClick={() => viewAsset(item.asset_code)}
                           className="text-green-600 hover:text-green-900"
                         >
                           查看资产

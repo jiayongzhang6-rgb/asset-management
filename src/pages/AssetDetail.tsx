@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import React, { useState, useEffect } from 'react'
+﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import React, { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '../App'
 import { supabase, type Asset, type MaintenanceRecord } from '../lib/supabase'
@@ -137,7 +137,7 @@ export default function AssetDetail() {
       const { data, error } = await supabase
         .from('operation_history')
         .select('*')
-        .eq('asset_id', asset.id)
+        .eq('asset_code', asset.asset_code)
         .order('created_at', { ascending: false })
       if (error) throw error
       setAssetHistory(data || [])
@@ -194,12 +194,12 @@ export default function AssetDetail() {
       console.log('AssetDetail: Asset updated successfully')
       
       // 记录操作历史
-      if (user && asset && asset.id) {
+      if (user && asset && asset.asset_code) {
         console.log('AssetDetail: Recording operation history for update')
-        console.log('AssetDetail: Asset ID for history:', asset.id, typeof asset.id)
+        console.log('AssetDetail: Asset code for history:', asset.asset_code)
         try {
           const historyData = {
-            asset_id: asset.id,
+            asset_code: asset.asset_code,
             operation_type: 'update',
             user_email: user.email,
             created_at: new Date().toISOString()
@@ -215,7 +215,7 @@ export default function AssetDetail() {
           console.error('AssetDetail: Exception recording operation history:', historyError)
         }
       } else {
-        console.warn('AssetDetail: Cannot record operation history - asset or asset.id is missing:', asset)
+        console.warn('AssetDetail: Cannot record operation history - asset or asset.asset_code is missing:', asset)
       }
       
       await fetchAsset()
@@ -246,7 +246,7 @@ export default function AssetDetail() {
         console.log('AssetDetail: Recording operation history for delete')
         try {
           const historyData = {
-            asset_id: parseInt(asset.id),
+            asset_code: asset.asset_code,
             operation_type: 'delete',
             user_email: user.email,
             created_at: new Date().toISOString()
@@ -255,26 +255,6 @@ export default function AssetDetail() {
           const { data: historyResult, error: historyError } = await supabase.from('operation_history').insert(historyData)
           if (historyError) {
             console.error('AssetDetail: Error recording operation history:', historyError)
-            if (historyError.message.includes('bigint')) {
-              console.log('AssetDetail: Trying with numeric asset_id')
-              try {
-                // 使用原始资产ID，确保资产ID不会变
-                const fallbackHistoryData = {
-                  asset_id: parseInt(asset.id),
-                  operation_type: 'delete',
-                  user_email: user.email,
-                  created_at: new Date().toISOString()
-                }
-                const { data: fallbackResult, error: fallbackError } = await supabase.from('operation_history').insert(fallbackHistoryData)
-                if (fallbackError) {
-                  console.error('AssetDetail: Fallback error recording operation history:', fallbackError)
-                } else {
-                  console.log('AssetDetail: Operation history recorded successfully with fallback:', fallbackResult)
-                }
-              } catch (fallbackError) {
-                console.error('AssetDetail: Exception in fallback recording:', fallbackError)
-              }
-            }
           } else {
             console.log('AssetDetail: Operation history recorded successfully for delete:', historyResult)
           }
@@ -596,7 +576,7 @@ export default function AssetDetail() {
                           className="text-blue-600 hover:text-blue-900"
                           onClick={() => {
                             // 显示更详细的操作历史信息
-                            alert(`操作类型: ${history.operation_type === 'create' ? '创建' : history.operation_type === 'update' ? '更新' : '删除'}\n操作人: ${history.user_email}\n操作时间: ${new Date(history.created_at).toLocaleString()}\n资产ID: ${history.asset_id}`)
+                            alert(`操作类型: ${history.operation_type === 'create' ? '创建' : history.operation_type === 'update' ? '更新' : '删除'}\n操作人: ${history.user_email}\n操作时间: ${new Date(history.created_at).toLocaleString()}\n资产编码: ${history.asset_code}`)
                           }}
                         >
                           查看详情

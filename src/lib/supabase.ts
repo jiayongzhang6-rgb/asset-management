@@ -118,7 +118,7 @@ export const initDatabase = async () => {
         sql: `
           CREATE TABLE operation_history (
             id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-            asset_id bigint NOT NULL,
+            asset_code VARCHAR(50) NOT NULL,
             operation_type VARCHAR(20) NOT NULL,
             user_email VARCHAR(255) NOT NULL,
             created_at TIMESTAMP DEFAULT NOW()
@@ -132,7 +132,7 @@ export const initDatabase = async () => {
         console.log('Operation history table created successfully')
       }
     } else {
-      // 检查表结构，确保asset_id是bigint类型
+      // 检查表结构，确保asset_code字段存在
       const { data: columns, error: columnsError } = await supabase
         .from('information_schema.columns')
         .select('column_name, data_type')
@@ -142,9 +142,20 @@ export const initDatabase = async () => {
       if (columnsError) {
         console.error('Error checking columns:', columnsError)
       } else {
-        const assetIdColumn = columns.find(col => col.column_name === 'asset_id')
-        if (assetIdColumn && assetIdColumn.data_type !== 'bigint') {
-          console.warn('Asset ID column is not bigint type, consider migrating it')
+        const assetCodeColumn = columns.find(col => col.column_name === 'asset_code')
+        if (!assetCodeColumn) {
+          // 如果asset_code字段不存在，修改表结构
+          const { error: alterError } = await supabase.rpc('execute_sql', {
+            sql: `
+              ALTER TABLE operation_history DROP COLUMN IF EXISTS asset_id;
+              ALTER TABLE operation_history ADD COLUMN asset_code VARCHAR(50) NOT NULL;
+            `
+          })
+          if (alterError) {
+            console.error('Error altering operation_history table:', alterError)
+          } else {
+            console.log('Operation history table altered successfully to use asset_code')
+          }
         }
       }
     }
