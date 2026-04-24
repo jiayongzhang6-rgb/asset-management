@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import React, { useState, useEffect } from 'react'
+﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import React, { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '../App'
 import { supabase, type Asset, type MaintenanceRecord } from '../lib/supabase'
@@ -540,7 +540,7 @@ export default function AssetDetail() {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          opacity: 0.03, 
+          opacity: 0.08, 
           zIndex: -1,
           pointerEvents: 'none'
         }}>
@@ -698,7 +698,11 @@ export default function AssetDetail() {
                           className="text-blue-600 hover:text-blue-900"
                           onClick={() => {
                             // 显示更详细的操作历史信息
-                            alert(`操作类型: ${history.operation_type === 'create' ? '创建' : history.operation_type === 'update' ? '更新' : '删除'}\n操作人: ${history.user_email}\n操作时间: ${new Date(history.created_at).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}\n资产编码: ${history.asset_code}\n变更内容: ${history.changes || '无'}`)
+                            // 手动调整UTC时间到北京时间（+8小时）
+                            const utcDate = new Date(history.created_at);
+                            const beijingDate = new Date(utcDate.getTime() + 8 * 60 * 60 * 1000);
+                            const beijingTime = beijingDate.toLocaleString('zh-CN');
+                            alert(`操作类型: ${history.operation_type === 'create' ? '创建' : history.operation_type === 'update' ? '更新' : '删除'}\n操作人: ${history.user_email}\n操作时间: ${beijingTime}\n资产编码: ${history.asset_code}\n变更内容: ${history.changes || '无'}`)
                           }}
                         >
                           查看详情

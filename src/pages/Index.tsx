@@ -746,7 +746,7 @@ export default function Index() {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          opacity: 0.03, 
+          opacity: 0.08, 
           zIndex: -1,
           pointerEvents: 'none'
         }}>

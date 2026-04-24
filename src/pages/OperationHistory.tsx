@@ -46,12 +46,17 @@ export default function OperationHistory() {
   }
 
   const getOperationDetails = (item: any) => {
+    // 手动调整UTC时间到北京时间（+8小时）
+    const utcDate = new Date(item.created_at);
+    const beijingDate = new Date(utcDate.getTime() + 8 * 60 * 60 * 1000);
+    const beijingTime = beijingDate.toLocaleString('zh-CN');
+    
     if (item.operation_type === 'create') {
-      return `创建了资产\n资产编码: ${item.asset_code}\n操作人: ${item.user_email}\n时间: ${new Date(item.created_at).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}`
+      return `创建了资产\n资产编码: ${item.asset_code}\n操作人: ${item.user_email}\n时间: ${beijingTime}`
     } else if (item.operation_type === 'update') {
-      return `更新了资产\n资产编码: ${item.asset_code}\n操作人: ${item.user_email}\n时间: ${new Date(item.created_at).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}\n变更内容: ${item.changes || '无'}`
+      return `更新了资产\n资产编码: ${item.asset_code}\n操作人: ${item.user_email}\n时间: ${beijingTime}\n变更内容: ${item.changes || '无'}`
     } else if (item.operation_type === 'delete') {
-      return `删除了资产\n资产编码: ${item.asset_code}\n操作人: ${item.user_email}\n时间: ${new Date(item.created_at).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}`
+      return `删除了资产\n资产编码: ${item.asset_code}\n操作人: ${item.user_email}\n时间: ${beijingTime}`
     }
     return JSON.stringify(item, null, 2)
   }
@@ -156,7 +161,12 @@ export default function OperationHistory() {
                   {filteredHistory.map((item) => (
                     <tr key={item.id}>
                       <td className="px-4 py-3 text-sm text-gray-900">
-                        {new Date(item.created_at).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}
+                        {/* 手动调整UTC时间到北京时间（+8小时） */}
+                        {(() => {
+                          const utcDate = new Date(item.created_at);
+                          const beijingDate = new Date(utcDate.getTime() + 8 * 60 * 60 * 1000);
+                          return beijingDate.toLocaleString('zh-CN');
+                        })()}
                       </td>
                       <td className="px-4 py-3 text-sm text-gray-900">
                         {item.asset_code}
