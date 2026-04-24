@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import React, { useState, useEffect } from 'react'
+﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import React, { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '../App'
 import { supabase, type Asset, type MaintenanceRecord } from '../lib/supabase'
@@ -157,6 +157,49 @@ export default function AssetDetail() {
       }
     }
     
+    // 生成更新内容描述
+    const changes = []
+    if (asset.user_name !== formData.user_name) {
+      changes.push(`使用人: ${asset.user_name} → ${formData.user_name}`)
+    }
+    if (asset.location !== formData.location) {
+      changes.push(`位置: ${asset.location} → ${formData.location}`)
+    }
+    if (asset.department !== formData.department) {
+      changes.push(`部门: ${asset.department} → ${formData.department}`)
+    }
+    if (user && user.role === 'admin') {
+      if (asset.brand !== formData.brand) {
+        changes.push(`品牌: ${asset.brand} → ${formData.brand}`)
+      }
+      if (asset.model !== formData.model) {
+        changes.push(`型号: ${asset.model} → ${formData.model}`)
+      }
+      if (asset.cpu !== formData.cpu) {
+        changes.push(`CPU: ${asset.cpu} → ${formData.cpu}`)
+      }
+      if (asset.ram !== formData.ram) {
+        changes.push(`内存: ${asset.ram} → ${formData.ram}`)
+      }
+      if (asset.storage !== formData.storage) {
+        changes.push(`存储: ${asset.storage} → ${formData.storage}`)
+      }
+      if (asset.gpu !== formData.gpu) {
+        changes.push(`GPU: ${asset.gpu || '无'} → ${formData.gpu || '无'}`)
+      }
+      if (asset.os !== formData.os) {
+        changes.push(`操作系统: ${asset.os} → ${formData.os}`)
+      }
+      if (asset.status !== formData.status) {
+        changes.push(`状态: ${asset.status === 'active' ? '使用中' : asset.status === 'idle' ? '闲置' : '维修中'} → ${formData.status === 'active' ? '使用中' : formData.status === 'idle' ? '闲置' : '维修中'}`)
+      }
+      if (asset.notes !== formData.notes) {
+        changes.push('备注: 已修改')
+      }
+    }
+    
+    const changeDescription = changes.length > 0 ? changes.join('; ') : '无具体变更'
+    
     console.log('AssetDetail: Updating asset with data:', updateData)
     console.log('AssetDetail: Asset:', asset)
     const { data, error } = await supabase.from('assets').update(updateData).eq('id', asset.id)
@@ -174,7 +217,8 @@ export default function AssetDetail() {
           asset_code: assetCodeToUse,
           operation_type: 'update',
           user_email: user.email,
-          created_at: new Date().toISOString()
+          created_at: new Date().toISOString(),
+          changes: changeDescription
         }
         console.log('AssetDetail: Inserting operation history with data:', historyData)
         const { data: historyResult, error: historyError } = await supabase.from('operation_history').insert(historyData)
@@ -566,7 +610,7 @@ export default function AssetDetail() {
                           className="text-blue-600 hover:text-blue-900"
                           onClick={() => {
                             // 显示更详细的操作历史信息
-                            alert(`操作类型: ${history.operation_type === 'create' ? '创建' : history.operation_type === 'update' ? '更新' : '删除'}\n操作人: ${history.user_email}\n操作时间: ${new Date(history.created_at).toLocaleString()}\n资产编码: ${history.asset_code}`)
+                            alert(`操作类型: ${history.operation_type === 'create' ? '创建' : history.operation_type === 'update' ? '更新' : '删除'}\n操作人: ${history.user_email}\n操作时间: ${new Date(history.created_at).toLocaleString()}\n资产编码: ${history.asset_code}\n变更内容: ${history.changes || '无'}`)
                           }}
                         >
                           查看详情

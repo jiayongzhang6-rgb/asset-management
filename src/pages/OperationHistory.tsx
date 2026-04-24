@@ -49,7 +49,7 @@ export default function OperationHistory() {
     if (item.operation_type === 'create') {
       return `创建了资产\n资产编码: ${item.asset_code}\n操作人: ${item.user_email}\n时间: ${new Date(item.created_at).toLocaleString('zh-CN')}`
     } else if (item.operation_type === 'update') {
-      return `更新了资产\n资产编码: ${item.asset_code}\n操作人: ${item.user_email}\n时间: ${new Date(item.created_at).toLocaleString('zh-CN')}`
+      return `更新了资产\n资产编码: ${item.asset_code}\n操作人: ${item.user_email}\n时间: ${new Date(item.created_at).toLocaleString('zh-CN')}\n变更内容: ${item.changes || '无'}`
     } else if (item.operation_type === 'delete') {
       return `删除了资产\n资产编码: ${item.asset_code}\n操作人: ${item.user_email}\n时间: ${new Date(item.created_at).toLocaleString('zh-CN')}`
     }
