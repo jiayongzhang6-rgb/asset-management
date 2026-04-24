@@ -35,12 +35,17 @@ export default function Index() {
   })
   // 分页相关状态
   const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(10)
+  const [pageSize, setPageSize] = useState(50) // 默认50条一页
   const [totalAssets, setTotalAssets] = useState(0)
+  // 筛选相关状态
+  const [statusFilter, setStatusFilter] = useState('all') // all, active, idle, maintenance
+  const [departmentFilter, setDepartmentFilter] = useState('all')
+  // 全部资产数据（用于汇总统计）
+  const [allAssets, setAllAssets] = useState<Asset[]>([])
   
   // 计算资产状态分布数据
   const getStatusDistribution = () => {
-    const statusCounts = assets.reduce((acc, asset) => {
+    const statusCounts = allAssets.reduce((acc, asset) => {
       acc[asset.status] = (acc[asset.status] || 0) + 1
       return acc
     }, {} as Record<string, number>)
@@ -96,6 +101,21 @@ export default function Index() {
     console.log('Index: Fetching assets')
     setLoading(true)
     try {
+      // 1. 获取全部资产数据（用于汇总统计）
+      let allQuery = supabase.from('assets').select('*')
+      if (searchTerm) {
+        allQuery = allQuery.or(`asset_code.ilike.%${searchTerm}%,brand.ilike.%${searchTerm}%,model.ilike.%${searchTerm}%,department.ilike.%${searchTerm}%,user_name.ilike.%${searchTerm}%`)
+      }
+      if (statusFilter !== 'all') {
+        allQuery = allQuery.eq('status', statusFilter)
+      }
+      if (departmentFilter !== 'all') {
+        allQuery = allQuery.eq('department', departmentFilter)
+      }
+      const { data: allData } = await allQuery
+      setAllAssets(allData || [])
+      
+      // 2. 获取分页数据
       // 计算偏移量
       const offset = (page - 1) * pageSize
       
@@ -103,6 +123,12 @@ export default function Index() {
       let query = supabase.from('assets').select('*', { count: 'exact' })
       if (searchTerm) {
         query = query.or(`asset_code.ilike.%${searchTerm}%,brand.ilike.%${searchTerm}%,model.ilike.%${searchTerm}%,department.ilike.%${searchTerm}%,user_name.ilike.%${searchTerm}%`)
+      }
+      if (statusFilter !== 'all') {
+        query = query.eq('status', statusFilter)
+      }
+      if (departmentFilter !== 'all') {
+        query = query.eq('department', departmentFilter)
       }
       const { data, error, count } = await query.range(offset, offset + pageSize - 1)
       if (error) throw error
@@ -132,7 +158,7 @@ export default function Index() {
 
   useEffect(() => {
     fetchAssets()
-  }, [page, pageSize])
+  }, [page, pageSize, statusFilter, departmentFilter])
 
   // 处理从详情页传来的编辑请求
   useEffect(() => {
@@ -627,7 +653,7 @@ export default function Index() {
               </div>
               <div>
                 <p className="text-sm text-secondary-500">资产总数</p>
-                <p className="text-2xl font-bold">{assets.length}</p>
+                <p className="text-2xl font-bold">{allAssets.length}</p>
               </div>
             </div>
           </div>
@@ -640,7 +666,7 @@ export default function Index() {
               </div>
               <div>
                 <p className="text-sm text-secondary-500">使用中</p>
-                <p className="text-2xl font-bold">{assets.filter(a => a.status === 'active').length}</p>
+                <p className="text-2xl font-bold">{allAssets.filter(a => a.status === 'active').length}</p>
               </div>
             </div>
           </div>
@@ -653,7 +679,7 @@ export default function Index() {
               </div>
               <div>
                 <p className="text-sm text-secondary-500">闲置</p>
-                <p className="text-2xl font-bold">{assets.filter(a => a.status === 'idle').length}</p>
+                <p className="text-2xl font-bold">{allAssets.filter(a => a.status === 'idle').length}</p>
               </div>
             </div>
           </div>
@@ -666,7 +692,7 @@ export default function Index() {
               </div>
               <div>
                 <p className="text-sm text-secondary-500">维修中</p>
-                <p className="text-2xl font-bold">{assets.filter(a => a.status === 'maintenance').length}</p>
+                <p className="text-2xl font-bold">{allAssets.filter(a => a.status === 'maintenance').length}</p>
               </div>
             </div>
           </div>
@@ -691,6 +717,32 @@ export default function Index() {
               </div>
             </div>
             <div className="flex flex-col md:flex-row gap-4">
+              {/* 筛选控件 */}
+              <div className="flex gap-2">
+                <select
+                  className="input text-sm"
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                  style={{ width: '120px' }}
+                >
+                  <option value="all">全部状态</option>
+                  <option value="active">使用中</option>
+                  <option value="idle">闲置</option>
+                  <option value="maintenance">维修中</option>
+                </select>
+                <select
+                  className="input text-sm"
+                  value={departmentFilter}
+                  onChange={(e) => setDepartmentFilter(e.target.value)}
+                  style={{ width: '150px' }}
+                >
+                  <option value="all">全部部门</option>
+                  {/* 部门选项会根据实际数据动态生成 */}
+                  {[...new Set(allAssets.map(a => a.department))].filter(d => d).map(dept => (
+                    <option key={dept} value={dept}>{dept}</option>
+                  ))}
+                </select>
+              </div>
               {selectedIds.length > 0 && (
                 <div className="flex gap-2">
                   <button
