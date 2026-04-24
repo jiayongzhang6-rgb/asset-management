@@ -64,6 +64,20 @@ export default function OperationHistory() {
     }
   }
 
+  const handleDeleteHistory = async (historyId: string) => {
+    if (confirm('确定要删除这条操作历史记录吗？')) {
+      try {
+        const { error } = await supabase.from('operation_history').delete().eq('id', historyId)
+        if (error) throw error
+        await fetchHistory()
+        alert('操作历史记录删除成功')
+      } catch (error) {
+        console.error('Error deleting operation history:', error)
+        alert('操作历史记录删除失败')
+      }
+    }
+  }
+
   return (
     <div className="min-h-screen bg-gray-100">
       <header className="bg-white shadow">
@@ -163,13 +177,21 @@ export default function OperationHistory() {
                           查看详情
                         </button>
                       </td>
-                      <td className="px-4 py-3 text-sm font-medium">
+                      <td className="px-4 py-3 text-sm font-medium flex gap-2">
                         <button
                           onClick={() => viewAsset(item.asset_code)}
                           className="text-green-600 hover:text-green-900"
                         >
                           查看资产
                         </button>
+                        {user?.role === 'admin' && (
+                          <button
+                            onClick={() => handleDeleteHistory(item.id)}
+                            className="text-red-600 hover:text-red-900"
+                          >
+                            删除
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ))}

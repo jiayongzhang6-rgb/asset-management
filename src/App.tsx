@@ -142,6 +142,7 @@ function URLHandler() {
     const action = params.get('action')
     const id = params.get('id')
 
+    // 处理扫码跳转
     if (action === 'edit' && id) {
       // 如果用户已登录，直接跳转到资产详情页
       if (isAuthenticated) {
@@ -152,7 +153,14 @@ function URLHandler() {
         navigate('/login')
       }
     }
-  }, [location.search, navigate, isAuthenticated, setPendingRedirect])
+    
+    // 处理直接访问资产详情页的情况
+    if (location.pathname.startsWith('/asset/') && !isAuthenticated) {
+      // 保存当前路径作为待跳转页面
+      setPendingRedirect(location.pathname)
+      navigate('/login')
+    }
+  }, [location.search, location.pathname, navigate, isAuthenticated, setPendingRedirect])
 
   return null
 }
