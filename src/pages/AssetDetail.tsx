@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import React, { useState, useEffect } from 'react'
+﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import React, { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '../App'
 import { supabase, type Asset, type MaintenanceRecord } from '../lib/supabase'
@@ -180,11 +180,13 @@ export default function AssetDetail() {
         const { data: historyResult, error: historyError } = await supabase.from('operation_history').insert(historyData)
         if (historyError) {
           console.error('AssetDetail: Error recording operation history:', historyError)
+          alert(`资产更新成功，但操作历史记录失败: ${historyError.message}`)
         } else {
           console.log('AssetDetail: Operation history recorded successfully for update:', historyResult)
         }
       } catch (historyError) {
         console.error('AssetDetail: Exception recording operation history:', historyError)
+        alert(`资产更新成功，但操作历史记录失败: ${historyError.message}`)
       }
     }
     
@@ -304,28 +306,42 @@ export default function AssetDetail() {
 
   const handleMaintenanceSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!asset) return
+    if (!asset) {
+      alert('资产数据加载中，请稍后重试')
+      return
+    }
     
     try {
       if (editingMaintenanceRecord) {
         // 更新现有维修记录
+        console.log('AssetDetail: Updating maintenance record:', editingMaintenanceRecord.id)
         const { error } = await supabase
           .from('maintenance_records')
           .update(maintenanceFormData)
           .eq('id', editingMaintenanceRecord.id)
-        if (error) throw error
+        if (error) {
+          console.error('AssetDetail: Maintenance update error:', error)
+          throw error
+        }
         setIsEditMaintenanceDialogOpen(false)
         alert('维修记录更新成功')
       } else {
         // 添加新维修记录
         console.log('AssetDetail: Adding maintenance record for asset:', asset)
-        console.log('AssetDetail: Asset id:', asset.id, typeof asset.id)
-        const { error } = await supabase
+        console.log('AssetDetail: Asset id:', asset.id, 'type:', typeof asset.id)
+        
+        const insertData = {
+          ...maintenanceFormData,
+          asset_id: asset.id
+        }
+        console.log('AssetDetail: Insert data:', insertData)
+        
+        const { data, error } = await supabase
           .from('maintenance_records')
-          .insert({
-            ...maintenanceFormData,
-            asset_id: asset.id
-          })
+          .insert(insertData)
+        
+        console.log('AssetDetail: Insert result:', { data, error })
+        
         if (error) {
           console.error('AssetDetail: Maintenance record insert error:', error)
           throw error
@@ -336,7 +352,7 @@ export default function AssetDetail() {
       await fetchMaintenanceRecords()
     } catch (error) {
       console.error('Error saving maintenance record:', error)
-      alert('维修记录保存失败')
+      alert(`维修记录保存失败: ${error.message}`)
     }
   }
 

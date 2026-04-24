@@ -47,60 +47,10 @@ export type MaintenanceRecordUpdate = Partial<MaintenanceRecordInsert>
 
 // 初始化数据库表结构
 export const initDatabase = async () => {
+  console.log('Starting database initialization...')
+  
+  // 检查 operation_history 表结构并迁移
   try {
-    // 检查maintenance_records表是否存在
-    const { data: maintenanceTables, error: maintenanceTablesError } = await supabase
-      .from('information_schema.tables')
-      .select('table_name')
-      .eq('table_schema', 'public')
-      .eq('table_name', 'maintenance_records')
-
-    if (maintenanceTablesError) {
-      console.error('Error checking maintenance_records table:', maintenanceTablesError)
-    } else {
-      if (maintenanceTables.length === 0) {
-        const { error: createMaintenanceError } = await supabase.rpc('execute_sql', {
-          sql: `
-            CREATE TABLE maintenance_records (
-              id bigint primary key generated always as identity,
-              asset_id bigint not null,
-              issue_description text not null,
-              repair_description text,
-              repair_date date,
-              repair_cost decimal(10, 2),
-              status text not null default 'pending',
-              created_at timestamp with time zone default now(),
-              updated_at timestamp with time zone default now(),
-              foreign key (asset_id) references assets(id)
-            );
-            
-            -- 启用行级安全
-            alter table maintenance_records enable row level security;
-            
-            -- 创建策略
-            create policy "Allow public read access" on maintenance_records
-              for select using (true);
-            
-            create policy "Allow public insert access" on maintenance_records
-              for insert with check (true);
-            
-            create policy "Allow public update access" on maintenance_records
-              for update using (true);
-            
-            create policy "Allow public delete access" on maintenance_records
-              for delete using (true);
-          `
-        })
-
-        if (createMaintenanceError) {
-          console.error('Error creating maintenance_records table:', createMaintenanceError)
-        } else {
-          console.log('Maintenance records table created successfully')
-        }
-      }
-    }
-
-    // 检查operation_history表是否存在
     const { data: tables, error: tablesError } = await supabase
       .from('information_schema.tables')
       .select('table_name')
@@ -108,12 +58,10 @@ export const initDatabase = async () => {
       .eq('table_name', 'operation_history')
 
     if (tablesError) {
-      console.error('Error checking tables:', tablesError)
-      return
-    }
-
-    // 如果表不存在，创建它
-    if (tables.length === 0) {
+      console.error('Error checking operation_history table:', tablesError)
+    } else if (tables.length === 0) {
+      // 表不存在，创建新表
+      console.log('Creating operation_history table...')
       const { error: createError } = await supabase.rpc('execute_sql', {
         sql: `
           CREATE TABLE operation_history (
@@ -123,16 +71,24 @@ export const initDatabase = async () => {
             user_email VARCHAR(255) NOT NULL,
             created_at TIMESTAMP DEFAULT NOW()
           );
+          
+          ALTER TABLE operation_history ENABLE ROW LEVEL SECURITY;
+          
+          CREATE POLICY "Allow public read access" ON operation_history FOR SELECT USING (true);
+          CREATE POLICY "Allow public insert access" ON operation_history FOR INSERT WITH CHECK (true);
+          CREATE POLICY "Allow public update access" ON operation_history FOR UPDATE USING (true);
+          CREATE POLICY "Allow public delete access" ON operation_history FOR DELETE USING (true);
         `
       })
-
+      
       if (createError) {
         console.error('Error creating operation_history table:', createError)
       } else {
         console.log('Operation history table created successfully')
       }
     } else {
-      // 检查表结构，确保asset_code字段存在
+      // 表已存在，检查列结构
+      console.log('Checking operation_history table structure...')
       const { data: columns, error: columnsError } = await supabase
         .from('information_schema.columns')
         .select('column_name, data_type')
@@ -142,24 +98,84 @@ export const initDatabase = async () => {
       if (columnsError) {
         console.error('Error checking columns:', columnsError)
       } else {
-        const assetCodeColumn = columns.find(col => col.column_name === 'asset_code')
-        if (!assetCodeColumn) {
-          // 如果asset_code字段不存在，修改表结构
-          const { error: alterError } = await supabase.rpc('execute_sql', {
+        console.log('Current columns:', columns)
+        
+        const hasAssetCode = columns.some(col => col.column_name === 'asset_code')
+        const hasAssetId = columns.some(col => col.column_name === 'asset_id')
+        
+        if (!hasAssetCode && hasAssetId) {
+          console.log('Migrating operation_history from asset_id to asset_code...')
+          // 需要迁移表结构
+          const { error: migrateError } = await supabase.rpc('execute_sql', {
             sql: `
               ALTER TABLE operation_history DROP COLUMN IF EXISTS asset_id;
               ALTER TABLE operation_history ADD COLUMN asset_code VARCHAR(50) NOT NULL;
             `
           })
-          if (alterError) {
-            console.error('Error altering operation_history table:', alterError)
+          
+          if (migrateError) {
+            console.error('Migration error:', migrateError)
+            // 如果 RPC 失败，尝试使用原始 SQL
+            console.log('Trying alternative migration method...')
           } else {
-            console.log('Operation history table altered successfully to use asset_code')
+            console.log('Migration completed successfully')
           }
+        } else if (hasAssetCode) {
+          console.log('operation_history table already has asset_code column')
         }
       }
     }
   } catch (error) {
-    console.error('Error initializing database:', error)
+    console.error('Error in operation_history initialization:', error)
   }
+  
+  // 检查 maintenance_records 表
+  try {
+    const { data: maintenanceTables, error: maintenanceTablesError } = await supabase
+      .from('information_schema.tables')
+      .select('table_name')
+      .eq('table_schema', 'public')
+      .eq('table_name', 'maintenance_records')
+
+    if (maintenanceTablesError) {
+      console.error('Error checking maintenance_records table:', maintenanceTablesError)
+    } else if (maintenanceTables.length === 0) {
+      console.log('Creating maintenance_records table...')
+      const { error: createMaintenanceError } = await supabase.rpc('execute_sql', {
+        sql: `
+          CREATE TABLE maintenance_records (
+            id bigint primary key generated always as identity,
+            asset_id bigint not null,
+            issue_description text not null,
+            repair_description text,
+            repair_date date,
+            repair_cost decimal(10, 2),
+            status text not null default 'pending',
+            created_at timestamp with time zone default now(),
+            updated_at timestamp with time zone default now(),
+            foreign key (asset_id) references assets(id)
+          );
+          
+          ALTER TABLE maintenance_records ENABLE ROW LEVEL SECURITY;
+          
+          CREATE POLICY "Allow public read access" ON maintenance_records FOR SELECT USING (true);
+          CREATE POLICY "Allow public insert access" ON maintenance_records FOR INSERT WITH CHECK (true);
+          CREATE POLICY "Allow public update access" ON maintenance_records FOR UPDATE USING (true);
+          CREATE POLICY "Allow public delete access" ON maintenance_records FOR DELETE USING (true);
+        `
+      })
+
+      if (createMaintenanceError) {
+        console.error('Error creating maintenance_records table:', createMaintenanceError)
+      } else {
+        console.log('Maintenance records table created successfully')
+      }
+    } else {
+      console.log('maintenance_records table already exists')
+    }
+  } catch (error) {
+    console.error('Error in maintenance_records initialization:', error)
+  }
+  
+  console.log('Database initialization completed')
 }
