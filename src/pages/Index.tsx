@@ -453,7 +453,7 @@ export default function Index() {
       const qrPromises = selectedIds.map(async (id) => {
         const asset = assets.find(a => a.id === id)
         if (asset) {
-          const qrData = `${window.location.origin}?action=edit&id=${asset.id}`
+          const qrData = `${window.location.origin}/asset/${asset.asset_code}`
           const url = await QRCode.toDataURL(qrData, {
             width: 200,
             margin: 2

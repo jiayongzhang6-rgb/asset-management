@@ -11,7 +11,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
 export type MaintenanceRecord = {
   id: number
-  asset_id: number
+  asset_id: string // 使用 string 类型以兼容 UUID
   issue_description: string
   repair_description: string
   repair_date: string
@@ -22,7 +22,7 @@ export type MaintenanceRecord = {
 }
 
 export type Asset = {
-  id: number
+  id: string // 使用 string 类型以兼容 UUID
   asset_code: string
   brand: string
   model: string
@@ -145,7 +145,7 @@ export const initDatabase = async () => {
         sql: `
           CREATE TABLE maintenance_records (
             id bigint primary key generated always as identity,
-            asset_id bigint not null,
+            asset_id uuid not null,
             issue_description text not null,
             repair_description text,
             repair_date date,

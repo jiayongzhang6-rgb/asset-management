@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import React, { useState, useEffect } from 'react'
+﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import React, { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '../App'
 import { supabase, type Asset, type MaintenanceRecord } from '../lib/supabase'
@@ -43,21 +43,31 @@ export default function AssetDetail() {
 
   // 从Supabase中获取资产数据
   const fetchAsset = async () => {
-    console.log('AssetDetail: fetchAsset called with asset code:', id)
+    console.log('AssetDetail: fetchAsset called')
+    console.log('AssetDetail: URL parameter id:', id)
+    console.log('AssetDetail: Type of id:', typeof id)
+    
     if (!id) {
       console.error('AssetDetail: No asset code provided')
+      alert('未提供资产编码')
       return
     }
+    
+    // 去除可能的空格或特殊字符
+    const cleanedId = id.trim()
+    console.log('AssetDetail: Cleaned asset code:', cleanedId)
+    
     setLoading(true)
     try {
-      console.log('AssetDetail: Fetching asset with code:', id)
+      console.log('AssetDetail: Fetching asset with code:', cleanedId)
       
       const { data, error } = await supabase
         .from('assets')
         .select('*')
-        .eq('asset_code', id)
+        .eq('asset_code', cleanedId)
       
       console.log('AssetDetail: Result from supabase:', { data, error })
+      console.log('AssetDetail: Data length:', data ? data.length : 0)
       
       if (error) {
         console.error('AssetDetail: Error fetching asset:', error)
@@ -81,7 +91,12 @@ export default function AssetDetail() {
           notes: assetData.notes || ''
         })
       } else {
-        console.error('AssetDetail: No asset found with code:', id)
+        console.error('AssetDetail: No asset found with code:', cleanedId)
+        
+        // 尝试查询所有资产，看看数据库中是否有资产
+        const { data: allAssets } = await supabase.from('assets').select('asset_code')
+        console.log('AssetDetail: All assets in database:', allAssets)
+        
         alert('资产不存在，请检查二维码是否正确')
       }
     } catch (error) {
@@ -291,6 +306,8 @@ export default function AssetDetail() {
     try {
       const QRCode = (await import('qrcode')).default
       const qrData = `${window.location.origin}/asset/${asset.asset_code}`
+      console.log('AssetDetail: Generating QR code with data:', qrData)
+      console.log('AssetDetail: Asset code:', asset.asset_code)
       const url = await QRCode.toDataURL(qrData, {
         width: 300,
         margin: 2
