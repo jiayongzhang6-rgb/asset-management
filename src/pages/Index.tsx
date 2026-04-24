@@ -746,16 +746,18 @@ export default function Index() {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          opacity: 0.08, 
+          opacity: 0.15, 
           zIndex: -1,
-          pointerEvents: 'none'
+          pointerEvents: 'none',
+          background: 'transparent'
         }}>
           <div style={{ 
             transform: 'rotate(-30deg)',
             whiteSpace: 'nowrap',
             fontSize: '120px',
             fontWeight: 'bold',
-            color: '#059669'
+            color: '#059669',
+            textShadow: '2px 2px 4px rgba(0, 0, 0, 0.1)'
           }}>
             德泽智联IT资产管理系统
           </div>

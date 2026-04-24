@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import React, { useState, useEffect } from 'react'
+﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import React, { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '../App'
 import { supabase, type Asset, type MaintenanceRecord } from '../lib/supabase'
@@ -540,16 +540,18 @@ export default function AssetDetail() {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          opacity: 0.08, 
+          opacity: 0.15, 
           zIndex: -1,
-          pointerEvents: 'none'
+          pointerEvents: 'none',
+          background: 'transparent'
         }}>
           <div style={{ 
             transform: 'rotate(-30deg)',
             whiteSpace: 'nowrap',
             fontSize: '120px',
             fontWeight: 'bold',
-            color: '#059669'
+            color: '#059669',
+            textShadow: '2px 2px 4px rgba(0, 0, 0, 0.1)'
           }}>
             德泽智联IT资产管理系统
           </div>
@@ -691,7 +693,14 @@ export default function AssetDetail() {
                         <div className="text-sm text-gray-900">{history.user_email}</div>
                       </td>
                       <td className="px-4 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-900">{new Date(history.created_at).toLocaleString()}</div>
+                        <div className="text-sm text-gray-900">
+                          {/* 手动调整UTC时间到北京时间（+8小时） */}
+                          {(() => {
+                            const utcDate = new Date(history.created_at);
+                            const beijingDate = new Date(utcDate.getTime() + 8 * 60 * 60 * 1000);
+                            return beijingDate.toLocaleString('zh-CN');
+                          })()}
+                        </div>
                       </td>
                       <td className="px-4 py-4 whitespace-nowrap text-sm font-medium">
                         <button
