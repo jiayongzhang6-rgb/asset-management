@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import React, { useState, useEffect } from 'react'
+﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import React, { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '../App'
 import { supabase, type Asset, type MaintenanceRecord } from '../lib/supabase'
@@ -188,14 +188,15 @@ export default function AssetDetail() {
       }
       
       console.log('AssetDetail: Updating asset with data:', updateData)
-      console.log('AssetDetail: Asset id type:', typeof asset.id, asset.id)
+      console.log('AssetDetail: Asset id type:', typeof asset.id, asset.id, asset)
       const { data, error } = await supabase.from('assets').update(updateData).eq('id', asset.id)
       if (error) throw error
       console.log('AssetDetail: Asset updated successfully')
       
       // 记录操作历史
-      if (user) {
+      if (user && asset && asset.id) {
         console.log('AssetDetail: Recording operation history for update')
+        console.log('AssetDetail: Asset ID for history:', asset.id, typeof asset.id)
         try {
           const historyData = {
             asset_id: asset.id,
@@ -213,6 +214,8 @@ export default function AssetDetail() {
         } catch (historyError) {
           console.error('AssetDetail: Exception recording operation history:', historyError)
         }
+      } else {
+        console.warn('AssetDetail: Cannot record operation history - asset or asset.id is missing:', asset)
       }
       
       await fetchAsset()
