@@ -629,48 +629,36 @@ export default function Index() {
 
   return (
     <div className="min-h-screen bg-gray-100">
-      <header className="bg-white shadow">
-        <div className="container mx-auto px-4 py-4 flex items-center justify-between">
+      <header className="bg-blue-600 text-white">
+        <div className="container mx-auto px-4 py-3 flex items-center justify-between">
           <h1 className="text-2xl font-bold">IT资产管理系统</h1>
           <div className="flex items-center gap-2">
-            <span className="text-secondary-600">{user?.email}</span>
+            <span>{user?.email}</span>
             {(user?.role === 'admin') && (
               <>
                 <button
-                  onClick={() => setIsAddDialogOpen(true)}
-                  className="btn btn-primary"
-                >
-                  新增设备
-                </button>
-                <button
                   onClick={() => navigate('/import')}
-                  className="btn btn-success"
+                  className="bg-white text-blue-600 px-3 py-1 rounded text-sm font-medium hover:bg-blue-50"
                 >
                   批量导入
                 </button>
                 <button
-                  onClick={handleBatchExportQR}
-                  className="btn" style={{ backgroundColor: '#8b5cf6', color: 'white' }} hover:bg-opacity-90
+                  onClick={() => setIsAddDialogOpen(true)}
+                  className="bg-white text-blue-600 px-3 py-1 rounded text-sm font-medium hover:bg-blue-50"
                 >
-                  批量导出二维码
-                </button>
-                <button
-                  onClick={() => navigate('/history')}
-                  className="btn btn-warning"
-                >
-                  操作历史
+                  新增设备
                 </button>
                 <button
                   onClick={() => navigate('/users')}
-                  className="btn" style={{ backgroundColor: '#6366f1', color: 'white' }} hover:bg-opacity-90
+                  className="bg-white text-blue-600 px-3 py-1 rounded text-sm font-medium hover:bg-blue-50"
                 >
-                  用户管理
+                  设置
                 </button>
               </>
             )}
             <button
               onClick={signOut}
-              className="btn btn-secondary"
+              className="bg-white text-blue-600 px-3 py-1 rounded text-sm font-medium hover:bg-blue-50"
             >
               退出
             </button>
@@ -680,54 +668,54 @@ export default function Index() {
 
       <main className="container mx-auto px-4 py-8">
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-          <div className="card">
-            <div className="flex items-center gap-2">
-              <div className="bg-primary-100 p-2 rounded-full">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-primary-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <div className="bg-white rounded-lg shadow p-4">
+            <div className="flex items-center gap-3">
+              <div className="bg-blue-100 p-2 rounded-full">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
                 </svg>
               </div>
               <div>
-                <p className="text-sm text-secondary-500">资产总数</p>
+                <p className="text-sm text-gray-600">资产总数</p>
                 <p className="text-2xl font-bold">{allAssets.length}</p>
               </div>
             </div>
           </div>
-          <div className="card">
-            <div className="flex items-center gap-2">
-              <div className="bg-success-100 p-2 rounded-full">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-success-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <div className="bg-white rounded-lg shadow p-4">
+            <div className="flex items-center gap-3">
+              <div className="bg-green-100 p-2 rounded-full">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
               </div>
               <div>
-                <p className="text-sm text-secondary-500">使用中</p>
+                <p className="text-sm text-gray-600">使用中</p>
                 <p className="text-2xl font-bold">{allAssets.filter(a => a.status === 'active').length}</p>
               </div>
             </div>
           </div>
-          <div className="card">
-            <div className="flex items-center gap-2">
-              <div className="bg-warning-100 p-2 rounded-full">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-warning-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <div className="bg-white rounded-lg shadow p-4">
+            <div className="flex items-center gap-3">
+              <div className="bg-yellow-100 p-2 rounded-full">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-yellow-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
               </div>
               <div>
-                <p className="text-sm text-secondary-500">闲置</p>
+                <p className="text-sm text-gray-600">闲置</p>
                 <p className="text-2xl font-bold">{allAssets.filter(a => a.status === 'idle').length}</p>
               </div>
             </div>
           </div>
-          <div className="card">
-            <div className="flex items-center gap-2">
-              <div className="bg-danger-100 p-2 rounded-full">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-danger-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <div className="bg-white rounded-lg shadow p-4">
+            <div className="flex items-center gap-3">
+              <div className="bg-red-100 p-2 rounded-full">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                 </svg>
               </div>
               <div>
-                <p className="text-sm text-secondary-500">维修中</p>
+                <p className="text-sm text-gray-600">报废</p>
                 <p className="text-2xl font-bold">{allAssets.filter(a => a.status === 'maintenance').length}</p>
               </div>
             </div>
@@ -737,72 +725,46 @@ export default function Index() {
 
 
         <div className="card mb-6">
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
-            <div className="relative">
+          <div className="flex flex-col md:flex-row md:items-center gap-4 mb-4">
+            <div className="relative flex-grow">
               <input
                 type="text"
                 placeholder="搜索资产编码、品牌、使用人..."
-                className="input pl-10"
+                className="w-full px-4 py-2 border rounded text-sm"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
-              <div className="absolute left-3 top-2.5 text-secondary-400">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
-              </div>
             </div>
-            <div className="flex flex-col md:flex-row gap-4">
-              {/* 筛选控件 */}
-              <div className="flex gap-2">
-                <select
-                  className="input text-sm"
-                  value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value)}
-                  style={{ width: '120px' }}
-                >
-                  <option value="all">全部状态</option>
-                  <option value="active">使用中</option>
-                  <option value="idle">闲置</option>
-                  <option value="maintenance">维修中</option>
-                </select>
-                <select
-                  className="input text-sm"
-                  value={departmentFilter}
-                  onChange={(e) => setDepartmentFilter(e.target.value)}
-                  style={{ width: '150px' }}
-                >
-                  <option value="all">全部部门</option>
-                  {/* 部门选项会根据实际数据动态生成 */}
-                  {[...new Set(allAssets.map(a => a.department))].filter(d => d).map(dept => (
-                    <option key={dept} value={dept}>{dept}</option>
-                  ))}
-                </select>
-              </div>
-              {selectedIds.length > 0 && (
-                <div className="flex gap-2">
-                  <button
-                    onClick={handleBatchDelete}
-                    className="btn btn-danger"
-                  >
-                    批量删除 ({selectedIds.length})
-                  </button>
-                  <button
-                    onClick={handleBatchExportQR}
-                    className="btn" style={{ backgroundColor: '#8b5cf6', color: 'white' }} hover:bg-opacity-90
-                  >
-                    批量导出二维码 ({selectedIds.length})
-                  </button>
-                </div>
-              )}
+            <div className="flex gap-2">
+              <select
+                className="px-3 py-2 border rounded text-sm"
+                value={departmentFilter}
+                onChange={(e) => setDepartmentFilter(e.target.value)}
+              >
+                <option value="all">全部部门</option>
+                {/* 部门选项会根据实际数据动态生成 */}
+                {[...new Set(allAssets.map(a => a.department))].filter(d => d).map(dept => (
+                  <option key={dept} value={dept}>{dept}</option>
+                ))}
+              </select>
+              <select
+                className="px-3 py-2 border rounded text-sm"
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+              >
+                <option value="all">全部状态</option>
+                <option value="active">使用中</option>
+                <option value="idle">闲置</option>
+                <option value="maintenance">维修中</option>
+              </select>
             </div>
           </div>
 
           <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
+            <table className="min-w-full border-collapse">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border">
                     <input
                       type="checkbox"
                       checked={selectedIds.length === assets.length && assets.length > 0}
@@ -810,30 +772,28 @@ export default function Index() {
                       className="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50"
                     />
                   </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">资产编码</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">CPU</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">内存</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">存储</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">GPU</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">系统</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">部门</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">使用人</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">位置</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">品牌型号</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">状态</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">操作</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border">资产编码</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border">CPU</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border">内存</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border">硬盘</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border">显卡</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border">使用人</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border">部门</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border">位置</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border">品牌/型号</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border">状态</th>
                 </tr>
               </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
+              <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan={14} className="px-4 py-8 text-center">
+                    <td colSpan={11} className="px-4 py-8 text-center border">
                       加载中...
                     </td>
                   </tr>
                 ) : assets.length === 0 ? (
                   <tr>
-                    <td colSpan={14} className="px-4 py-8 text-center">
+                    <td colSpan={11} className="px-4 py-8 text-center border">
                       无资产数据
                     </td>
                   </tr>
@@ -841,10 +801,10 @@ export default function Index() {
                   assets.map((asset) => (
                     <tr 
                       key={asset.id} 
-                      className="hover:bg-gray-50 cursor-pointer"
+                      className="hover:bg-gray-50 cursor-pointer border"
                       onClick={() => navigate(`/asset/${asset.asset_code}`)}
                     >
-                      <td className="px-4 py-4 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                      <td className="px-4 py-3 whitespace-nowrap border" onClick={(e) => e.stopPropagation()}>
                         <input
                           type="checkbox"
                           checked={selectedIds.includes(asset.id)}
@@ -855,71 +815,37 @@ export default function Index() {
                           className="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50"
                         />
                       </td>
-                      <td className="px-4 py-4 whitespace-nowrap">
-                    <div className="text-sm font-medium text-gray-900">{asset.asset_code}</div>
-                  </td>
-                  <td className="px-4 py-4 whitespace-nowrap">
-                    <div className="text-sm text-gray-900">{asset.cpu}</div>
-                  </td>
-                    <td className="px-4 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-900">{formatMemory(asset.ram)}</div>
-                    </td>
-                    <td className="px-4 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-900">{formatStorage(asset.storage)}</div>
-                    </td>
-                    <td className="px-4 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-900">{asset.gpu || '-'}</div>
-                    </td>
-                    <td className="px-4 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-900">{asset.os}</div>
-                    </td>
-                    <td className="px-4 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-900">{asset.department}</div>
-                    </td>
-                    <td className="px-4 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-900">{asset.user_name}</div>
-                    </td>
-                    <td className="px-4 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-900">{asset.location}</div>
-                    </td>
-                    <td className="px-4 py-4">
-                      <div className="text-sm text-gray-900">{asset.brand} {asset.model}</div>
-                    </td>
-                    <td className="px-4 py-4 whitespace-nowrap">
-                      <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${asset.status === 'active' ? 'bg-green-100 text-green-800' : asset.status === 'idle' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'}`}>
-                        {asset.status === 'active' ? '使用中' : asset.status === 'idle' ? '闲置' : '维修中'}
-                      </span>
-                    </td>
-                      <td className="px-4 py-4 whitespace-nowrap text-sm font-medium" onClick={(e) => e.stopPropagation()}>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            navigate(`/asset/${asset.id}`)
-                          }}
-                          className="text-blue-600 hover:text-blue-900 mr-3"
-                        >
-                          详情
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            handleEdit(asset)
-                          }}
-                          className="text-green-600 hover:text-green-900 mr-3"
-                        >
-                          编辑
-                        </button>
-                        {user?.role === 'admin' && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              handleDelete(asset.id)
-                            }}
-                            className="text-red-600 hover:text-red-900"
-                          >
-                            删除
-                          </button>
-                        )}
+                      <td className="px-4 py-3 whitespace-nowrap border">
+                        <div className="text-sm font-medium text-blue-600">{asset.asset_code}</div>
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap border">
+                        <div className="text-sm text-gray-900">{asset.cpu}</div>
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap border">
+                        <div className="text-sm text-gray-900">{formatMemory(asset.ram)}</div>
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap border">
+                        <div className="text-sm text-gray-900">{formatStorage(asset.storage)}</div>
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap border">
+                        <div className="text-sm text-gray-900">{asset.gpu || '-'}</div>
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap border">
+                        <div className="text-sm text-gray-900">{asset.user_name}</div>
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap border">
+                        <div className="text-sm text-gray-900">{asset.department}</div>
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap border">
+                        <div className="text-sm text-gray-900">{asset.location}</div>
+                      </td>
+                      <td className="px-4 py-3 border">
+                        <div className="text-sm text-gray-900">{asset.brand} {asset.model}</div>
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap border">
+                        <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${asset.status === 'active' ? 'bg-green-100 text-green-800' : asset.status === 'idle' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'}`}>
+                          {asset.status === 'active' ? '使用中' : asset.status === 'idle' ? '闲置' : '维修中'}
+                        </span>
                       </td>
                     </tr>
                   ))
