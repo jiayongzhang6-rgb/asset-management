@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import React, { useState, useEffect } from 'react'
+﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import React, { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '../App'
 import { supabase, type Asset, type MaintenanceRecord } from '../lib/supabase'
@@ -532,21 +532,29 @@ export default function AssetDetail() {
       <main className="container mx-auto px-4 py-8" style={{ position: 'relative', minHeight: '80vh' }}>
         {/* 水印 */}
         <div style={{ 
-          position: 'absolute', 
-          top: '50%', 
-          left: '50%', 
-          transform: 'translate(-50%, -50%) rotate(-30deg)',
-          opacity: 0.05, 
-          zIndex: 1,
-          pointerEvents: 'none',
-          whiteSpace: 'nowrap',
-          fontSize: '100px',
-          fontWeight: 'bold',
-          color: '#059669'
+          position: 'fixed', 
+          top: '0', 
+          left: '0', 
+          right: '0', 
+          bottom: '0',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          opacity: 0.03, 
+          zIndex: -1,
+          pointerEvents: 'none'
         }}>
-          德泽智联IT资产管理系统
+          <div style={{ 
+            transform: 'rotate(-30deg)',
+            whiteSpace: 'nowrap',
+            fontSize: '120px',
+            fontWeight: 'bold',
+            color: '#059669'
+          }}>
+            德泽智联IT资产管理系统
+          </div>
         </div>
-        <div style={{ position: 'relative', zIndex: 2 }}>
+        <div style={{ position: 'relative', zIndex: 1 }}>
         <div className="bg-white rounded-lg shadow p-6 mb-6">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
             <div className="flex items-center gap-2">
@@ -690,7 +698,7 @@ export default function AssetDetail() {
                           className="text-blue-600 hover:text-blue-900"
                           onClick={() => {
                             // 显示更详细的操作历史信息
-                            alert(`操作类型: ${history.operation_type === 'create' ? '创建' : history.operation_type === 'update' ? '更新' : '删除'}\n操作人: ${history.user_email}\n操作时间: ${new Date(history.created_at).toLocaleString()}\n资产编码: ${history.asset_code}\n变更内容: ${history.changes || '无'}`)
+                            alert(`操作类型: ${history.operation_type === 'create' ? '创建' : history.operation_type === 'update' ? '更新' : '删除'}\n操作人: ${history.user_email}\n操作时间: ${new Date(history.created_at).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}\n资产编码: ${history.asset_code}\n变更内容: ${history.changes || '无'}`)
                           }}
                         >
                           查看详情

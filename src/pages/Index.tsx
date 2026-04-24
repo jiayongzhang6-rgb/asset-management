@@ -738,21 +738,29 @@ export default function Index() {
       <main className="container mx-auto px-4 py-8" style={{ position: 'relative', minHeight: '80vh' }}>
         {/* 水印 */}
         <div style={{ 
-          position: 'absolute', 
-          top: '50%', 
-          left: '50%', 
-          transform: 'translate(-50%, -50%) rotate(-30deg)',
-          opacity: 0.05, 
-          zIndex: 1,
-          pointerEvents: 'none',
-          whiteSpace: 'nowrap',
-          fontSize: '100px',
-          fontWeight: 'bold',
-          color: '#059669'
+          position: 'fixed', 
+          top: '0', 
+          left: '0', 
+          right: '0', 
+          bottom: '0',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          opacity: 0.03, 
+          zIndex: -1,
+          pointerEvents: 'none'
         }}>
-          德泽智联IT资产管理系统
+          <div style={{ 
+            transform: 'rotate(-30deg)',
+            whiteSpace: 'nowrap',
+            fontSize: '120px',
+            fontWeight: 'bold',
+            color: '#059669'
+          }}>
+            德泽智联IT资产管理系统
+          </div>
         </div>
-        <div style={{ position: 'relative', zIndex: 2 }}>
+        <div style={{ position: 'relative', zIndex: 1 }}>
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mb-6">
           <div className="bg-white rounded-lg shadow p-4">
             <div className="flex items-center gap-3">

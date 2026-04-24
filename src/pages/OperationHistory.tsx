@@ -47,11 +47,11 @@ export default function OperationHistory() {
 
   const getOperationDetails = (item: any) => {
     if (item.operation_type === 'create') {
-      return `创建了资产\n资产编码: ${item.asset_code}\n操作人: ${item.user_email}\n时间: ${new Date(item.created_at).toLocaleString('zh-CN')}`
+      return `创建了资产\n资产编码: ${item.asset_code}\n操作人: ${item.user_email}\n时间: ${new Date(item.created_at).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}`
     } else if (item.operation_type === 'update') {
-      return `更新了资产\n资产编码: ${item.asset_code}\n操作人: ${item.user_email}\n时间: ${new Date(item.created_at).toLocaleString('zh-CN')}\n变更内容: ${item.changes || '无'}`
+      return `更新了资产\n资产编码: ${item.asset_code}\n操作人: ${item.user_email}\n时间: ${new Date(item.created_at).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}\n变更内容: ${item.changes || '无'}`
     } else if (item.operation_type === 'delete') {
-      return `删除了资产\n资产编码: ${item.asset_code}\n操作人: ${item.user_email}\n时间: ${new Date(item.created_at).toLocaleString('zh-CN')}`
+      return `删除了资产\n资产编码: ${item.asset_code}\n操作人: ${item.user_email}\n时间: ${new Date(item.created_at).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}`
     }
     return JSON.stringify(item, null, 2)
   }
@@ -156,7 +156,7 @@ export default function OperationHistory() {
                   {filteredHistory.map((item) => (
                     <tr key={item.id}>
                       <td className="px-4 py-3 text-sm text-gray-900">
-                        {new Date(item.created_at).toLocaleString('zh-CN')}
+                        {new Date(item.created_at).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}
                       </td>
                       <td className="px-4 py-3 text-sm text-gray-900">
                         {item.asset_code}
