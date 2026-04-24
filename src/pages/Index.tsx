@@ -197,6 +197,42 @@ export default function Index() {
     return `PC-${year}-${month}-${count}`
   }
 
+  // 格式化内存显示
+  const formatMemory = (memory: string) => {
+    try {
+      const num = parseFloat(memory)
+      if (!isNaN(num)) {
+        // 四舍五入到最近的整数
+        const rounded = Math.round(num)
+        return `${rounded}GB`
+      }
+    } catch (error) {
+      console.error('Error formatting memory:', error)
+    }
+    return memory
+  }
+
+  // 格式化存储显示
+  const formatStorage = (storage: string) => {
+    try {
+      const num = parseFloat(storage)
+      if (!isNaN(num)) {
+        // 四舍五入到最近的整数
+        const rounded = Math.round(num)
+        if (rounded >= 1000) {
+          // 大于等于1000GB显示为TB
+          return `${(rounded / 1000).toFixed(1)}TB`
+        } else {
+          // 小于1000GB显示为GB
+          return `${rounded}GB`
+        }
+      }
+    } catch (error) {
+      console.error('Error formatting storage:', error)
+    }
+    return storage
+  }
+
   const resetForm = () => {
     setFormData({
       brand: '',
@@ -826,10 +862,10 @@ export default function Index() {
                     <div className="text-sm text-gray-900">{asset.cpu}</div>
                   </td>
                     <td className="px-4 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-900">{asset.ram}</div>
+                      <div className="text-sm text-gray-900">{formatMemory(asset.ram)}</div>
                     </td>
                     <td className="px-4 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-900">{asset.storage}</div>
+                      <div className="text-sm text-gray-900">{formatStorage(asset.storage)}</div>
                     </td>
                     <td className="px-4 py-4 whitespace-nowrap">
                       <div className="text-sm text-gray-900">{asset.gpu || '-'}</div>

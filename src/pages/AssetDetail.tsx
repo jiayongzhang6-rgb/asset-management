@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import React, { useState, useEffect } from 'react'
+﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import React, { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '../App'
 import { supabase, type Asset, type MaintenanceRecord } from '../lib/supabase'
@@ -38,6 +38,42 @@ export default function AssetDetail() {
     repair_cost: 0,
     status: 'pending'
   })
+
+  // 格式化内存显示
+  const formatMemory = (memory: string) => {
+    try {
+      const num = parseFloat(memory)
+      if (!isNaN(num)) {
+        // 四舍五入到最近的整数
+        const rounded = Math.round(num)
+        return `${rounded}GB`
+      }
+    } catch (error) {
+      console.error('Error formatting memory:', error)
+    }
+    return memory
+  }
+
+  // 格式化存储显示
+  const formatStorage = (storage: string) => {
+    try {
+      const num = parseFloat(storage)
+      if (!isNaN(num)) {
+        // 四舍五入到最近的整数
+        const rounded = Math.round(num)
+        if (rounded >= 1000) {
+          // 大于等于1000GB显示为TB
+          return `${(rounded / 1000).toFixed(1)}TB`
+        } else {
+          // 小于1000GB显示为GB
+          return `${rounded}GB`
+        }
+      }
+    } catch (error) {
+      console.error('Error formatting storage:', error)
+    }
+    return storage
+  }
 
 
 
@@ -549,11 +585,11 @@ export default function AssetDetail() {
               </div>
               <div className="flex items-center gap-4">
                 <div className="w-24 text-gray-500">内存</div>
-                <div>{asset.ram}</div>
+                <div>{formatMemory(asset.ram)}</div>
               </div>
               <div className="flex items-center gap-4">
                 <div className="w-24 text-gray-500">存储</div>
-                <div>{asset.storage}</div>
+                <div>{formatStorage(asset.storage)}</div>
               </div>
               <div className="flex items-center gap-4">
                 <div className="w-24 text-gray-500">显卡</div>
