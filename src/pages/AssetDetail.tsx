@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import React, { useState, useEffect } from 'react'
+﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import React, { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '../App'
 import { supabase, type Asset, type MaintenanceRecord } from '../lib/supabase'
@@ -52,54 +52,17 @@ export default function AssetDetail() {
     try {
       console.log('AssetDetail: Fetching asset with code:', id)
       
-      // 尝试获取资产数据，最多重试3次
-      let retries = 3
-      let data = null
-      let error = null
+      const { data, error } = await supabase
+        .from('assets')
+        .select('*')
+        .eq('asset_code', id)
+        .single()
       
-      while (retries > 0) {
-        console.log(`AssetDetail: Attempt ${4 - retries} of 3`)
-        try {
-          // 增加超时设置
-          const controller = new AbortController()
-          const timeoutId = setTimeout(() => controller.abort(), 10000) // 10秒超时
-          
-          const result = await supabase.from('assets').select('*').eq('asset_code', id).single({ signal: controller.signal })
-          clearTimeout(timeoutId)
-          
-          data = result.data
-          error = result.error
-          
-          console.log('AssetDetail: Result from supabase:', { data, error })
-          
-          if (!error) {
-            break
-          }
-          
-          console.error('AssetDetail: Error fetching asset:', error)
-          retries--
-          
-          if (retries > 0) {
-            console.log('AssetDetail: Retrying to fetch asset...')
-            // 等待2秒后重试，增加等待时间
-            await new Promise(resolve => setTimeout(resolve, 2000))
-          }
-        } catch (e) {
-          console.error('AssetDetail: Exception during fetch:', e)
-          retries--
-          
-          if (retries > 0) {
-            console.log('AssetDetail: Retrying to fetch asset...')
-            // 等待2秒后重试，增加等待时间
-            await new Promise(resolve => setTimeout(resolve, 2000))
-          }
-        }
-      }
+      console.log('AssetDetail: Result from supabase:', { data, error })
       
       if (error) {
-        console.error('AssetDetail: Final error fetching asset:', error)
-        // 显示更友好的错误信息
-        alert(`无法获取资产数据: ${error.message}\n请检查网络连接后重试`)
+        console.error('AssetDetail: Error fetching asset:', error)
+        alert(`无法获取资产数据: ${error.message}`)
       } else if (data) {
         console.log('AssetDetail: Asset fetched successfully:', data)
         setAsset(data)
@@ -123,8 +86,7 @@ export default function AssetDetail() {
       }
     } catch (error) {
       console.error('AssetDetail: Exception fetching asset:', error)
-      // 显示更友好的错误信息
-      alert(`无法获取资产数据: ${error.message}\n请检查网络连接后重试`)
+      alert(`无法获取资产数据: ${error.message}`)
     } finally {
       setLoading(false)
     }
@@ -175,57 +137,64 @@ export default function AssetDetail() {
 
  const handleEditSubmit = async (e: React.FormEvent) => {
   e.preventDefault()
-  if (asset) {
-    try {
-      // 权限控制：普通用户只能修改使用人、位置、部门等信息
-      let updateData = formData
-      if (user && user.role !== 'admin') {
-        updateData = {
-          user_name: formData.user_name,
-          location: formData.location,
-          department: formData.department
-        }
+  if (!asset) {
+    alert('资产数据加载中，请稍后重试')
+    return
+  }
+  
+  try {
+    // 保存资产编码用于后续记录操作历史
+    const assetCodeToUse = asset.asset_code || id
+    console.log('AssetDetail: Asset code to use for history:', assetCodeToUse)
+    
+    // 权限控制：普通用户只能修改使用人、位置、部门等信息
+    let updateData = formData
+    if (user && user.role !== 'admin') {
+      updateData = {
+        user_name: formData.user_name,
+        location: formData.location,
+        department: formData.department
       }
-      
-      console.log('AssetDetail: Updating asset with data:', updateData)
-      console.log('AssetDetail: Asset id type:', typeof asset.id, asset.id, asset)
-      const { data, error } = await supabase.from('assets').update(updateData).eq('id', asset.id)
-      if (error) throw error
-      console.log('AssetDetail: Asset updated successfully')
-      
-      // 记录操作历史
-      if (user && asset && asset.asset_code) {
-        console.log('AssetDetail: Recording operation history for update')
-        console.log('AssetDetail: Asset code for history:', asset.asset_code)
-        try {
-          const historyData = {
-            asset_code: asset.asset_code,
-            operation_type: 'update',
-            user_email: user.email,
-            created_at: new Date().toISOString()
-          }
-          console.log('AssetDetail: Inserting operation history with data:', historyData)
-          const { data: historyResult, error: historyError } = await supabase.from('operation_history').insert(historyData)
-          if (historyError) {
-            console.error('AssetDetail: Error recording operation history:', historyError)
-          } else {
-            console.log('AssetDetail: Operation history recorded successfully for update:', historyResult)
-          }
-        } catch (historyError) {
-          console.error('AssetDetail: Exception recording operation history:', historyError)
-        }
-      } else {
-        console.warn('AssetDetail: Cannot record operation history - asset or asset.asset_code is missing:', asset)
-      }
-      
-      await fetchAsset()
-      await fetchAssetHistory()
-      setIsEditDialogOpen(false)
-      alert('资产更新成功')
-    } catch (error) {
-      console.error('Error updating asset:', error)
-      alert('资产更新失败')
     }
+    
+    console.log('AssetDetail: Updating asset with data:', updateData)
+    console.log('AssetDetail: Asset:', asset)
+    const { data, error } = await supabase.from('assets').update(updateData).eq('id', asset.id)
+    if (error) {
+      console.error('AssetDetail: Update error:', error)
+      throw error
+    }
+    console.log('AssetDetail: Asset updated successfully', data)
+    
+    // 记录操作历史
+    if (user) {
+      console.log('AssetDetail: Recording operation history for update')
+      try {
+        const historyData = {
+          asset_code: assetCodeToUse,
+          operation_type: 'update',
+          user_email: user.email,
+          created_at: new Date().toISOString()
+        }
+        console.log('AssetDetail: Inserting operation history with data:', historyData)
+        const { data: historyResult, error: historyError } = await supabase.from('operation_history').insert(historyData)
+        if (historyError) {
+          console.error('AssetDetail: Error recording operation history:', historyError)
+        } else {
+          console.log('AssetDetail: Operation history recorded successfully for update:', historyResult)
+        }
+      } catch (historyError) {
+        console.error('AssetDetail: Exception recording operation history:', historyError)
+      }
+    }
+    
+    await fetchAsset()
+    await fetchAssetHistory()
+    setIsEditDialogOpen(false)
+    alert('资产更新成功')
+  } catch (error) {
+    console.error('Error updating asset:', error)
+    alert(`资产更新失败: ${error.message}`)
   }
 }
 
@@ -238,7 +207,7 @@ export default function AssetDetail() {
   
   if (asset && confirm('确定要删除这个资产吗？')) {
     try {
-      const { data, error } = await supabase.from('assets').delete().eq('id', parseInt(asset.id))
+      const { data, error } = await supabase.from('assets').delete().eq('id', asset.id)
       if (error) throw error
       
       // 记录操作历史
@@ -349,13 +318,18 @@ export default function AssetDetail() {
         alert('维修记录更新成功')
       } else {
         // 添加新维修记录
+        console.log('AssetDetail: Adding maintenance record for asset:', asset)
+        console.log('AssetDetail: Asset id:', asset.id, typeof asset.id)
         const { error } = await supabase
           .from('maintenance_records')
           .insert({
             ...maintenanceFormData,
-            asset_id: parseInt(asset.id)
+            asset_id: asset.id
           })
-        if (error) throw error
+        if (error) {
+          console.error('AssetDetail: Maintenance record insert error:', error)
+          throw error
+        }
         setIsMaintenanceDialogOpen(false)
         alert('维修记录添加成功')
       }
