@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import React, { useState, useEffect } from 'react'
+﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import React, { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '../App'
 import { supabase, type Asset, type MaintenanceRecord } from '../lib/supabase'
@@ -488,7 +488,10 @@ export default function AssetDetail() {
     <div className="min-h-screen bg-gray-100">
       <header className="bg-blue-600 text-white">
         <div className="container mx-auto px-4 py-3 flex items-center justify-between">
-          <h1 className="text-2xl font-bold">IT资产管理系统</h1>
+          <div className="flex items-center gap-3">
+            <img src="https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=green%20logo%20with%20letter%20D%20and%20lightning%20bolt%2C%20modern%20corporate%20design&image_size=square" alt="德泽智联" className="h-10 w-10" />
+            <h1 className="text-2xl font-bold">德泽智联IT资产管理系统</h1>
+          </div>
           <div className="flex items-center gap-2">
             <span>{user?.email}</span>
             {(user?.role === 'admin') && (

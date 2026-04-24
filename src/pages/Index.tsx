@@ -694,7 +694,10 @@ export default function Index() {
     <div className="min-h-screen bg-gray-100">
       <header className="bg-blue-600 text-white">
         <div className="container mx-auto px-4 py-3 flex items-center justify-between">
-          <h1 className="text-2xl font-bold">IT资产管理系统</h1>
+          <div className="flex items-center gap-3">
+            <img src="https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=green%20logo%20with%20letter%20D%20and%20lightning%20bolt%2C%20modern%20corporate%20design&image_size=square" alt="德泽智联" className="h-10 w-10" />
+            <h1 className="text-2xl font-bold">德泽智联IT资产管理系统</h1>
+          </div>
           <div className="flex items-center gap-2">
             <span>{user?.email}</span>
             {(user?.role === 'admin') && (
@@ -851,7 +854,7 @@ export default function Index() {
             </div>
           </div>
 
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto" style={{ maxWidth: '80%', margin: '0 auto' }}>
             <table className="min-w-full">
               <thead className="bg-gray-50">
                 <tr>
@@ -946,7 +949,7 @@ export default function Index() {
           </div>
           
           {/* 分页控件 */}
-          <div className="flex flex-col md:flex-row justify-between items-center mt-6 gap-4">
+          <div className="flex flex-col md:flex-row justify-between items-center mt-6 gap-4" style={{ maxWidth: '80%', margin: '0 auto' }}>
             <div className="text-sm text-gray-600">
               显示 {((page - 1) * pageSize) + 1} 到 {Math.min(page * pageSize, totalAssets)} 条，共 {totalAssets} 条
             </div>
