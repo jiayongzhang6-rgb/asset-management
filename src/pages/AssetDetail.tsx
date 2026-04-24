@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import React, { useState, useEffect } from 'react'
+﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import React, { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '../App'
 import { supabase, type Asset, type MaintenanceRecord } from '../lib/supabase'
@@ -532,7 +532,15 @@ export default function AssetDetail() {
       <main className="container mx-auto px-4 py-8">
         <div className="bg-white rounded-lg shadow p-6 mb-6">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
-            <h2 className="text-2xl font-bold">资产详情</h2>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => navigate('/')}
+                className="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600"
+              >
+                返回列表
+              </button>
+              <h2 className="text-2xl font-bold">资产详情</h2>
+            </div>
             <div className="flex gap-2">
               <button
                 onClick={() => setIsEditDialogOpen(true)}
