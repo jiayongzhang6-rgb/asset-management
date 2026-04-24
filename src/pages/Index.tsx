@@ -741,16 +741,16 @@ export default function Index() {
           position: 'absolute', 
           top: '50%', 
           left: '50%', 
-          transform: 'translate(-50%, -50%)', 
-          opacity: 0.1, 
+          transform: 'translate(-50%, -50%) rotate(-30deg)',
+          opacity: 0.08, 
           zIndex: 0,
-          pointerEvents: 'none'
+          pointerEvents: 'none',
+          whiteSpace: 'nowrap',
+          fontSize: '80px',
+          fontWeight: 'bold',
+          color: '#059669'
         }}>
-          <img 
-            src="https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=green%20logo%20with%20letter%20D%20and%20lightning%20bolt%2C%20modern%20corporate%20design&image_size=square_hd" 
-            alt="德泽智联" 
-            style={{ width: '300px', height: '300px' }}
-          />
+          德泽智联IT资产管理系统
         </div>
         <div style={{ position: 'relative', zIndex: 1 }}>
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mb-6">
