@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import React, { useState, useEffect } from 'react'
+﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import React, { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '../App'
 import { supabase, type Asset, type MaintenanceRecord } from '../lib/supabase'
@@ -56,33 +56,33 @@ export default function AssetDetail() {
         .from('assets')
         .select('*')
         .eq('asset_code', id)
-        .single()
       
       console.log('AssetDetail: Result from supabase:', { data, error })
       
       if (error) {
         console.error('AssetDetail: Error fetching asset:', error)
         alert(`无法获取资产数据: ${error.message}`)
-      } else if (data) {
-        console.log('AssetDetail: Asset fetched successfully:', data)
-        setAsset(data)
+      } else if (data && data.length > 0) {
+        const assetData = data[0]
+        console.log('AssetDetail: Asset fetched successfully:', assetData)
+        setAsset(assetData)
         setFormData({
-          brand: data.brand || '',
-          model: data.model || '',
-          cpu: data.cpu || '',
-          ram: data.ram || '',
-          storage: data.storage || '',
-          gpu: data.gpu || '',
-          os: data.os || '',
-          department: data.department || '',
-          user_name: data.user_name || '',
-          location: data.location || '',
-          status: data.status || 'active',
-          notes: data.notes || ''
+          brand: assetData.brand || '',
+          model: assetData.model || '',
+          cpu: assetData.cpu || '',
+          ram: assetData.ram || '',
+          storage: assetData.storage || '',
+          gpu: assetData.gpu || '',
+          os: assetData.os || '',
+          department: assetData.department || '',
+          user_name: assetData.user_name || '',
+          location: assetData.location || '',
+          status: assetData.status || 'active',
+          notes: assetData.notes || ''
         })
       } else {
-        console.error('AssetDetail: No data returned from supabase')
-        alert('无法获取资产数据，请检查网络连接后重试')
+        console.error('AssetDetail: No asset found with code:', id)
+        alert('资产不存在，请检查二维码是否正确')
       }
     } catch (error) {
       console.error('AssetDetail: Exception fetching asset:', error)
@@ -290,7 +290,7 @@ export default function AssetDetail() {
     if (!asset) return
     try {
       const QRCode = (await import('qrcode')).default
-      const qrData = `${window.location.origin}?action=edit&id=${asset.id}`
+      const qrData = `${window.location.origin}/asset/${asset.asset_code}`
       const url = await QRCode.toDataURL(qrData, {
         width: 300,
         margin: 2
