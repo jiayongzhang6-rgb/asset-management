@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import React, { useState, useEffect } from 'react'
+﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import React, { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '../App'
 import { supabase, type Asset, type MaintenanceRecord } from '../lib/supabase'
@@ -188,7 +188,8 @@ export default function AssetDetail() {
       }
       
       console.log('AssetDetail: Updating asset with data:', updateData)
-      const { data, error } = await supabase.from('assets').update(updateData).eq('id', parseInt(asset.id))
+      console.log('AssetDetail: Asset id type:', typeof asset.id, asset.id)
+      const { data, error } = await supabase.from('assets').update(updateData).eq('id', asset.id)
       if (error) throw error
       console.log('AssetDetail: Asset updated successfully')
       
@@ -197,7 +198,7 @@ export default function AssetDetail() {
         console.log('AssetDetail: Recording operation history for update')
         try {
           const historyData = {
-            asset_id: parseInt(asset.id),
+            asset_id: asset.id,
             operation_type: 'update',
             user_email: user.email,
             created_at: new Date().toISOString()
@@ -206,26 +207,6 @@ export default function AssetDetail() {
           const { data: historyResult, error: historyError } = await supabase.from('operation_history').insert(historyData)
           if (historyError) {
             console.error('AssetDetail: Error recording operation history:', historyError)
-            if (historyError.message.includes('bigint')) {
-              console.log('AssetDetail: Trying with numeric asset_id')
-              try {
-                // 使用原始资产ID，确保资产ID不会变
-                const fallbackHistoryData = {
-                  asset_id: parseInt(asset.id),
-                  operation_type: 'update',
-                  user_email: user.email,
-                  created_at: new Date().toISOString()
-                }
-                const { data: fallbackResult, error: fallbackError } = await supabase.from('operation_history').insert(fallbackHistoryData)
-                if (fallbackError) {
-                  console.error('AssetDetail: Fallback error recording operation history:', fallbackError)
-                } else {
-                  console.log('AssetDetail: Operation history recorded successfully with fallback:', fallbackResult)
-                }
-              } catch (fallbackError) {
-                console.error('AssetDetail: Exception in fallback recording:', fallbackError)
-              }
-            }
           } else {
             console.log('AssetDetail: Operation history recorded successfully for update:', historyResult)
           }
