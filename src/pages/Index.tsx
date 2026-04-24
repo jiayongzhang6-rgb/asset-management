@@ -841,7 +841,7 @@ export default function Index() {
                     <tr 
                       key={asset.id} 
                       className="hover:bg-gray-50 cursor-pointer"
-                      onClick={() => navigate(`/asset/${asset.id}`)}
+                      onClick={() => navigate(`/asset/${asset.asset_code}`)}
                     >
                       <td className="px-4 py-4 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                         <input

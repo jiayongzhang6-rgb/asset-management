@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import React, { useState, useEffect } from 'react'
+﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import React, { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '../App'
 import { supabase, type Asset, type MaintenanceRecord } from '../lib/supabase'
@@ -43,19 +43,14 @@ export default function AssetDetail() {
 
   // 从Supabase中获取资产数据
   const fetchAsset = async () => {
-    console.log('AssetDetail: fetchAsset called with id:', id)
+    console.log('AssetDetail: fetchAsset called with asset code:', id)
     if (!id) {
-      console.error('AssetDetail: No id provided')
+      console.error('AssetDetail: No asset code provided')
       return
     }
     setLoading(true)
     try {
-      const assetId = parseInt(id)
-      if (isNaN(assetId)) {
-        console.error('AssetDetail: Invalid asset ID:', id)
-        return
-      }
-      console.log('AssetDetail: Fetching asset with id:', assetId)
+      console.log('AssetDetail: Fetching asset with code:', id)
       
       // 尝试获取资产数据，最多重试3次
       let retries = 3
@@ -69,7 +64,7 @@ export default function AssetDetail() {
           const controller = new AbortController()
           const timeoutId = setTimeout(() => controller.abort(), 10000) // 10秒超时
           
-          const result = await supabase.from('assets').select('*').eq('id', assetId).single({ signal: controller.signal })
+          const result = await supabase.from('assets').select('*').eq('asset_code', id).single({ signal: controller.signal })
           clearTimeout(timeoutId)
           
           data = result.data
@@ -137,17 +132,12 @@ export default function AssetDetail() {
 
   // 从Supabase中获取资产历史
   const fetchAssetHistory = async () => {
-    if (!id) return
+    if (!id || !asset) return
     try {
-      const assetId = parseInt(id)
-      if (isNaN(assetId)) {
-        console.error('Invalid asset ID:', id)
-        return
-      }
       const { data, error } = await supabase
         .from('operation_history')
         .select('*')
-        .eq('asset_id', assetId)
+        .eq('asset_id', asset.id)
         .order('created_at', { ascending: false })
       if (error) throw error
       setAssetHistory(data || [])
@@ -159,17 +149,12 @@ export default function AssetDetail() {
 
   // 从Supabase中获取维修记录
   const fetchMaintenanceRecords = async () => {
-    if (!id) return
+    if (!id || !asset) return
     try {
-      const assetId = parseInt(id)
-      if (isNaN(assetId)) {
-        console.error('Invalid asset ID:', id)
-        return
-      }
       const { data, error } = await supabase
         .from('maintenance_records')
         .select('*')
-        .eq('asset_id', assetId)
+        .eq('asset_id', asset.id)
         .order('created_at', { ascending: false })
       if (error) throw error
       setMaintenanceRecords(data || [])
@@ -181,9 +166,12 @@ export default function AssetDetail() {
 
   useEffect(() => {
     fetchAsset()
+  }, [id])
+
+  useEffect(() => {
     fetchAssetHistory()
     fetchMaintenanceRecords()
-  }, [id])
+  }, [asset])
 
  const handleEditSubmit = async (e: React.FormEvent) => {
   e.preventDefault()

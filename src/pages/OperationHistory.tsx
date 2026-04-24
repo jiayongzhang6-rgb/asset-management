@@ -56,8 +56,23 @@ export default function OperationHistory() {
     return JSON.stringify(item, null, 2)
   }
 
-  const viewAsset = (assetId: number) => {
-    navigate(`/asset/${assetId}`)
+  const viewAsset = async (assetId: number) => {
+    try {
+      const { data, error } = await supabase
+        .from('assets')
+        .select('asset_code')
+        .eq('id', assetId)
+        .single()
+      if (error) {
+        console.error('Error fetching asset code:', error)
+        return
+      }
+      if (data && data.asset_code) {
+        navigate(`/asset/${data.asset_code}`)
+      }
+    } catch (error) {
+      console.error('Error viewing asset:', error)
+    }
   }
 
   return (
