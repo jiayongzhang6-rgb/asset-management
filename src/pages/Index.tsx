@@ -694,10 +694,7 @@ export default function Index() {
     <div className="min-h-screen bg-gray-100">
       <header className="bg-blue-600 text-white">
         <div className="container mx-auto px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <img src="https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=green%20logo%20with%20letter%20D%20and%20lightning%20bolt%2C%20modern%20corporate%20design&image_size=square" alt="德泽智联" className="h-10 w-10" />
-            <h1 className="text-2xl font-bold">德泽智联IT资产管理系统</h1>
-          </div>
+          <h1 className="text-2xl font-bold">德泽智联IT资产管理系统</h1>
           <div className="flex items-center gap-2">
             <span>{user?.email}</span>
             {(user?.role === 'admin') && (
@@ -738,7 +735,24 @@ export default function Index() {
         </div>
       </header>
 
-      <main className="container mx-auto px-4 py-8">
+      <main className="container mx-auto px-4 py-8" style={{ position: 'relative', minHeight: '80vh' }}>
+        {/* 水印 */}
+        <div style={{ 
+          position: 'absolute', 
+          top: '50%', 
+          left: '50%', 
+          transform: 'translate(-50%, -50%)', 
+          opacity: 0.1, 
+          zIndex: 0,
+          pointerEvents: 'none'
+        }}>
+          <img 
+            src="https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=green%20logo%20with%20letter%20D%20and%20lightning%20bolt%2C%20modern%20corporate%20design&image_size=square_hd" 
+            alt="德泽智联" 
+            style={{ width: '300px', height: '300px' }}
+          />
+        </div>
+        <div style={{ position: 'relative', zIndex: 1 }}>
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mb-6">
           <div className="bg-white rounded-lg shadow p-4">
             <div className="flex items-center gap-3">
@@ -989,6 +1003,7 @@ export default function Index() {
               </div>
             </div>
           </div>
+        </div>
         </div>
       </main>
 
