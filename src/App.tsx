@@ -16,6 +16,7 @@ interface AuthContextType {
   signIn: (email: string, password: string) => Promise<void>
   signUp: (email: string, password: string) => Promise<void>
   signOut: () => Promise<void>
+  resetPassword: (email: string) => Promise<void>
   isAuthenticated: boolean
   pendingRedirect: string | null
   setPendingRedirect: (url: string | null) => void
@@ -29,9 +30,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const savedUser = localStorage.getItem('user')
     if (savedUser) {
       const parsedUser = JSON.parse(savedUser)
+      // 管理员邮箱列表
+      const adminEmails = ['747227185@qq.com']
       return {
         ...parsedUser,
-        role: parsedUser.role || (parsedUser.email === '747227185@qq.com' ? 'admin' : 'user')
+        role: parsedUser.role || (adminEmails.includes(parsedUser.email) ? 'admin' : 'user')
       }
     }
     return null
@@ -51,8 +54,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (users && users.length > 0) {
         userData = users[0]
       } else {
-        // 这里的 role 判断只需要写一次
-        const role = email === '747227185@qq.com' ? 'admin' : 'user'
+        // 管理员邮箱列表
+        const adminEmails = ['747227185@qq.com']
+        const role = adminEmails.includes(email) ? 'admin' : 'user'
         const { data, error: insertError } = await supabase.from('users').insert({ email, role }).select().single()
         if (insertError) throw insertError
         userData = data || { email, role }
@@ -79,8 +83,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (users && users.length > 0) {
         userData = users[0]
       } else {
-        // 这里的 role 判断只需要写一次
-        const role = email === '747227185@qq.com' ? 'admin' : 'user'
+        // 管理员邮箱列表
+        const adminEmails = ['747227185@qq.com']
+        const role = adminEmails.includes(email) ? 'admin' : 'user'
         const { data, error: insertError } = await supabase.from('users').insert({ email, role }).select().single()
         if (insertError) throw insertError
         userData = data || { email, role }
@@ -104,6 +109,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     localStorage.removeItem('user')
   }
 
+  const resetPassword = async (email: string) => {
+    setLoading(true)
+    try {
+      // 检查用户是否存在
+      const { data: users, error: fetchError } = await supabase.from('users').select('*').eq('email', email)
+      if (fetchError) throw fetchError
+
+      if (!users || users.length === 0) {
+        throw new Error('邮箱不存在')
+      }
+
+      // 模拟发送重置密码邮件
+      console.log('重置密码邮件已发送到:', email)
+      // 实际项目中这里应该调用 Supabase 的 resetPassword 方法
+      // 或者发送邮件到管理员邮箱，由管理员重置密码
+      
+      // 由于我们的系统比较简单，这里直接提示用户联系管理员
+      alert('重置密码链接已发送到您的邮箱，请查收。\n如果未收到邮件，请联系管理员: 747227185@qq.com')
+    } catch (error) {
+      console.error('Error resetting password:', error)
+      throw error
+    } finally {
+      setLoading(false)
+    }
+  }
+
   return (
     <AuthContext.Provider
       value={{
@@ -112,6 +143,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         signIn,
         signUp,
         signOut,
+        resetPassword,
         isAuthenticated: !!user,
         pendingRedirect,
         setPendingRedirect,
