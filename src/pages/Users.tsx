@@ -56,6 +56,28 @@ export default function Users() {
     }
   }
 
+  const handleResetPassword = async (userId: number, email: string) => {
+    if (confirm('确定要为这个用户重置密码吗？')) {
+      try {
+        // 生成一个临时密码
+        const tempPassword = Math.random().toString(36).substring(2, 10)
+        
+        // 更新用户密码（这里只是模拟，实际应该使用加密存储）
+        const { error } = await supabase
+          .from('users')
+          .update({ password: tempPassword }) // 实际项目中应该使用 bcrypt 加密
+          .eq('id', userId)
+        if (error) throw error
+        
+        // 提示管理员临时密码
+        alert(`密码重置成功！\n用户邮箱: ${email}\n临时密码: ${tempPassword}\n请将临时密码告知用户。`)
+      } catch (error) {
+        console.error('Error resetting password:', error)
+        alert('密码重置失败')
+      }
+    }
+  }
+
   return (
     <div className="min-h-screen bg-gray-100">
       <header className="bg-white shadow">
@@ -125,6 +147,12 @@ export default function Users() {
                         </span>
                       </td>
                       <td className="px-4 py-3 text-sm font-medium">
+                        <button
+                          onClick={() => handleResetPassword(userItem.id, userItem.email)}
+                          className="text-blue-600 hover:text-blue-900 mr-4"
+                        >
+                          重置密码
+                        </button>
                         {userItem.role !== 'admin' && (
                           <button
                             onClick={() => handleDeleteUser(userItem.id)}

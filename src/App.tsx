@@ -120,15 +120,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         throw new Error('邮箱不存在')
       }
 
-      // 模拟发送重置密码邮件
-      console.log('重置密码邮件已发送到:', email)
-      // 实际项目中这里应该调用 Supabase 的 resetPassword 方法
-      // 或者发送邮件到管理员邮箱，由管理员重置密码
+      // 使用 Supabase Auth 发送重置密码邮件
+      const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/login`
+      })
       
-      // 由于我们的系统比较简单，这里直接提示用户联系管理员
-      alert('重置密码链接已发送到您的邮箱，请查收。\n如果未收到邮件，请联系管理员: 747227185@qq.com')
+      if (resetError) throw resetError
+      
+      console.log('重置密码邮件已发送到:', email)
+      
+      // 提示用户检查邮箱
+      alert('重置密码链接已发送到您的邮箱，请查收并按照邮件中的指示重置密码。\n如果未收到邮件，请检查垃圾邮件文件夹或联系管理员。')
     } catch (error) {
       console.error('Error resetting password:', error)
+      // 发送失败时，提示用户联系管理员
+      alert('邮件发送失败，请联系管理员重置密码。\n管理员邮箱: 747227185@qq.com')
       throw error
     } finally {
       setLoading(false)
