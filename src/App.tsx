@@ -54,7 +54,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (users && users.length > 0) {
         userData = users[0]
         // 检查密码是否正确
-        if (userData.password && userData.password !== password) {
+        if (!userData.password || userData.password !== password) {
           throw new Error('密码错误')
         }
       } else {
@@ -81,6 +81,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       let userData;
       if (users && users.length > 0) {
         userData = users[0]
+        // 检查密码是否正确
+        if (!userData.password || userData.password !== password) {
+          throw new Error('密码错误')
+        }
       } else {
         // 管理员邮箱列表
         const adminEmails = ['747227185@qq.com']
