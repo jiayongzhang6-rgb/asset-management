@@ -47,13 +47,13 @@ export type MaintenanceRecordUpdate = Partial<MaintenanceRecordInsert>
 
 export type AssetImage = {
   id: string
-  asset_id: string
+  asset_code: string
   image_url: string
   image_name: string
   created_at: string
+  updated_at: string
 }
-
-export type AssetImageInsert = Omit<AssetImage, 'id' | 'created_at'>
+export type AssetImageInsert = Omit<AssetImage, 'id' | 'created_at' | 'updated_at'>
 
 // 初始化数据库表结构
 export const initDatabase = async () => {
@@ -203,11 +203,11 @@ export const initDatabase = async () => {
         sql: `
           CREATE TABLE asset_images (
             id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-            asset_id UUID NOT NULL,
+            asset_code VARCHAR(50) NOT NULL,
             image_url TEXT NOT NULL,
             image_name VARCHAR(255) NOT NULL,
             created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-            FOREIGN KEY (asset_id) REFERENCES assets(id)
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
           );
           
           ALTER TABLE asset_images ENABLE ROW LEVEL SECURITY;

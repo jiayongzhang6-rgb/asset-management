@@ -1,4 +1,4 @@
-﻿﻿import React, { useState, useEffect, useRef } from 'react'
+﻿﻿﻿﻿import React, { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '../App'
 import { supabase, type Asset, type MaintenanceRecord, type AssetImage } from '../lib/supabase'
@@ -220,7 +220,7 @@ export default function AssetDetail() {
       const { data, error } = await supabase
         .from('asset_images')
         .select('*')
-        .eq('asset_id', asset.id)
+        .eq('asset_code', asset.asset_code)
         .order('created_at', { ascending: false })
       if (error) throw error
       setAssetImages(data || [])
@@ -488,7 +488,7 @@ export default function AssetDetail() {
         const { error: dbError } = await supabase
           .from('asset_images')
           .insert({
-            asset_id: asset.id,
+            asset_code: asset.asset_code,
             image_url: urlData.publicUrl,
             image_name: file.name
           })
