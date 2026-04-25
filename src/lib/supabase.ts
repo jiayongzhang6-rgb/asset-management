@@ -45,6 +45,16 @@ export type AssetUpdate = Partial<AssetInsert>
 export type MaintenanceRecordInsert = Omit<MaintenanceRecord, 'id' | 'created_at' | 'updated_at'>
 export type MaintenanceRecordUpdate = Partial<MaintenanceRecordInsert>
 
+export type AssetImage = {
+  id: string
+  asset_id: string
+  image_url: string
+  image_name: string
+  created_at: string
+}
+
+export type AssetImageInsert = Omit<AssetImage, 'id' | 'created_at'>
+
 // 初始化数据库表结构
 export const initDatabase = async () => {
   console.log('Starting database initialization...')
@@ -175,6 +185,49 @@ export const initDatabase = async () => {
     }
   } catch (error) {
     console.error('Error in maintenance_records initialization:', error)
+  }
+  
+  // 检查 asset_images 表
+  try {
+    const { data: imageTables, error: imageTablesError } = await supabase
+      .from('information_schema.tables')
+      .select('table_name')
+      .eq('table_schema', 'public')
+      .eq('table_name', 'asset_images')
+
+    if (imageTablesError) {
+      console.error('Error checking asset_images table:', imageTablesError)
+    } else if (imageTables.length === 0) {
+      console.log('Creating asset_images table...')
+      const { error: createImageError } = await supabase.rpc('execute_sql', {
+        sql: `
+          CREATE TABLE asset_images (
+            id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+            asset_id UUID NOT NULL,
+            image_url TEXT NOT NULL,
+            image_name VARCHAR(255) NOT NULL,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+            FOREIGN KEY (asset_id) REFERENCES assets(id)
+          );
+          
+          ALTER TABLE asset_images ENABLE ROW LEVEL SECURITY;
+          
+          CREATE POLICY "Allow public read access" ON asset_images FOR SELECT USING (true);
+          CREATE POLICY "Allow public insert access" ON asset_images FOR INSERT WITH CHECK (true);
+          CREATE POLICY "Allow public delete access" ON asset_images FOR DELETE USING (true);
+        `
+      })
+
+      if (createImageError) {
+        console.error('Error creating asset_images table:', createImageError)
+      } else {
+        console.log('Asset images table created successfully')
+      }
+    } else {
+      console.log('asset_images table already exists')
+    }
+  } catch (error) {
+    console.error('Error in asset_images initialization:', error)
   }
   
   console.log('Database initialization completed')

@@ -1,7 +1,7 @@
-﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import React, { useState, useEffect } from 'react'
+﻿﻿import React, { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '../App'
-import { supabase, type Asset, type MaintenanceRecord } from '../lib/supabase'
+import { supabase, type Asset, type MaintenanceRecord, type AssetImage } from '../lib/supabase'
 
 export default function AssetDetail() {
   const { id } = useParams<{ id: string }>()
@@ -17,6 +17,10 @@ export default function AssetDetail() {
   const [editingMaintenanceRecord, setEditingMaintenanceRecord] = useState<MaintenanceRecord | null>(null)
   const [qrCodeUrl, setQrCodeUrl] = useState('')
   const [assetHistory, setAssetHistory] = useState<any[]>([])
+  const [assetImages, setAssetImages] = useState<AssetImage[]>([])
+  const [isImageUploadDialogOpen, setIsImageUploadDialogOpen] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  
   const [formData, setFormData] = useState({
     brand: '',
     model: '',
@@ -75,7 +79,39 @@ export default function AssetDetail() {
     return storage
   }
 
-
+  // 图片压缩函数
+  const compressImage = (file: File): Promise<Blob> => {
+    return new Promise((resolve) => {
+      const canvas = document.createElement('canvas')
+      const ctx = canvas.getContext('2d')
+      const img = new Image()
+      
+      img.onload = () => {
+        // 计算压缩后的尺寸
+        const maxWidth = 1024
+        let width = img.width
+        let height = img.height
+        
+        if (width > maxWidth) {
+          height = (height * maxWidth) / width
+          width = maxWidth
+        }
+        
+        canvas.width = width
+        canvas.height = height
+        
+        // 绘制压缩后的图片
+        ctx?.drawImage(img, 0, 0, width, height)
+        
+        // 转换为blob，质量80%
+        canvas.toBlob((blob) => {
+          resolve(blob || file)
+        }, 'image/jpeg', 0.8)
+      }
+      
+      img.src = URL.createObjectURL(file)
+    })
+  }
 
   // 从Supabase中获取资产数据
   const fetchAsset = async () => {
@@ -177,6 +213,23 @@ export default function AssetDetail() {
     }
   }
 
+  // 从Supabase中获取资产图片
+  const fetchAssetImages = async () => {
+    if (!id || !asset) return
+    try {
+      const { data, error } = await supabase
+        .from('asset_images')
+        .select('*')
+        .eq('asset_id', asset.id)
+        .order('created_at', { ascending: false })
+      if (error) throw error
+      setAssetImages(data || [])
+      console.log('AssetDetail: Asset images fetched successfully', data)
+    } catch (error) {
+      console.error('Error fetching asset images:', error)
+    }
+  }
+
   useEffect(() => {
     fetchAsset()
   }, [id])
@@ -184,6 +237,7 @@ export default function AssetDetail() {
   useEffect(() => {
     fetchAssetHistory()
     fetchMaintenanceRecords()
+    fetchAssetImages()
   }, [asset])
 
  const handleEditSubmit = async (e: React.FormEvent) => {
@@ -198,247 +252,136 @@ export default function AssetDetail() {
     const assetCodeToUse = asset.asset_code || id
     console.log('AssetDetail: Asset code to use for history:', assetCodeToUse)
     
-    // 权限控制：普通用户只能修改使用人、位置、部门等信息
-    let updateData = formData
-    if (user && user.role !== 'admin') {
-      updateData = {
-        user_name: formData.user_name,
-        location: formData.location,
-        department: formData.department
-      }
-    }
-    
-    // 生成更新内容描述
+    // 计算变更内容
     const changes = []
-    if (asset.user_name !== formData.user_name) {
-      changes.push(`使用人: ${asset.user_name} → ${formData.user_name}`)
-    }
-    if (asset.location !== formData.location) {
-      changes.push(`位置: ${asset.location} → ${formData.location}`)
-    }
-    if (asset.department !== formData.department) {
-      changes.push(`部门: ${asset.department} → ${formData.department}`)
-    }
-    if (user && user.role === 'admin') {
-      if (asset.brand !== formData.brand) {
-        changes.push(`品牌: ${asset.brand} → ${formData.brand}`)
-      }
-      if (asset.model !== formData.model) {
-        changes.push(`型号: ${asset.model} → ${formData.model}`)
-      }
-      if (asset.cpu !== formData.cpu) {
-        changes.push(`CPU: ${asset.cpu} → ${formData.cpu}`)
-      }
-      if (asset.ram !== formData.ram) {
-        changes.push(`内存: ${asset.ram} → ${formData.ram}`)
-      }
-      if (asset.storage !== formData.storage) {
-        changes.push(`存储: ${asset.storage} → ${formData.storage}`)
-      }
-      if (asset.gpu !== formData.gpu) {
-        changes.push(`GPU: ${asset.gpu || '无'} → ${formData.gpu || '无'}`)
-      }
-      if (asset.os !== formData.os) {
-        changes.push(`操作系统: ${asset.os} → ${formData.os}`)
-      }
-      if (asset.status !== formData.status) {
-        changes.push(`状态: ${asset.status === 'active' ? '使用中' : asset.status === 'idle' ? '闲置' : '维修中'} → ${formData.status === 'active' ? '使用中' : formData.status === 'idle' ? '闲置' : '维修中'}`)
-      }
-      if (asset.notes !== formData.notes) {
-        changes.push('备注: 已修改')
-      }
-    }
+    if (formData.brand !== asset.brand) changes.push(`品牌: ${asset.brand || '无'} → ${formData.brand || '无'}`)
+    if (formData.model !== asset.model) changes.push(`型号: ${asset.model || '无'} → ${formData.model || '无'}`)
+    if (formData.cpu !== asset.cpu) changes.push(`CPU: ${asset.cpu || '无'} → ${formData.cpu || '无'}`)
+    if (formData.ram !== asset.ram) changes.push(`内存: ${asset.ram || '无'} → ${formData.ram || '无'}`)
+    if (formData.storage !== asset.storage) changes.push(`存储: ${asset.storage || '无'} → ${formData.storage || '无'}`)
+    if (formData.gpu !== asset.gpu) changes.push(`GPU: ${asset.gpu || '无'} → ${formData.gpu || '无'}`)
+    if (formData.os !== asset.os) changes.push(`操作系统: ${asset.os || '无'} → ${formData.os || '无'}`)
+    if (formData.department !== asset.department) changes.push(`部门: ${asset.department || '无'} → ${formData.department || '无'}`)
+    if (formData.user_name !== asset.user_name) changes.push(`使用人: ${asset.user_name || '无'} → ${formData.user_name || '无'}`)
+    if (formData.location !== asset.location) changes.push(`位置: ${asset.location || '无'} → ${formData.location || '无'}`)
+    if (formData.status !== asset.status) changes.push(`状态: ${asset.status === 'active' ? '使用中' : asset.status === 'idle' ? '闲置' : '维修中'} → ${formData.status === 'active' ? '使用中' : formData.status === 'idle' ? '闲置' : '维修中'}`)
+    if (formData.notes !== asset.notes) changes.push(`备注: ${asset.notes || '无'} → ${formData.notes || '无'}`)
     
-    const changeDescription = changes.length > 0 ? changes.join('; ') : '无具体变更'
+    console.log('AssetDetail: Changes to record:', changes)
     
-    console.log('AssetDetail: Updating asset with data:', updateData)
-    console.log('AssetDetail: Asset:', asset)
-    const { data, error } = await supabase.from('assets').update(updateData).eq('id', asset.id)
-    if (error) {
-      console.error('AssetDetail: Update error:', error)
-      throw error
+    // 开始事务
+    const { error: updateError } = await supabase
+      .from('assets')
+      .update(formData)
+      .eq('id', asset.id)
+    
+    if (updateError) {
+      console.error('AssetDetail: Update error:', updateError)
+      throw updateError
     }
-    console.log('AssetDetail: Asset updated successfully', data)
     
     // 记录操作历史
-    if (user) {
-      console.log('AssetDetail: Recording operation history for update')
+    if (user && changes.length > 0) {
+      console.log('AssetDetail: Recording operation history')
       try {
         const historyData = {
           asset_code: assetCodeToUse,
           operation_type: 'update',
           user_email: user.email,
           created_at: new Date().toISOString(),
-          changes: changeDescription
+          changes: changes.join('\n')
         }
         console.log('AssetDetail: Inserting operation history with data:', historyData)
-        const { data: historyResult, error: historyError } = await supabase.from('operation_history').insert(historyData)
+        
+        const { error: historyError } = await supabase
+          .from('operation_history')
+          .insert(historyData)
+        
         if (historyError) {
-          console.error('AssetDetail: Error recording operation history:', historyError)
-          alert(`资产更新成功，但操作历史记录失败: ${historyError.message}`)
-        } else {
-          console.log('AssetDetail: Operation history recorded successfully for update:', historyResult)
+          console.error('AssetDetail: History insert error:', historyError)
+          // 历史记录失败不影响主操作
         }
       } catch (historyError) {
-        console.error('AssetDetail: Exception recording operation history:', historyError)
-        alert(`资产更新成功，但操作历史记录失败: ${historyError.message}`)
+        console.error('AssetDetail: Error recording operation history:', historyError)
       }
     }
     
-    await fetchAsset()
-    await fetchAssetHistory()
     setIsEditDialogOpen(false)
+    await fetchAsset() // 重新获取资产数据
     alert('资产更新成功')
   } catch (error) {
     console.error('Error updating asset:', error)
-    alert(`资产更新失败: ${error.message}`)
+    alert('资产更新失败')
   }
 }
 
- const handleDelete = async () => {
-  // 权限控制：只有管理员可以删除资产
-  if (user && user.role !== 'admin') {
-    alert('只有管理员可以删除资产')
-    return
-  }
-  
-  if (asset && confirm('确定要删除这个资产吗？')) {
-    try {
-      const { data, error } = await supabase.from('assets').delete().eq('id', asset.id)
-      if (error) throw error
-      
-      // 记录操作历史
-      if (user) {
-        console.log('AssetDetail: Recording operation history for delete')
-        try {
-          const historyData = {
-            asset_code: asset.asset_code,
-            operation_type: 'delete',
-            user_email: user.email,
-            created_at: new Date().toISOString()
+  const handleDelete = async () => {
+    // 权限控制：只有管理员可以删除资产
+    if (user && user.role !== 'admin') {
+      alert('只有管理员可以删除资产')
+      return
+    }
+    
+    if (asset && confirm('确定要删除这个资产吗？')) {
+      try {
+        const { data, error } = await supabase.from('assets').delete().eq('id', asset.id)
+        if (error) throw error
+        
+        // 记录操作历史
+        if (user) {
+          console.log('AssetDetail: Recording operation history for delete')
+          try {
+            const historyData = {
+              asset_code: asset.asset_code,
+              operation_type: 'delete',
+              user_email: user.email,
+              created_at: new Date().toISOString()
+            }
+            
+            // 尝试插入操作历史
+            await supabase.from('operation_history').insert(historyData)
+          } catch (historyError) {
+            console.error('AssetDetail: Error recording operation history for delete:', historyError)
           }
-          console.log('AssetDetail: Inserting operation history with data:', historyData)
-          const { data: historyResult, error: historyError } = await supabase.from('operation_history').insert(historyData)
-          if (historyError) {
-            console.error('AssetDetail: Error recording operation history:', historyError)
-          } else {
-            console.log('AssetDetail: Operation history recorded successfully for delete:', historyResult)
-          }
-        } catch (historyError) {
-          console.error('AssetDetail: Exception recording operation history:', historyError)
         }
+        
+        navigate('/')
+        alert('资产删除成功')
+      } catch (error) {
+        console.error('Error deleting asset:', error)
+        alert('资产删除失败')
       }
-      
-      navigate('/')
-    } catch (error) {
-      console.error('Error deleting asset:', error)
-      alert('资产删除失败')
-    }
-  }
-}
-
-  const generateQRCode = async () => {
-    if (!asset) return
-    try {
-      const QRCode = (await import('qrcode')).default
-      const qrData = `${window.location.origin}/asset/${asset.asset_code}`
-      console.log('AssetDetail: Generating QR code with data:', qrData)
-      console.log('AssetDetail: Asset code:', asset.asset_code)
-      const url = await QRCode.toDataURL(qrData, {
-        width: 300,
-        margin: 2
-      })
-      setQrCodeUrl(url)
-      return url
-    } catch (error) {
-      console.error('Error generating QR code:', error)
-      return ''
-    }
-  }
-
-  const handleGenerateQR = async () => {
-    const url = await generateQRCode()
-    if (url) {
-      setIsQRDialogOpen(true)
     }
   }
 
   const handleAddMaintenance = () => {
-    setEditingMaintenanceRecord(null)
-    setMaintenanceFormData({
-      issue_description: '',
-      repair_description: '',
-      repair_date: '',
-      repair_cost: 0,
-      status: 'pending'
-    })
     setIsMaintenanceDialogOpen(true)
-  }
-
-  const handleEditMaintenance = (record: MaintenanceRecord) => {
-    setEditingMaintenanceRecord(record)
-    setMaintenanceFormData({
-      issue_description: record.issue_description,
-      repair_description: record.repair_description || '',
-      repair_date: record.repair_date || '',
-      repair_cost: record.repair_cost || 0,
-      status: record.status
-    })
-    setIsEditMaintenanceDialogOpen(true)
-  }
-
-  const handleDeleteMaintenance = async (recordId: number) => {
-    if (confirm('确定要删除这条维修记录吗？')) {
-      try {
-        const { error } = await supabase.from('maintenance_records').delete().eq('id', recordId)
-        if (error) throw error
-        await fetchMaintenanceRecords()
-        alert('维修记录删除成功')
-      } catch (error) {
-        console.error('Error deleting maintenance record:', error)
-        alert('维修记录删除失败')
-      }
-    }
   }
 
   const handleMaintenanceSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!asset) {
-      alert('资产数据加载中，请稍后重试')
-      return
-    }
+    if (!asset) return
     
     try {
       if (editingMaintenanceRecord) {
-        // 更新现有维修记录
-        console.log('AssetDetail: Updating maintenance record:', editingMaintenanceRecord.id)
+        // 更新维修记录
         const { error } = await supabase
           .from('maintenance_records')
           .update(maintenanceFormData)
           .eq('id', editingMaintenanceRecord.id)
-        if (error) {
-          console.error('AssetDetail: Maintenance update error:', error)
-          throw error
-        }
+        if (error) throw error
         setIsEditMaintenanceDialogOpen(false)
         alert('维修记录更新成功')
       } else {
         // 添加新维修记录
         console.log('AssetDetail: Adding maintenance record for asset:', asset)
-        console.log('AssetDetail: Asset id:', asset.id, 'type:', typeof asset.id)
-        
-        const insertData = {
-          ...maintenanceFormData,
-          asset_id: asset.id
-        }
-        console.log('AssetDetail: Insert data:', insertData)
-        
-        const { data, error } = await supabase
+        console.log('AssetDetail: Asset id:', asset.id, typeof asset.id)
+        const { error } = await supabase
           .from('maintenance_records')
-          .insert(insertData)
-        
-        console.log('AssetDetail: Insert result:', { data, error })
-        
+          .insert({
+            ...maintenanceFormData,
+            asset_id: asset.id
+          })
         if (error) {
           console.error('AssetDetail: Maintenance record insert error:', error)
           throw error
@@ -449,37 +392,189 @@ export default function AssetDetail() {
       await fetchMaintenanceRecords()
     } catch (error) {
       console.error('Error saving maintenance record:', error)
-      alert(`维修记录保存失败: ${error.message}`)
+      alert('维修记录保存失败')
     }
   }
 
-  if (authLoading) {
+  const handleEditMaintenance = (record: MaintenanceRecord) => {
+    setEditingMaintenanceRecord(record)
+    setMaintenanceFormData({
+      issue_description: record.issue_description,
+      repair_description: record.repair_description,
+      repair_date: record.repair_date,
+      repair_cost: record.repair_cost,
+      status: record.status
+    })
+    setIsEditMaintenanceDialogOpen(true)
+  }
+
+  const handleDeleteMaintenance = async (id: number) => {
+    if (confirm('确定要删除这个维修记录吗？')) {
+      try {
+        const { error } = await supabase.from('maintenance_records').delete().eq('id', id)
+        if (error) throw error
+        await fetchMaintenanceRecords()
+        alert('维修记录删除成功')
+      } catch (error) {
+        console.error('Error deleting maintenance record:', error)
+        alert('维修记录删除失败')
+      }
+    }
+  }
+
+  const generateQRCode = async () => {
+    if (!asset) return
+    try {
+      const url = `${window.location.origin}/asset/${asset.asset_code}`
+      console.log('AssetDetail: QR code URL:', url)
+      // 这里使用简单的方法生成二维码，实际项目中可以使用更专业的库
+      setQrCodeUrl(`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(url)}`)
+      setIsQRDialogOpen(true)
+    } catch (error) {
+      console.error('Error generating QR code:', error)
+      alert('生成二维码失败')
+    }
+  }
+
+  // 处理图片上传
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!asset) return
+    
+    const files = e.target.files
+    if (!files || files.length === 0) return
+    
+    // 检查图片数量限制
+    if (assetImages.length + files.length > 3) {
+      alert('每件资产最多只能上传3张照片')
+      return
+    }
+    
+    try {
+      for (const file of files) {
+        // 检查文件类型
+        if (!file.type.startsWith('image/')) {
+          alert('请上传图片文件')
+          continue
+        }
+        
+        // 压缩图片
+        const compressedFile = await compressImage(file)
+        
+        // 生成唯一文件名
+        const fileName = `${asset.asset_code}_${Date.now()}_${file.name}`
+        
+        // 上传到Supabase Storage
+        const { data, error } = await supabase
+          .storage
+          .from('asset-images')
+          .upload(fileName, compressedFile, {
+            cacheControl: '3600',
+            upsert: false
+          })
+        
+        if (error) {
+          console.error('Error uploading image:', error)
+          alert('图片上传失败')
+          continue
+        }
+        
+        // 获取图片URL
+        const { data: urlData } = supabase
+          .storage
+          .from('asset-images')
+          .getPublicUrl(fileName)
+        
+        // 保存图片信息到数据库
+        const { error: dbError } = await supabase
+          .from('asset_images')
+          .insert({
+            asset_id: asset.id,
+            image_url: urlData.publicUrl,
+            image_name: file.name
+          })
+        
+        if (dbError) {
+          console.error('Error saving image to database:', dbError)
+          alert('保存图片信息失败')
+          continue
+        }
+      }
+      
+      // 重新获取图片列表
+      await fetchAssetImages()
+      alert('图片上传成功')
+      setIsImageUploadDialogOpen(false)
+    } catch (error) {
+      console.error('Error uploading images:', error)
+      alert('图片上传失败')
+    }
+  }
+
+  // 处理图片删除
+  const handleImageDelete = async (imageId: string) => {
+    if (confirm('确定要删除这张图片吗？')) {
+      try {
+        // 从数据库中删除图片记录
+        const { error: dbError } = await supabase
+          .from('asset_images')
+          .delete()
+          .eq('id', imageId)
+        
+        if (dbError) {
+          console.error('Error deleting image from database:', dbError)
+          alert('删除图片失败')
+          return
+        }
+        
+        // 重新获取图片列表
+        await fetchAssetImages()
+        alert('图片删除成功')
+      } catch (error) {
+        console.error('Error deleting image:', error)
+        alert('删除图片失败')
+      }
+    }
+  }
+
+  if (authLoading || loading) {
     return (
-      <div className="flex items-center justify-center h-screen">
-        <div className="text-lg">加载中...</div>
+      <div className="min-h-screen bg-gray-100 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">加载中...</p>
+        </div>
       </div>
     )
   }
 
-  // 修复：将 navigate() 调用移到 useEffect 中
-  useEffect(() => {
-    if (!isAuthenticated) {
-      navigate('/login')
-    }
-  }, [isAuthenticated, navigate])
-
-  if (loading) {
+  if (!isAuthenticated) {
     return (
-      <div className="flex items-center justify-center h-screen">
-        <div className="text-lg">加载中...</div>
+      <div className="min-h-screen bg-gray-100 flex items-center justify-center">
+        <div className="text-center">
+          <h2 className="text-2xl font-bold mb-4">请先登录</h2>
+          <button
+            onClick={() => navigate('/')}
+            className="px-6 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+          >
+            返回登录
+          </button>
+        </div>
       </div>
     )
   }
 
   if (!asset) {
     return (
-      <div className="flex items-center justify-center h-screen">
-        <div className="text-lg">资产不存在</div>
+      <div className="min-h-screen bg-gray-100 flex items-center justify-center">
+        <div className="text-center">
+          <h2 className="text-2xl font-bold mb-4">资产不存在</h2>
+          <button
+            onClick={() => navigate('/')}
+            className="px-6 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+          >
+            返回列表
+          </button>
+        </div>
       </div>
     )
   }
@@ -495,25 +590,25 @@ export default function AssetDetail() {
               <>
                 <button
                   onClick={() => navigate('/')}
-                  className="bg-white text-blue-600 px-3 py-1 rounded text-sm font-medium hover:bg-blue-50"
+                  className="bg-white text-blue-600 px-3 py-1 rounded text-sm font-medium hover:bg-blue-50 border border-blue-200"
                 >
                   返回列表
                 </button>
                 <button
                   onClick={() => navigate('/import')}
-                  className="bg-white text-blue-600 px-3 py-1 rounded text-sm font-medium hover:bg-blue-50"
+                  className="bg-white text-blue-600 px-3 py-1 rounded text-sm font-medium hover:bg-blue-50 border border-blue-200"
                 >
                   批量导入
                 </button>
                 <button
                   onClick={() => navigate('/history')}
-                  className="bg-white text-blue-600 px-3 py-1 rounded text-sm font-medium hover:bg-blue-50"
+                  className="bg-white text-blue-600 px-3 py-1 rounded text-sm font-medium hover:bg-blue-50 border border-blue-200"
                 >
                   操作历史
                 </button>
                 <button
                   onClick={() => navigate('/users')}
-                  className="bg-white text-blue-600 px-3 py-1 rounded text-sm font-medium hover:bg-blue-50"
+                  className="bg-white text-blue-600 px-3 py-1 rounded text-sm font-medium hover:bg-blue-50 border border-blue-200"
                 >
                   用户管理
                 </button>
@@ -521,7 +616,7 @@ export default function AssetDetail() {
             )}
             <button
               onClick={signOut}
-              className="bg-white text-blue-600 px-3 py-1 rounded text-sm font-medium hover:bg-blue-50"
+              className="bg-white text-blue-600 px-3 py-1 rounded text-sm font-medium hover:bg-blue-50 border border-blue-200"
             >
               退出
             </button>
@@ -540,7 +635,7 @@ export default function AssetDetail() {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          opacity: 0.15, 
+          opacity: 0.08, 
           zIndex: -1,
           pointerEvents: 'none',
           background: 'transparent'
@@ -562,37 +657,47 @@ export default function AssetDetail() {
             <div className="flex items-center gap-2">
               <button
                 onClick={() => navigate('/')}
-                className="bg-white text-blue-600 px-3 py-1 rounded text-sm font-medium hover:bg-blue-50 border border-blue-200"
+                className="bg-gray-200 text-gray-700 px-4 py-2 rounded hover:bg-gray-300"
               >
-                返回列表
+                返回
               </button>
               <h2 className="text-2xl font-bold">资产详情</h2>
             </div>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <button
-                onClick={() => setIsEditDialogOpen(true)}
-                className="bg-white text-blue-600 px-3 py-1 rounded text-sm font-medium hover:bg-blue-50 border border-blue-200"
-              >
-                编辑
-              </button>
-              <button
-                onClick={handleGenerateQR}
-                className="bg-white text-blue-600 px-3 py-1 rounded text-sm font-medium hover:bg-blue-50 border border-blue-200"
+                onClick={generateQRCode}
+                className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
               >
                 查看二维码
               </button>
               {user?.role === 'admin' && (
                 <button
                   onClick={handleAddMaintenance}
-                  className="bg-white text-blue-600 px-3 py-1 rounded text-sm font-medium hover:bg-blue-50 border border-blue-200"
+                  className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
                 >
                   添加维修记录
                 </button>
               )}
               {user?.role === 'admin' && (
                 <button
+                  onClick={() => setIsImageUploadDialogOpen(true)}
+                  className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
+                >
+                  上传图片
+                </button>
+              )}
+              {user?.role === 'admin' && (
+                <button
+                  onClick={() => setIsEditDialogOpen(true)}
+                  className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
+                >
+                  编辑
+                </button>
+              )}
+              {user?.role === 'admin' && (
+                <button
                   onClick={handleDelete}
-                  className="bg-white text-red-600 px-3 py-1 rounded text-sm font-medium hover:bg-red-50 border border-red-200"
+                  className="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700"
                 >
                   删除
                 </button>
@@ -600,68 +705,184 @@ export default function AssetDetail() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="space-y-4">
-              <div className="flex items-center gap-4">
-                <div className="w-24 text-gray-500">资产编码</div>
-                <div className="font-medium">{asset.asset_code}</div>
-              </div>
-              <div className="flex items-center gap-4">
-                <div className="w-24 text-gray-500">品牌</div>
-                <div>{asset.brand}</div>
-              </div>
-              <div className="flex items-center gap-4">
-                <div className="w-24 text-gray-500">型号</div>
-                <div>{asset.model}</div>
-              </div>
-              <div className="flex items-center gap-4">
-                <div className="w-24 text-gray-500">CPU</div>
-                <div>{asset.cpu}</div>
-              </div>
-              <div className="flex items-center gap-4">
-                <div className="w-24 text-gray-500">内存</div>
-                <div>{formatMemory(asset.ram)}</div>
-              </div>
-              <div className="flex items-center gap-4">
-                <div className="w-24 text-gray-500">存储</div>
-                <div>{formatStorage(asset.storage)}</div>
-              </div>
-              <div className="flex items-center gap-4">
-                <div className="w-24 text-gray-500">显卡</div>
-                <div>{asset.gpu || '-'}</div>
-              </div>
-              <div className="flex items-center gap-4">
-                <div className="w-24 text-gray-500">操作系统</div>
-                <div>{asset.os}</div>
-              </div>
-              <div className="flex items-center gap-4">
-                <div className="w-24 text-gray-500">状态</div>
-                <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${asset.status === 'active' ? 'bg-green-100 text-green-800' : asset.status === 'idle' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'}`}>
-                  {asset.status === 'active' ? '使用中' : asset.status === 'idle' ? '闲置' : '维修中'}
-                </span>
+          {/* 资产基本信息 */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+            <div>
+              <h3 className="text-lg font-semibold mb-4">基本信息</h3>
+              <div className="space-y-3">
+                <div className="flex justify-between">
+                  <span className="text-gray-600">资产编码</span>
+                  <span className="font-medium">{asset.asset_code}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">品牌</span>
+                  <span className="font-medium">{asset.brand || '-'}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">型号</span>
+                  <span className="font-medium">{asset.model || '-'}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">CPU</span>
+                  <span className="font-medium">{asset.cpu || '-'}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">内存</span>
+                  <span className="font-medium">{formatMemory(asset.ram)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">硬盘</span>
+                  <span className="font-medium">{formatStorage(asset.storage)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">显卡</span>
+                  <span className="font-medium">{asset.gpu || '-'}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">操作系统</span>
+                  <span className="font-medium">{asset.os || '-'}</span>
+                </div>
               </div>
             </div>
-            <div className="space-y-4">
-              <div className="flex items-center gap-4">
-                <div className="w-24 text-gray-500">部门</div>
-                <div>{asset.department}</div>
-              </div>
-              <div className="flex items-center gap-4">
-                <div className="w-24 text-gray-500">使用人</div>
-                <div>{asset.user_name}</div>
-              </div>
-              <div className="flex items-center gap-4">
-                <div className="w-24 text-gray-500">位置</div>
-                <div>{asset.location}</div>
-              </div>
-              <div className="flex items-start gap-4">
-                <div className="w-24 text-gray-500">备注</div>
-                <div className="whitespace-pre-wrap">{asset.notes || '-'}</div>
+            <div>
+              <h3 className="text-lg font-semibold mb-4">使用信息</h3>
+              <div className="space-y-3">
+                <div className="flex justify-between">
+                  <span className="text-gray-600">部门</span>
+                  <span className="font-medium">{asset.department || '-'}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">使用人</span>
+                  <span className="font-medium">{asset.user_name || '-'}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">位置</span>
+                  <span className="font-medium">{asset.location || '-'}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">状态</span>
+                  <span className={`font-medium ${asset.status === 'active' ? 'text-green-600' : asset.status === 'idle' ? 'text-yellow-600' : 'text-red-600'}`}>
+                    {asset.status === 'active' ? '使用中' : asset.status === 'idle' ? '闲置' : '维修中'}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">创建时间</span>
+                  <span className="font-medium">{new Date(asset.created_at).toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">更新时间</span>
+                  <span className="font-medium">{new Date(asset.updated_at).toLocaleString()}</span>
+                </div>
               </div>
             </div>
           </div>
+
+          {/* 备注 */}
+          <div className="mb-6">
+            <h3 className="text-lg font-semibold mb-2">备注</h3>
+            <p className="text-gray-700 border border-gray-200 rounded p-4">
+              {asset.notes || '无'}
+            </p>
+          </div>
+
+          {/* 资产图片 */}
+          <div className="mb-6">
+            <h3 className="text-lg font-semibold mb-4">资产图片</h3>
+            {assetImages.length === 0 ? (
+              <p className="text-gray-500">暂无图片</p>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                {assetImages.map((image) => (
+                  <div key={image.id} className="relative">
+                    <img 
+                      src={image.image_url} 
+                      alt={image.image_name} 
+                      className="w-full h-48 object-cover rounded"
+                    />
+                    {user?.role === 'admin' && (
+                      <button
+                        onClick={() => handleImageDelete(image.id)}
+                        className="absolute top-2 right-2 bg-red-600 text-white rounded-full w-8 h-8 flex items-center justify-center hover:bg-red-700"
+                      >
+                        ×
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
+        {/* 维修记录 */}
+        <div className="bg-white rounded-lg shadow p-6 mb-6">
+          <h3 className="text-xl font-bold mb-4">维修记录</h3>
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">问题描述</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">维修描述</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">维修日期</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">维修费用</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">状态</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">操作</th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {maintenanceRecords.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="px-4 py-8 text-center">
+                      无维修记录
+                    </td>
+                  </tr>
+                ) : (
+                  maintenanceRecords.map((record) => (
+                    <tr key={record.id}>
+                      <td className="px-4 py-4 whitespace-nowrap">
+                        <div className="text-sm text-gray-900">{record.issue_description}</div>
+                      </td>
+                      <td className="px-4 py-4">
+                        <div className="text-sm text-gray-900">{record.repair_description || '-'}</div>
+                      </td>
+                      <td className="px-4 py-4 whitespace-nowrap">
+                        <div className="text-sm text-gray-900">{record.repair_date || '-'}</div>
+                      </td>
+                      <td className="px-4 py-4 whitespace-nowrap">
+                        <div className="text-sm text-gray-900">¥{record.repair_cost || 0}</div>
+                      </td>
+                      <td className="px-4 py-4 whitespace-nowrap">
+                        <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${record.status === 'pending' ? 'bg-yellow-100 text-yellow-800' : record.status === 'completed' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                          {record.status === 'pending' ? '待处理' : record.status === 'completed' ? '已完成' : '进行中'}
+                        </span>
+                      </td>
+                      <td className="px-4 py-4 whitespace-nowrap text-sm font-medium">
+                        {user?.role === 'admin' && (
+                          <>
+                            <button
+                              onClick={() => handleEditMaintenance(record)}
+                              className="text-blue-600 hover:text-blue-900 mr-3"
+                            >
+                              编辑
+                            </button>
+                            <button
+                              onClick={() => handleDeleteMaintenance(record.id)}
+                              className="text-red-600 hover:text-red-900"
+                            >
+                              删除
+                            </button>
+                          </>
+                        )}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* 使用历史 */}
         <div className="bg-white rounded-lg shadow p-6">
           <h3 className="text-xl font-bold mb-4">使用历史</h3>
           <div className="overflow-x-auto">
@@ -724,69 +945,6 @@ export default function AssetDetail() {
             </table>
           </div>
         </div>
-
-        <div className="bg-white rounded-lg shadow p-6">
-          <h3 className="text-xl font-bold mb-4">维修记录</h3>
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">问题描述</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">维修描述</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">维修日期</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">维修费用</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">状态</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">操作</th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {maintenanceRecords.length === 0 ? (
-                  <tr>
-                    <td colSpan={6} className="px-4 py-8 text-center">
-                      暂无维修记录
-                    </td>
-                  </tr>
-                ) : (
-                  maintenanceRecords.map((record) => (
-                    <tr key={record.id}>
-                      <td className="px-4 py-4">
-                        <div className="text-sm text-gray-900">{record.issue_description}</div>
-                      </td>
-                      <td className="px-4 py-4">
-                        <div className="text-sm text-gray-900">{record.repair_description || '-'}</div>
-                      </td>
-                      <td className="px-4 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-900">{record.repair_date ? new Date(record.repair_date).toLocaleDateString() : '-'}</div>
-                      </td>
-                      <td className="px-4 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-900">{record.repair_cost ? `¥${record.repair_cost}` : '-'}</div>
-                      </td>
-                      <td className="px-4 py-4 whitespace-nowrap">
-                        <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${record.status === 'pending' ? 'bg-yellow-100 text-yellow-800' : record.status === 'completed' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'}`}>
-                          {record.status === 'pending' ? '待处理' : record.status === 'completed' ? '已完成' : '处理中'}
-                        </span>
-                      </td>
-                      <td className="px-4 py-4 whitespace-nowrap text-sm font-medium">
-                        <button
-                          onClick={() => handleEditMaintenance(record)}
-                          className="text-blue-600 hover:text-blue-900 mr-3"
-                        >
-                          编辑
-                        </button>
-                        <button
-                          onClick={() => handleDeleteMaintenance(record.id)}
-                          className="text-red-600 hover:text-red-900"
-                        >
-                          删除
-                        </button>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
         </div>
       </main>
 
@@ -795,147 +953,128 @@ export default function AssetDetail() {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg shadow-xl p-6 max-w-2xl w-full">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-bold">编辑资产</h2>
+              <h2 className="text-2xl font-bold">编辑资产</h2>
               <button
                 onClick={() => setIsEditDialogOpen(false)}
                 className="text-gray-500 hover:text-gray-700"
               >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
+                ×
               </button>
             </div>
-            <form onSubmit={handleEditSubmit} className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {user?.role === 'admin' && (
-                  <>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">品牌</label>
-                      <input
-                        type="text"
-                        className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        value={formData.brand}
-                        onChange={(e) => setFormData({ ...formData, brand: e.target.value })}
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">型号</label>
-                      <input
-                        type="text"
-                        className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        value={formData.model}
-                        onChange={(e) => setFormData({ ...formData, model: e.target.value })}
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">CPU</label>
-                      <input
-                        type="text"
-                        className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        value={formData.cpu}
-                        onChange={(e) => setFormData({ ...formData, cpu: e.target.value })}
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">内存</label>
-                      <input
-                        type="text"
-                        className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        value={formData.ram}
-                        onChange={(e) => setFormData({ ...formData, ram: e.target.value })}
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">存储</label>
-                      <input
-                        type="text"
-                        className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        value={formData.storage}
-                        onChange={(e) => setFormData({ ...formData, storage: e.target.value })}
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">显卡</label>
-                      <input
-                        type="text"
-                        className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        value={formData.gpu}
-                        onChange={(e) => setFormData({ ...formData, gpu: e.target.value })}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">操作系统</label>
-                      <input
-                        type="text"
-                        className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        value={formData.os}
-                        onChange={(e) => setFormData({ ...formData, os: e.target.value })}
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">状态</label>
-                      <select
-                        className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        value={formData.status}
-                        onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-                        required
-                      >
-                        <option value="active">使用中</option>
-                        <option value="idle">闲置</option>
-                        <option value="maintenance">维修中</option>
-                      </select>
-                    </div>
-
-                  </>
-                )}
+            <form onSubmit={handleEditSubmit}>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">品牌</label>
+                  <input
+                    type="text"
+                    className="w-full px-3 py-2 border rounded"
+                    value={formData.brand}
+                    onChange={(e) => setFormData({ ...formData, brand: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">型号</label>
+                  <input
+                    type="text"
+                    className="w-full px-3 py-2 border rounded"
+                    value={formData.model}
+                    onChange={(e) => setFormData({ ...formData, model: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">CPU</label>
+                  <input
+                    type="text"
+                    className="w-full px-3 py-2 border rounded"
+                    value={formData.cpu}
+                    onChange={(e) => setFormData({ ...formData, cpu: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">内存</label>
+                  <input
+                    type="text"
+                    className="w-full px-3 py-2 border rounded"
+                    value={formData.ram}
+                    onChange={(e) => setFormData({ ...formData, ram: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">存储</label>
+                  <input
+                    type="text"
+                    className="w-full px-3 py-2 border rounded"
+                    value={formData.storage}
+                    onChange={(e) => setFormData({ ...formData, storage: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">GPU</label>
+                  <input
+                    type="text"
+                    className="w-full px-3 py-2 border rounded"
+                    value={formData.gpu}
+                    onChange={(e) => setFormData({ ...formData, gpu: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">操作系统</label>
+                  <input
+                    type="text"
+                    className="w-full px-3 py-2 border rounded"
+                    value={formData.os}
+                    onChange={(e) => setFormData({ ...formData, os: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">状态</label>
+                  <select
+                    className="w-full px-3 py-2 border rounded"
+                    value={formData.status}
+                    onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+                  >
+                    <option value="active">使用中</option>
+                    <option value="idle">闲置</option>
+                    <option value="maintenance">维修中</option>
+                  </select>
+                </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">部门</label>
                   <input
                     type="text"
-                    className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 border rounded"
                     value={formData.department}
                     onChange={(e) => setFormData({ ...formData, department: e.target.value })}
-                    required
                   />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">使用人</label>
                   <input
                     type="text"
-                    className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 border rounded"
                     value={formData.user_name}
                     onChange={(e) => setFormData({ ...formData, user_name: e.target.value })}
-                    required
                   />
                 </div>
-                <div>
+                <div className="md:col-span-2">
                   <label className="block text-sm font-medium text-gray-700 mb-1">位置</label>
                   <input
                     type="text"
-                    className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 border rounded"
                     value={formData.location}
                     onChange={(e) => setFormData({ ...formData, location: e.target.value })}
-                    required
+                  />
+                </div>
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">备注</label>
+                  <textarea
+                    className="w-full px-3 py-2 border rounded"
+                    rows={3}
+                    value={formData.notes}
+                    onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
                   />
                 </div>
               </div>
-              {user?.role === 'admin' && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">备注</label>
-                  <textarea
-                    className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    value={formData.notes}
-                    onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                    rows={3}
-                  />
-                </div>
-              )}
               <div className="flex justify-end gap-2">
                 <button
                   type="button"
@@ -946,7 +1085,7 @@ export default function AssetDetail() {
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                  className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
                 >
                   保存
                 </button>
@@ -957,112 +1096,99 @@ export default function AssetDetail() {
       )}
 
       {/* 二维码对话框 */}
-      {isQRDialogOpen && asset && (
+      {isQRDialogOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg shadow-xl p-6 max-w-md w-full">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-bold">资产二维码</h2>
+              <h2 className="text-2xl font-bold">资产二维码</h2>
               <button
                 onClick={() => setIsQRDialogOpen(false)}
                 className="text-gray-500 hover:text-gray-700"
               >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
+                ×
               </button>
             </div>
             <div className="text-center">
               <p className="mb-4">扫描二维码查看资产详情</p>
-              <div className="mb-4">
-                {qrCodeUrl ? (
-                  <img
-                    src={qrCodeUrl}
-                    alt="QR Code"
-                    className="mx-auto"
-                    width={300}
-                    height={300}
-                  />
-                ) : (
-                  <div className="flex items-center justify-center h-64 bg-gray-100 rounded">
-                    <div className="text-gray-500">生成中...</div>
-                  </div>
-                )}
+              {qrCodeUrl && (
+                <div className="flex justify-center">
+                  <img src={qrCodeUrl} alt="Asset QR Code" className="w-48 h-48" />
+                </div>
+              )}
+              <div className="mt-4 text-sm text-gray-600">
+                {asset?.asset_code}
               </div>
-              <p className="text-sm text-gray-500">{asset.asset_code}</p>
             </div>
           </div>
         </div>
       )}
 
-      {/* 添加维修记录对话框 */}
+      {/* 维修记录对话框 */}
       {isMaintenanceDialogOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg shadow-xl p-6 max-w-2xl w-full">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-bold">添加维修记录</h2>
+              <h2 className="text-2xl font-bold">添加维修记录</h2>
               <button
                 onClick={() => setIsMaintenanceDialogOpen(false)}
                 className="text-gray-500 hover:text-gray-700"
               >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
+                ×
               </button>
             </div>
-            <form onSubmit={handleMaintenanceSubmit} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">问题描述</label>
-                <textarea
-                  className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  value={maintenanceFormData.issue_description}
-                  onChange={(e) => setMaintenanceFormData({ ...maintenanceFormData, issue_description: e.target.value })}
-                  rows={3}
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">维修描述</label>
-                <textarea
-                  className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  value={maintenanceFormData.repair_description}
-                  onChange={(e) => setMaintenanceFormData({ ...maintenanceFormData, repair_description: e.target.value })}
-                  rows={3}
-                />
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <form onSubmit={handleMaintenanceSubmit}>
+              <div className="space-y-4 mb-6">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">维修日期</label>
-                  <input
-                    type="date"
-                    className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    value={maintenanceFormData.repair_date}
-                    onChange={(e) => setMaintenanceFormData({ ...maintenanceFormData, repair_date: e.target.value })}
+                  <label className="block text-sm font-medium text-gray-700 mb-1">问题描述</label>
+                  <textarea
+                    className="w-full px-3 py-2 border rounded"
+                    rows={3}
+                    value={maintenanceFormData.issue_description}
+                    onChange={(e) => setMaintenanceFormData({ ...maintenanceFormData, issue_description: e.target.value })}
+                    required
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">维修费用</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    value={maintenanceFormData.repair_cost}
-                    onChange={(e) => setMaintenanceFormData({ ...maintenanceFormData, repair_cost: parseFloat(e.target.value) || 0 })}
+                  <label className="block text-sm font-medium text-gray-700 mb-1">维修描述</label>
+                  <textarea
+                    className="w-full px-3 py-2 border rounded"
+                    rows={3}
+                    value={maintenanceFormData.repair_description}
+                    onChange={(e) => setMaintenanceFormData({ ...maintenanceFormData, repair_description: e.target.value })}
                   />
                 </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">状态</label>
-                <select
-                  className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  value={maintenanceFormData.status}
-                  onChange={(e) => setMaintenanceFormData({ ...maintenanceFormData, status: e.target.value })}
-                  required
-                >
-                  <option value="pending">待处理</option>
-                  <option value="in_progress">处理中</option>
-                  <option value="completed">已完成</option>
-                </select>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">维修日期</label>
+                    <input
+                      type="date"
+                      className="w-full px-3 py-2 border rounded"
+                      value={maintenanceFormData.repair_date}
+                      onChange={(e) => setMaintenanceFormData({ ...maintenanceFormData, repair_date: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">维修费用</label>
+                    <input
+                      type="number"
+                      className="w-full px-3 py-2 border rounded"
+                      value={maintenanceFormData.repair_cost}
+                      onChange={(e) => setMaintenanceFormData({ ...maintenanceFormData, repair_cost: parseFloat(e.target.value) || 0 })}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">状态</label>
+                    <select
+                      className="w-full px-3 py-2 border rounded"
+                      value={maintenanceFormData.status}
+                      onChange={(e) => setMaintenanceFormData({ ...maintenanceFormData, status: e.target.value })}
+                    >
+                      <option value="pending">待处理</option>
+                      <option value="in_progress">进行中</option>
+                      <option value="completed">已完成</option>
+                    </select>
+                  </div>
+                </div>
               </div>
               <div className="flex justify-end gap-2">
                 <button
@@ -1074,7 +1200,7 @@ export default function AssetDetail() {
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                  className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
                 >
                   保存
                 </button>
@@ -1089,70 +1215,67 @@ export default function AssetDetail() {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg shadow-xl p-6 max-w-2xl w-full">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-bold">编辑维修记录</h2>
+              <h2 className="text-2xl font-bold">编辑维修记录</h2>
               <button
                 onClick={() => setIsEditMaintenanceDialogOpen(false)}
                 className="text-gray-500 hover:text-gray-700"
               >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
+                ×
               </button>
             </div>
-            <form onSubmit={handleMaintenanceSubmit} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">问题描述</label>
-                <textarea
-                  className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  value={maintenanceFormData.issue_description}
-                  onChange={(e) => setMaintenanceFormData({ ...maintenanceFormData, issue_description: e.target.value })}
-                  rows={3}
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">维修描述</label>
-                <textarea
-                  className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  value={maintenanceFormData.repair_description}
-                  onChange={(e) => setMaintenanceFormData({ ...maintenanceFormData, repair_description: e.target.value })}
-                  rows={3}
-                />
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <form onSubmit={handleMaintenanceSubmit}>
+              <div className="space-y-4 mb-6">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">维修日期</label>
-                  <input
-                    type="date"
-                    className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    value={maintenanceFormData.repair_date}
-                    onChange={(e) => setMaintenanceFormData({ ...maintenanceFormData, repair_date: e.target.value })}
+                  <label className="block text-sm font-medium text-gray-700 mb-1">问题描述</label>
+                  <textarea
+                    className="w-full px-3 py-2 border rounded"
+                    rows={3}
+                    value={maintenanceFormData.issue_description}
+                    onChange={(e) => setMaintenanceFormData({ ...maintenanceFormData, issue_description: e.target.value })}
+                    required
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">维修费用</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    value={maintenanceFormData.repair_cost}
-                    onChange={(e) => setMaintenanceFormData({ ...maintenanceFormData, repair_cost: parseFloat(e.target.value) || 0 })}
+                  <label className="block text-sm font-medium text-gray-700 mb-1">维修描述</label>
+                  <textarea
+                    className="w-full px-3 py-2 border rounded"
+                    rows={3}
+                    value={maintenanceFormData.repair_description}
+                    onChange={(e) => setMaintenanceFormData({ ...maintenanceFormData, repair_description: e.target.value })}
                   />
                 </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">状态</label>
-                <select
-                  className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  value={maintenanceFormData.status}
-                  onChange={(e) => setMaintenanceFormData({ ...maintenanceFormData, status: e.target.value })}
-                  required
-                >
-                  <option value="pending">待处理</option>
-                  <option value="in_progress">处理中</option>
-                  <option value="completed">已完成</option>
-                </select>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">维修日期</label>
+                    <input
+                      type="date"
+                      className="w-full px-3 py-2 border rounded"
+                      value={maintenanceFormData.repair_date}
+                      onChange={(e) => setMaintenanceFormData({ ...maintenanceFormData, repair_date: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">维修费用</label>
+                    <input
+                      type="number"
+                      className="w-full px-3 py-2 border rounded"
+                      value={maintenanceFormData.repair_cost}
+                      onChange={(e) => setMaintenanceFormData({ ...maintenanceFormData, repair_cost: parseFloat(e.target.value) || 0 })}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">状态</label>
+                    <select
+                      className="w-full px-3 py-2 border rounded"
+                      value={maintenanceFormData.status}
+                      onChange={(e) => setMaintenanceFormData({ ...maintenanceFormData, status: e.target.value })}
+                    >
+                      <option value="pending">待处理</option>
+                      <option value="in_progress">进行中</option>
+                      <option value="completed">已完成</option>
+                    </select>
+                  </div>
+                </div>
               </div>
               <div className="flex justify-end gap-2">
                 <button
@@ -1164,12 +1287,75 @@ export default function AssetDetail() {
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                  className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
                 >
                   保存
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* 图片上传对话框 */}
+      {isImageUploadDialogOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl p-6 max-w-md w-full">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-2xl font-bold">上传图片</h2>
+              <button
+                onClick={() => setIsImageUploadDialogOpen(false)}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                ×
+              </button>
+            </div>
+            <div className="space-y-4">
+              <p className="text-gray-600">
+                每件资产最多上传3张照片，图片将自动压缩至宽度不超过1024px，质量80%。
+              </p>
+              <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={handleImageUpload}
+                  className="hidden"
+                  id="image-upload"
+                />
+                <label
+                  htmlFor="image-upload"
+                  className="cursor-pointer"
+                >
+                  <div className="flex flex-col items-center justify-center">
+                    <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center mb-4">
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      </svg>
+                    </div>
+                    <p className="text-sm text-gray-600">点击或拖拽文件到此处上传</p>
+                    <p className="text-xs text-gray-500 mt-1">支持 JPG、PNG、WebP 格式</p>
+                  </div>
+                </label>
+              </div>
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsImageUploadDialogOpen(false)}
+                  className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                >
+                  选择文件
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
