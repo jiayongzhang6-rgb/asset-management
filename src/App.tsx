@@ -53,13 +53,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       let userData;
       if (users && users.length > 0) {
         userData = users[0]
+        // 检查密码是否正确
+        if (userData.password && userData.password !== password) {
+          throw new Error('密码错误')
+        }
       } else {
-        // 管理员邮箱列表
-        const adminEmails = ['747227185@qq.com']
-        const role = adminEmails.includes(email) ? 'admin' : 'user'
-        const { data, error: insertError } = await supabase.from('users').insert({ email, role }).select().single()
-        if (insertError) throw insertError
-        userData = data || { email, role }
+        throw new Error('邮箱不存在')
       }
 
       setUser(userData)
@@ -86,9 +85,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // 管理员邮箱列表
         const adminEmails = ['747227185@qq.com']
         const role = adminEmails.includes(email) ? 'admin' : 'user'
-        const { data, error: insertError } = await supabase.from('users').insert({ email, role }).select().single()
+        const { data, error: insertError } = await supabase.from('users').insert({ email, password, role }).select().single()
         if (insertError) throw insertError
-        userData = data || { email, role }
+        userData = data || { email, password, role }
       }
 
       setUser(userData)
@@ -120,17 +119,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         throw new Error('邮箱不存在')
       }
 
-      // 使用 Supabase Auth 发送重置密码邮件
-      const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}/login`
-      })
+      // 生成一个临时密码
+      const tempPassword = Math.random().toString(36).substring(2, 10)
       
-      if (resetError) throw resetError
+      // 更新用户密码
+      const { error: updateError } = await supabase
+        .from('users')
+        .update({ password: tempPassword })
+        .eq('email', email)
       
-      console.log('重置密码邮件已发送到:', email)
+      if (updateError) throw updateError
       
-      // 提示用户检查邮箱
-      alert('重置密码链接已发送到您的邮箱，请查收并按照邮件中的指示重置密码。\n如果未收到邮件，请检查垃圾邮件文件夹或联系管理员。')
+      console.log('重置密码邮件已发送到:', email, '临时密码:', tempPassword)
+      
+      // 提示用户联系管理员获取临时密码
+      alert('重置密码申请已提交，请联系管理员获取临时密码。\n管理员邮箱: 747227185@qq.com')
     } catch (error) {
       console.error('Error resetting password:', error)
       // 发送失败时，提示用户联系管理员

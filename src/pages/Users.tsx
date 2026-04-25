@@ -62,10 +62,10 @@ export default function Users() {
         // 生成一个临时密码
         const tempPassword = Math.random().toString(36).substring(2, 10)
         
-        // 更新用户密码（这里只是模拟，实际应该使用加密存储）
+        // 更新用户密码
         const { error } = await supabase
           .from('users')
-          .update({ password: tempPassword }) // 实际项目中应该使用 bcrypt 加密
+          .update({ password: tempPassword })
           .eq('id', userId)
         if (error) throw error
         
