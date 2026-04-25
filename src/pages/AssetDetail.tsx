@@ -1,4 +1,4 @@
-﻿﻿﻿﻿import React, { useState, useEffect, useRef } from 'react'
+﻿﻿﻿﻿﻿﻿﻿﻿import React, { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '../App'
 import { supabase, type Asset, type MaintenanceRecord, type AssetImage } from '../lib/supabase'
@@ -19,6 +19,7 @@ export default function AssetDetail() {
   const [assetHistory, setAssetHistory] = useState<any[]>([])
   const [assetImages, setAssetImages] = useState<AssetImage[]>([])
   const [isImageUploadDialogOpen, setIsImageUploadDialogOpen] = useState(false)
+  const [uploading, setUploading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   
   const [formData, setFormData] = useState({
@@ -436,34 +437,12 @@ export default function AssetDetail() {
     }
   }
 
-  // 处理图片上传
-  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!asset) return
-    
-    const files = e.target.files
-    if (!files || files.length === 0) return
-    
-    // 检查图片数量限制
-    if (assetImages.length + files.length > 3) {
-      alert('每件资产最多只能上传3张照片')
-      return
-    }
-    
-    try {
-      for (const file of files) {
-        // 检查文件类型
-        if (!file.type.startsWith('image/')) {
-          alert('请上传图片文件')
-          continue
-        }
-        
-        // 压缩图片
-        const compressedFile = await compressImage(file)
-        
-        // 生成唯一文件名
-        const fileName = `${asset.asset_code}_${Date.now()}_${file.name}`
-        
-        // 上传到Supabase Storage
+  // 重试上传函数
+  const uploadWithRetry = async (fileName: string, compressedFile: Blob, maxRetries = 3) => {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        console.log(`AssetDetail: Upload attempt ${attempt} for ${fileName}`)
+
         const { data, error } = await supabase
           .storage
           .from('asset-images')
@@ -471,42 +450,129 @@ export default function AssetDetail() {
             cacheControl: '3600',
             upsert: false
           })
-        
+
         if (error) {
-          console.error('Error uploading image:', error)
-          alert('图片上传失败')
+          console.error(`AssetDetail: Upload attempt ${attempt} failed:`, error)
+          if (attempt === maxRetries) {
+            throw error
+          }
+          await new Promise(resolve => setTimeout(resolve, 1000 * attempt))
           continue
         }
-        
-        // 获取图片URL
-        const { data: urlData } = supabase
-          .storage
-          .from('asset-images')
-          .getPublicUrl(fileName)
-        
-        // 保存图片信息到数据库
-        const { error: dbError } = await supabase
-          .from('asset_images')
-          .insert({
-            asset_code: asset.asset_code,
-            image_url: urlData.publicUrl,
-            image_name: file.name
-          })
-        
-        if (dbError) {
-          console.error('Error saving image to database:', dbError)
-          alert('保存图片信息失败')
+
+        console.log(`AssetDetail: Upload attempt ${attempt} successful:`, data)
+        return data
+      } catch (error) {
+        console.error(`AssetDetail: Upload attempt ${attempt} error:`, error)
+        if (attempt === maxRetries) {
+          throw error
+        }
+        await new Promise(resolve => setTimeout(resolve, 1000 * attempt))
+      }
+    }
+    throw new Error('Upload failed after all retries')
+  }
+
+  // 处理图片上传
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!asset) return
+
+    const files = e.target.files
+    if (!files || files.length === 0) return
+
+    // 检查图片数量限制
+    if (assetImages.length + files.length > 3) {
+      alert('每件资产最多只能上传3张照片')
+      return
+    }
+
+    setUploading(true)
+    let successCount = 0
+    let failCount = 0
+
+    try {
+      for (const file of files) {
+        // 检查文件类型
+        if (!file.type.startsWith('image/')) {
+          alert('请上传图片文件')
           continue
+        }
+
+        try {
+          // 压缩图片
+          console.log(`AssetDetail: Compressing image: ${file.name}`)
+          const compressedFile = await compressImage(file)
+          console.log(`AssetDetail: Image compressed, size: ${compressedFile.size} bytes`)
+
+          // 生成唯一文件名
+          const fileName = `${asset.asset_code}_${Date.now()}_${file.name}`
+
+          // 上传到Supabase Storage with retry
+          await uploadWithRetry(fileName, compressedFile)
+
+          // 获取图片URL
+          const { data: urlData } = supabase
+            .storage
+            .from('asset-images')
+            .getPublicUrl(fileName)
+
+          console.log(`AssetDetail: Image URL: ${urlData.publicUrl}`)
+
+          // 保存图片信息到数据库 with retry
+          let dbSuccess = false
+          for (let dbAttempt = 1; dbAttempt <= 3; dbAttempt++) {
+            const { error: dbError } = await supabase
+              .from('asset_images')
+              .insert({
+                asset_code: asset.asset_code,
+                image_url: urlData.publicUrl,
+                image_name: file.name
+              })
+
+            if (dbError) {
+              console.error(`AssetDetail: Database insert attempt ${dbAttempt} failed:`, dbError)
+              if (dbAttempt === 3) {
+                throw dbError
+              }
+              await new Promise(resolve => setTimeout(resolve, 500 * dbAttempt))
+            } else {
+              dbSuccess = true
+              break
+            }
+          }
+
+          if (!dbSuccess) {
+            throw new Error('Database insert failed after all retries')
+          }
+
+          successCount++
+          console.log(`AssetDetail: Image ${file.name} uploaded successfully`)
+        } catch (error) {
+          console.error(`AssetDetail: Error uploading image ${file.name}:`, error)
+          failCount++
         }
       }
-      
+
       // 重新获取图片列表
       await fetchAssetImages()
-      alert('图片上传成功')
-      setIsImageUploadDialogOpen(false)
+
+      // 显示上传结果
+      if (failCount === 0 && successCount > 0) {
+        alert(`图片上传成功！${successCount}张图片已上传`)
+      } else if (successCount > 0 && failCount > 0) {
+        alert(`部分图片上传成功！成功${successCount}张，失败${failCount}张`)
+      } else {
+        alert('图片上传失败，请稍后重试')
+      }
+
+      if (successCount > 0) {
+        setIsImageUploadDialogOpen(false)
+      }
     } catch (error) {
       console.error('Error uploading images:', error)
-      alert('图片上传失败')
+      alert('图片上传失败，请稍后重试')
+    } finally {
+      setUploading(false)
     }
   }
 
@@ -1303,59 +1369,71 @@ export default function AssetDetail() {
           <div className="bg-white rounded-lg shadow-xl p-6 max-w-md w-full">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-2xl font-bold">上传图片</h2>
-              <button
-                onClick={() => setIsImageUploadDialogOpen(false)}
-                className="text-gray-500 hover:text-gray-700"
-              >
-                ×
-              </button>
-            </div>
-            <div className="space-y-4">
-              <p className="text-gray-600">
-                每件资产最多上传3张照片，图片将自动压缩至宽度不超过1024px，质量80%。
-              </p>
-              <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  onChange={handleImageUpload}
-                  className="hidden"
-                  id="image-upload"
-                />
-                <label
-                  htmlFor="image-upload"
-                  className="cursor-pointer"
-                >
-                  <div className="flex flex-col items-center justify-center">
-                    <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center mb-4">
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                      </svg>
-                    </div>
-                    <p className="text-sm text-gray-600">点击或拖拽文件到此处上传</p>
-                    <p className="text-xs text-gray-500 mt-1">支持 JPG、PNG、WebP 格式</p>
-                  </div>
-                </label>
-              </div>
-              <div className="flex justify-end gap-2">
+              {!uploading && (
                 <button
-                  type="button"
                   onClick={() => setIsImageUploadDialogOpen(false)}
-                  className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
+                  className="text-gray-500 hover:text-gray-700"
                 >
-                  取消
+                  ×
                 </button>
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-                >
-                  选择文件
-                </button>
-              </div>
+              )}
             </div>
+            {uploading ? (
+              <div className="text-center py-8">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+                <p className="text-gray-600">图片上传中，请稍候...</p>
+                <p className="text-xs text-gray-500 mt-2">如果网络较慢，请耐心等待</p>
+              </div>
+            ) : (
+              <>
+                <div className="space-y-4">
+                  <p className="text-gray-600">
+                    每件资产最多上传3张照片，图片将自动压缩至宽度不超过1024px，质量80%。
+                  </p>
+                  <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      onChange={handleImageUpload}
+                      className="hidden"
+                      id="image-upload"
+                    />
+                    <label
+                      htmlFor="image-upload"
+                      className="cursor-pointer"
+                    >
+                      <div className="flex flex-col items-center justify-center">
+                        <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center mb-4">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                          </svg>
+                        </div>
+                        <p className="text-sm text-gray-600">点击或拖拽文件到此处上传</p>
+                        <p className="text-xs text-gray-500 mt-1">支持 JPG、PNG、WebP 格式</p>
+                      </div>
+                    </label>
+                  </div>
+                  <div className="flex justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setIsImageUploadDialogOpen(false)}
+                      className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
+                    >
+                      取消
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                    >
+                      选择文件
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
