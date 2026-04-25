@@ -1,0 +1,17 @@
+name: Keep Supabase Active
+
+on:
+  schedule:
+    # 每3天自动运行一次，保持Supabase活跃（UTC时间早上1点，即北京时间早上9点）
+    - cron: '0 1 */3 * *'
+  workflow_dispatch:
+
+jobs:
+  ping-supabase:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send request to Supabase
+        run: |
+          curl -X GET "${{ secrets.SUPABASE_URL }}/rest/v1/" \
+            -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}"
