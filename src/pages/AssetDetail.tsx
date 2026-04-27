@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿﻿﻿﻿import React, { useState, useEffect, useRef } from 'react'
+﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import React, { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '../App'
 import { supabase, type Asset, type MaintenanceRecord, type AssetImage } from '../lib/supabase'
@@ -253,27 +253,39 @@ export default function AssetDetail() {
     const assetCodeToUse = asset.asset_code || id
     console.log('AssetDetail: Asset code to use for history:', assetCodeToUse)
     
+    // 根据用户角色过滤可修改的字段
+    let updateData = { ...formData }
+    if (user?.role !== 'admin') {
+      // 普通用户只能修改以下字段
+      updateData = {
+        department: formData.department,
+        user_name: formData.user_name,
+        location: formData.location,
+        notes: formData.notes
+      }
+    }
+    
     // 计算变更内容
     const changes = []
-    if (formData.brand !== asset.brand) changes.push(`品牌: ${asset.brand || '无'} → ${formData.brand || '无'}`)
-    if (formData.model !== asset.model) changes.push(`型号: ${asset.model || '无'} → ${formData.model || '无'}`)
-    if (formData.cpu !== asset.cpu) changes.push(`CPU: ${asset.cpu || '无'} → ${formData.cpu || '无'}`)
-    if (formData.ram !== asset.ram) changes.push(`内存: ${asset.ram || '无'} → ${formData.ram || '无'}`)
-    if (formData.storage !== asset.storage) changes.push(`存储: ${asset.storage || '无'} → ${formData.storage || '无'}`)
-    if (formData.gpu !== asset.gpu) changes.push(`GPU: ${asset.gpu || '无'} → ${formData.gpu || '无'}`)
-    if (formData.os !== asset.os) changes.push(`操作系统: ${asset.os || '无'} → ${formData.os || '无'}`)
-    if (formData.department !== asset.department) changes.push(`部门: ${asset.department || '无'} → ${formData.department || '无'}`)
-    if (formData.user_name !== asset.user_name) changes.push(`使用人: ${asset.user_name || '无'} → ${formData.user_name || '无'}`)
-    if (formData.location !== asset.location) changes.push(`位置: ${asset.location || '无'} → ${formData.location || '无'}`)
-    if (formData.status !== asset.status) changes.push(`状态: ${asset.status === 'active' ? '使用中' : asset.status === 'idle' ? '闲置' : '维修中'} → ${formData.status === 'active' ? '使用中' : formData.status === 'idle' ? '闲置' : '维修中'}`)
-    if (formData.notes !== asset.notes) changes.push(`备注: ${asset.notes || '无'} → ${formData.notes || '无'}`)
+    if (updateData.brand && updateData.brand !== asset.brand) changes.push(`品牌: ${asset.brand || '无'} → ${updateData.brand || '无'}`)
+    if (updateData.model && updateData.model !== asset.model) changes.push(`型号: ${asset.model || '无'} → ${updateData.model || '无'}`)
+    if (updateData.cpu && updateData.cpu !== asset.cpu) changes.push(`CPU: ${asset.cpu || '无'} → ${updateData.cpu || '无'}`)
+    if (updateData.ram && updateData.ram !== asset.ram) changes.push(`内存: ${asset.ram || '无'} → ${updateData.ram || '无'}`)
+    if (updateData.storage && updateData.storage !== asset.storage) changes.push(`存储: ${asset.storage || '无'} → ${updateData.storage || '无'}`)
+    if (updateData.gpu && updateData.gpu !== asset.gpu) changes.push(`GPU: ${asset.gpu || '无'} → ${updateData.gpu || '无'}`)
+    if (updateData.os && updateData.os !== asset.os) changes.push(`操作系统: ${asset.os || '无'} → ${updateData.os || '无'}`)
+    if (updateData.department !== asset.department) changes.push(`部门: ${asset.department || '无'} → ${updateData.department || '无'}`)
+    if (updateData.user_name !== asset.user_name) changes.push(`使用人: ${asset.user_name || '无'} → ${updateData.user_name || '无'}`)
+    if (updateData.location !== asset.location) changes.push(`位置: ${asset.location || '无'} → ${updateData.location || '无'}`)
+    if (updateData.status && updateData.status !== asset.status) changes.push(`状态: ${asset.status === 'active' ? '使用中' : asset.status === 'idle' ? '闲置' : '维修中'} → ${updateData.status === 'active' ? '使用中' : updateData.status === 'idle' ? '闲置' : '维修中'}`)
+    if (updateData.notes !== asset.notes) changes.push(`备注: ${asset.notes || '无'} → ${updateData.notes || '无'}`)
     
     console.log('AssetDetail: Changes to record:', changes)
     
     // 开始事务
     const { error: updateError } = await supabase
       .from('assets')
-      .update(formData)
+      .update(updateData)
       .eq('id', asset.id)
     
     if (updateError) {
