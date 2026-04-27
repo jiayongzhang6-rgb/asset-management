@@ -158,39 +158,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       
       if (updateError) throw updateError
 
-      // 同时更新 Supabase Auth 中的密码
+      // 为了确保 Supabase Auth 中的密码也被更新，我们使用 signUp 方法
+      // 如果用户已经存在，signUp 会自动处理
       try {
-        // 首先登录用户
-        const { error: signInError } = await supabase.auth.signInWithPassword({
+        const { error: authError } = await supabase.auth.signUp({
           email,
           password: tempPassword
         })
         
-        if (!signInError) {
-          // 登录成功后，更新密码
-          const { error: updateAuthError } = await supabase.auth.updateUser({
-            password: tempPassword
-          })
-          
-          if (updateAuthError) {
-            console.log('Error updating Auth password:', updateAuthError)
-          }
+        if (authError) {
+          console.log('Error updating Auth password:', authError)
         }
       } catch (authError) {
         console.log('Error with Auth:', authError)
       }
       
-      // 使用 Supabase Auth 发送包含临时密码的邮件
-      const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}/login?tempPassword=${tempPassword}`
-      })
+      console.log('密码已重置为:', tempPassword)
       
-      if (resetError) throw resetError
-      
-      console.log('重置密码邮件已发送到:', email, '临时密码:', tempPassword)
-      
-      // 提示用户检查邮箱
-      alert('重置密码邮件已发送到您的邮箱，请查收并按照邮件中的指示登录。\n如果未收到邮件，请检查垃圾邮件文件夹。')
+      // 直接显示临时密码给用户
+      alert('重置密码成功！\n临时密码: ' + tempPassword + '\n请使用此临时密码登录，登录后请修改密码。')
     } catch (error) {
       console.error('Error resetting password:', error)
       throw error
