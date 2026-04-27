@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import React, { useState, useEffect, useRef } from 'react'
+﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import React, { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '../App'
 import { supabase, type Asset, type MaintenanceRecord, type AssetImage } from '../lib/supabase'
@@ -1039,81 +1039,85 @@ export default function AssetDetail() {
             </div>
             <form onSubmit={handleEditSubmit}>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">品牌</label>
-                  <input
-                    type="text"
-                    className="w-full px-3 py-2 border rounded"
-                    value={formData.brand}
-                    onChange={(e) => setFormData({ ...formData, brand: e.target.value })}
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">型号</label>
-                  <input
-                    type="text"
-                    className="w-full px-3 py-2 border rounded"
-                    value={formData.model}
-                    onChange={(e) => setFormData({ ...formData, model: e.target.value })}
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">CPU</label>
-                  <input
-                    type="text"
-                    className="w-full px-3 py-2 border rounded"
-                    value={formData.cpu}
-                    onChange={(e) => setFormData({ ...formData, cpu: e.target.value })}
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">内存</label>
-                  <input
-                    type="text"
-                    className="w-full px-3 py-2 border rounded"
-                    value={formData.ram}
-                    onChange={(e) => setFormData({ ...formData, ram: e.target.value })}
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">存储</label>
-                  <input
-                    type="text"
-                    className="w-full px-3 py-2 border rounded"
-                    value={formData.storage}
-                    onChange={(e) => setFormData({ ...formData, storage: e.target.value })}
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">GPU</label>
-                  <input
-                    type="text"
-                    className="w-full px-3 py-2 border rounded"
-                    value={formData.gpu}
-                    onChange={(e) => setFormData({ ...formData, gpu: e.target.value })}
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">操作系统</label>
-                  <input
-                    type="text"
-                    className="w-full px-3 py-2 border rounded"
-                    value={formData.os}
-                    onChange={(e) => setFormData({ ...formData, os: e.target.value })}
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">状态</label>
-                  <select
-                    className="w-full px-3 py-2 border rounded"
-                    value={formData.status}
-                    onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-                  >
-                    <option value="active">使用中</option>
-                    <option value="idle">闲置</option>
-                    <option value="maintenance">维修中</option>
-                  </select>
-                </div>
+                {user?.role === 'admin' && (
+                  <>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">品牌</label>
+                      <input
+                        type="text"
+                        className="w-full px-3 py-2 border rounded"
+                        value={formData.brand}
+                        onChange={(e) => setFormData({ ...formData, brand: e.target.value })}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">型号</label>
+                      <input
+                        type="text"
+                        className="w-full px-3 py-2 border rounded"
+                        value={formData.model}
+                        onChange={(e) => setFormData({ ...formData, model: e.target.value })}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">CPU</label>
+                      <input
+                        type="text"
+                        className="w-full px-3 py-2 border rounded"
+                        value={formData.cpu}
+                        onChange={(e) => setFormData({ ...formData, cpu: e.target.value })}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">内存</label>
+                      <input
+                        type="text"
+                        className="w-full px-3 py-2 border rounded"
+                        value={formData.ram}
+                        onChange={(e) => setFormData({ ...formData, ram: e.target.value })}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">存储</label>
+                      <input
+                        type="text"
+                        className="w-full px-3 py-2 border rounded"
+                        value={formData.storage}
+                        onChange={(e) => setFormData({ ...formData, storage: e.target.value })}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">GPU</label>
+                      <input
+                        type="text"
+                        className="w-full px-3 py-2 border rounded"
+                        value={formData.gpu}
+                        onChange={(e) => setFormData({ ...formData, gpu: e.target.value })}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">操作系统</label>
+                      <input
+                        type="text"
+                        className="w-full px-3 py-2 border rounded"
+                        value={formData.os}
+                        onChange={(e) => setFormData({ ...formData, os: e.target.value })}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">状态</label>
+                      <select
+                        className="w-full px-3 py-2 border rounded"
+                        value={formData.status}
+                        onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+                      >
+                        <option value="active">使用中</option>
+                        <option value="idle">闲置</option>
+                        <option value="maintenance">维修中</option>
+                      </select>
+                    </div>
+                  </>
+                )}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">部门</label>
                   <input
