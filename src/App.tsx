@@ -49,13 +49,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signIn = async (email: string, password: string) => {
     setLoading(true)
     try {
+      // 首先在 Supabase Auth 中登录
+      const { error: authError } = await supabase.auth.signInWithPassword({
+        email,
+        password
+      })
+      if (authError) throw authError
+
+      // 然后在我们的 users 表中查询用户信息
       const { data: users, error: fetchError } = await supabase.from('users').select('*').eq('email', email)
       if (fetchError) throw fetchError
 
       let userData;
       if (users && users.length > 0) {
         userData = users[0]
-        // 检查密码是否正确（现在数据库有password字段，必须验证）
+        // 检查密码是否正确
         if (!userData.password) {
           throw new Error('密码未设置，请联系管理员')
         }
@@ -80,6 +88,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signUp = async (email: string, password: string) => {
     setLoading(true)
     try {
+      // 首先在 Supabase Auth 中注册用户
+      const { error: authError } = await supabase.auth.signUp({
+        email,
+        password
+      })
+      if (authError) throw authError
+
+      // 然后在我们的 users 表中创建记录
       const { data: users, error: fetchError } = await supabase.from('users').select('*').eq('email', email)
       if (fetchError) throw fetchError
 
@@ -131,17 +147,50 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         throw new Error('邮箱不存在')
       }
 
-      // 使用 Supabase Auth 发送重置密码邮件
+      // 生成一个临时密码
+      const tempPassword = Math.random().toString(36).substring(2, 10)
+      
+      // 更新用户密码
+      const { error: updateError } = await supabase
+        .from('users')
+        .update({ password: tempPassword })
+        .eq('email', email)
+      
+      if (updateError) throw updateError
+
+      // 同时更新 Supabase Auth 中的密码
+      try {
+        // 首先登录用户
+        const { error: signInError } = await supabase.auth.signInWithPassword({
+          email,
+          password: tempPassword
+        })
+        
+        if (!signInError) {
+          // 登录成功后，更新密码
+          const { error: updateAuthError } = await supabase.auth.updateUser({
+            password: tempPassword
+          })
+          
+          if (updateAuthError) {
+            console.log('Error updating Auth password:', updateAuthError)
+          }
+        }
+      } catch (authError) {
+        console.log('Error with Auth:', authError)
+      }
+      
+      // 使用 Supabase Auth 发送包含临时密码的邮件
       const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}/login`
+        redirectTo: `${window.location.origin}/login?tempPassword=${tempPassword}`
       })
       
       if (resetError) throw resetError
       
-      console.log('重置密码邮件已发送到:', email)
+      console.log('重置密码邮件已发送到:', email, '临时密码:', tempPassword)
       
       // 提示用户检查邮箱
-      alert('重置密码链接已发送到您的邮箱，请查收并按照邮件中的指示重置密码。\n如果未收到邮件，请检查垃圾邮件文件夹。')
+      alert('重置密码邮件已发送到您的邮箱，请查收并按照邮件中的指示登录。\n如果未收到邮件，请检查垃圾邮件文件夹。')
     } catch (error) {
       console.error('Error resetting password:', error)
       throw error

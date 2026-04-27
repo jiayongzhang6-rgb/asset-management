@@ -1,9 +1,10 @@
-import React, { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import React, { useState, useEffect } from 'react'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../App'
 
 export default function Login() {
   const navigate = useNavigate()
+  const location = useLocation()
   const { signIn, signUp, resetPassword, pendingRedirect, setPendingRedirect } = useAuth()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -11,6 +12,17 @@ export default function Login() {
   const [isSignUp, setIsSignUp] = useState(false)
   const [isForgotPassword, setIsForgotPassword] = useState(false)
   const [error, setError] = useState('')
+
+  // 从 URL 参数中获取临时密码
+  useEffect(() => {
+    const params = new URLSearchParams(location.search)
+    const tempPassword = params.get('tempPassword')
+    if (tempPassword) {
+      setPassword(tempPassword)
+      // 可以在这里添加一个提示，告诉用户这是临时密码
+      alert('这是您的临时密码，请登录后修改密码。')
+    }
+  }, [location.search])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
