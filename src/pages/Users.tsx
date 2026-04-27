@@ -69,20 +69,6 @@ export default function Users() {
           .eq('id', userId)
         if (error) throw error
         
-        // 为了确保 Supabase Auth 中的密码也被更新，我们使用 signUp 方法
-        try {
-          const { error: authError } = await supabase.auth.signUp({
-            email,
-            password: tempPassword
-          })
-          
-          if (authError) {
-            console.log('Error updating Auth password:', authError)
-          }
-        } catch (authError) {
-          console.log('Error with Auth:', authError)
-        }
-        
         // 提示管理员临时密码
         alert(`密码重置成功！\n用户邮箱: ${email}\n临时密码: ${tempPassword}\n请将临时密码告知用户。`)
       } catch (error) {

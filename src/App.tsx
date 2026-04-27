@@ -49,24 +49,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signIn = async (email: string, password: string) => {
     setLoading(true)
     try {
-      // 首先在 Supabase Auth 中登录
-      const { error: authError } = await supabase.auth.signInWithPassword({
-        email,
-        password
-      })
-      if (authError) throw authError
-
-      // 然后在我们的 users 表中查询用户信息
+      // 直接在我们的 users 表中查询用户信息并验证密码
       const { data: users, error: fetchError } = await supabase.from('users').select('*').eq('email', email)
       if (fetchError) throw fetchError
 
       let userData;
       if (users && users.length > 0) {
         userData = users[0]
-        // 检查密码是否正确
+        // 检查密码是否存在
         if (!userData.password) {
           throw new Error('密码未设置，请联系管理员')
         }
+        // 检查密码是否正确
         if (userData.password !== password) {
           throw new Error('密码错误')
         }
@@ -88,39 +82,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signUp = async (email: string, password: string) => {
     setLoading(true)
     try {
-      // 首先在 Supabase Auth 中注册用户，添加 options 避免发送验证邮件
-      const { error: authError } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          emailRedirectTo: `${window.location.origin}/login`
-        }
-      })
-      if (authError) throw authError
-
-      // 然后在我们的 users 表中创建记录
-      const { data: users, error: fetchError } = await supabase.from('users').select('*').eq('email', email)
+      // 首先检查用户是否已存在
+      const { data: existingUsers, error: fetchError } = await supabase.from('users').select('*').eq('email', email)
       if (fetchError) throw fetchError
 
-      let userData;
-      if (users && users.length > 0) {
-        userData = users[0]
-        // 检查密码是否正确
-        if (!userData.password) {
-          throw new Error('密码未设置，请联系管理员')
-        }
-        if (userData.password !== password) {
-          throw new Error('密码错误')
-        }
-      } else {
-        // 管理员邮箱列表
-        const adminEmails = ['747227185@qq.com']
-        const role = adminEmails.includes(email) ? 'admin' : 'user'
-        const { data, error: insertError } = await supabase.from('users').insert({ email, password, role }).select().single()
-        if (insertError) throw insertError
-        userData = data || { email, password, role }
+      if (existingUsers && existingUsers.length > 0) {
+        throw new Error('该邮箱已被注册')
       }
 
+      // 直接在 users 表中创建用户记录，不使用 Supabase Auth
+      // 管理员邮箱列表
+      const adminEmails = ['747227185@qq.com']
+      const role = adminEmails.includes(email) ? 'admin' : 'user'
+      const { data, error: insertError } = await supabase.from('users').insert({ email, password, role }).select().single()
+      if (insertError) throw insertError
+
+      const userData = data || { email, password, role }
       setUser(userData)
       // 存储到localStorage
       localStorage.setItem('user', JSON.stringify(userData))
@@ -160,21 +137,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .eq('email', email)
       
       if (updateError) throw updateError
-
-      // 为了确保 Supabase Auth 中的密码也被更新，我们使用 signUp 方法
-      // 如果用户已经存在，signUp 会自动处理
-      try {
-        const { error: authError } = await supabase.auth.signUp({
-          email,
-          password: tempPassword
-        })
-        
-        if (authError) {
-          console.log('Error updating Auth password:', authError)
-        }
-      } catch (authError) {
-        console.log('Error with Auth:', authError)
-      }
       
       console.log('密码已重置为:', tempPassword)
       
