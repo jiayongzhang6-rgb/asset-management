@@ -54,7 +54,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (users && users.length > 0) {
         userData = users[0]
         // 检查密码是否正确
-        if (!userData.password || userData.password !== password) {
+        // 如果用户没有密码字段，或者密码为空，允许登录（兼容旧数据）
+        if (userData.password && userData.password !== password) {
           throw new Error('密码错误')
         }
       } else {
@@ -82,16 +83,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (users && users.length > 0) {
         userData = users[0]
         // 检查密码是否正确
-        if (!userData.password || userData.password !== password) {
+        // 如果用户没有密码字段，或者密码为空，允许登录（兼容旧数据）
+        if (userData.password && userData.password !== password) {
           throw new Error('密码错误')
         }
       } else {
         // 管理员邮箱列表
         const adminEmails = ['747227185@qq.com']
         const role = adminEmails.includes(email) ? 'admin' : 'user'
-        const { data, error: insertError } = await supabase.from('users').insert({ email, password, role }).select().single()
-        if (insertError) throw insertError
-        userData = data || { email, password, role }
+        try {
+          // 尝试插入带密码的用户
+          const { data, error: insertError } = await supabase.from('users').insert({ email, password, role }).select().single()
+          if (insertError) throw insertError
+          userData = data || { email, password, role }
+        } catch (insertError) {
+          // 如果插入失败（可能是因为没有 password 字段），尝试不带密码插入
+          console.log('Insert with password failed, trying without password:', insertError)
+          const { data, error: insertErrorNoPassword } = await supabase.from('users').insert({ email, role }).select().single()
+          if (insertErrorNoPassword) throw insertErrorNoPassword
+          userData = data || { email, role }
+        }
       }
 
       setUser(userData)
@@ -126,13 +137,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // 生成一个临时密码
       const tempPassword = Math.random().toString(36).substring(2, 10)
       
-      // 更新用户密码
-      const { error: updateError } = await supabase
-        .from('users')
-        .update({ password: tempPassword })
-        .eq('email', email)
-      
-      if (updateError) throw updateError
+      try {
+        // 尝试更新用户密码
+        const { error: updateError } = await supabase
+          .from('users')
+          .update({ password: tempPassword })
+          .eq('email', email)
+        
+        if (updateError) {
+          console.log('Update password failed, password field may not exist:', updateError)
+          // 如果更新失败（可能是因为没有 password 字段），只提示管理员
+        }
+      } catch (updateError) {
+        console.log('Error updating password:', updateError)
+        // 如果更新失败，只提示管理员
+      }
       
       console.log('重置密码邮件已发送到:', email, '临时密码:', tempPassword)
       

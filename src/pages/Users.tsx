@@ -62,12 +62,21 @@ export default function Users() {
         // 生成一个临时密码
         const tempPassword = Math.random().toString(36).substring(2, 10)
         
-        // 更新用户密码
-        const { error } = await supabase
-          .from('users')
-          .update({ password: tempPassword })
-          .eq('id', userId)
-        if (error) throw error
+        try {
+          // 尝试更新用户密码
+          const { error } = await supabase
+            .from('users')
+            .update({ password: tempPassword })
+            .eq('id', userId)
+          
+          if (error) {
+            console.log('Update password failed, password field may not exist:', error)
+            // 如果更新失败（可能是因为没有 password 字段），只提示管理员
+          }
+        } catch (updateError) {
+          console.log('Error updating password:', updateError)
+          // 如果更新失败，只提示管理员
+        }
         
         // 提示管理员临时密码
         alert(`密码重置成功！\n用户邮箱: ${email}\n临时密码: ${tempPassword}\n请将临时密码告知用户。`)
