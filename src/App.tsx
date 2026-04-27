@@ -7,6 +7,7 @@ import Login from './pages/Login'
 import Import from './pages/Import'
 import OperationHistory from './pages/OperationHistory'
 import Users from './pages/Users'
+import ChangePassword from './pages/ChangePassword'
 import NotFound from './pages/NotFound'
 
 // 简化的AuthProvider，不使用Supabase
@@ -17,6 +18,7 @@ interface AuthContextType {
   signUp: (email: string, password: string) => Promise<void>
   signOut: () => Promise<void>
   resetPassword: (email: string) => Promise<void>
+  updatePassword: (oldPassword: string, newPassword: string) => Promise<void>
   isAuthenticated: boolean
   pendingRedirect: string | null
   setPendingRedirect: (url: string | null) => void
@@ -129,23 +131,53 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         throw new Error('邮箱不存在')
       }
 
-      // 生成一个临时密码
-      const tempPassword = Math.random().toString(36).substring(2, 10)
+      // 使用 Supabase Auth 发送重置密码邮件
+      const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/login`
+      })
       
-      // 更新用户密码
-      const { error: updateError } = await supabase
-        .from('users')
-        .update({ password: tempPassword })
-        .eq('email', email)
+      if (resetError) throw resetError
       
-      if (updateError) throw updateError
+      console.log('重置密码邮件已发送到:', email)
       
-      console.log('密码已重置为:', tempPassword)
-      
-      // 提示用户联系管理员获取临时密码
-      alert('重置密码成功！\n临时密码: ' + tempPassword + '\n请使用此临时密码登录，登录后请修改密码。')
+      // 提示用户检查邮箱
+      alert('重置密码链接已发送到您的邮箱，请查收并按照邮件中的指示重置密码。\n如果未收到邮件，请检查垃圾邮件文件夹。')
     } catch (error) {
       console.error('Error resetting password:', error)
+      throw error
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const updatePassword = async (oldPassword: string, newPassword: string) => {
+    setLoading(true)
+    try {
+      if (!user) {
+        throw new Error('用户未登录')
+      }
+
+      // 验证旧密码
+      if (user.password !== oldPassword) {
+        throw new Error('旧密码错误')
+      }
+
+      // 更新密码
+      const { error: updateError } = await supabase
+        .from('users')
+        .update({ password: newPassword })
+        .eq('email', user.email)
+      
+      if (updateError) throw updateError
+
+      // 更新本地用户数据
+      const updatedUser = { ...user, password: newPassword }
+      setUser(updatedUser)
+      localStorage.setItem('user', JSON.stringify(updatedUser))
+
+      alert('密码修改成功！')
+    } catch (error) {
+      console.error('Error updating password:', error)
       throw error
     } finally {
       setLoading(false)
@@ -161,6 +193,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         signUp,
         signOut,
         resetPassword,
+        updatePassword,
         isAuthenticated: !!user,
         pendingRedirect,
         setPendingRedirect,
@@ -226,6 +259,7 @@ export default function App() {
           <Route path="/import" element={<Import />} />
           <Route path="/history" element={<OperationHistory />} />
           <Route path="/users" element={<Users />} />
+          <Route path="/change-password" element={<ChangePassword />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>

@@ -726,6 +726,12 @@ export default function Index() {
               </>
             )}
             <button
+              onClick={() => navigate('/change-password')}
+              className="bg-white text-green-600 px-3 py-1 rounded text-sm font-medium hover:bg-green-50"
+            >
+              修改密码
+            </button>
+            <button
               onClick={signOut}
               className="bg-white text-blue-600 px-3 py-1 rounded text-sm font-medium hover:bg-blue-50"
             >
