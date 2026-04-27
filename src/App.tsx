@@ -88,10 +88,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signUp = async (email: string, password: string) => {
     setLoading(true)
     try {
-      // 首先在 Supabase Auth 中注册用户
+      // 首先在 Supabase Auth 中注册用户，添加 options 避免发送验证邮件
       const { error: authError } = await supabase.auth.signUp({
         email,
-        password
+        password,
+        options: {
+          emailRedirectTo: `${window.location.origin}/login`
+        }
       })
       if (authError) throw authError
 
@@ -175,8 +178,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       
       console.log('密码已重置为:', tempPassword)
       
-      // 直接显示临时密码给用户
-      alert('重置密码成功！\n临时密码: ' + tempPassword + '\n请使用此临时密码登录，登录后请修改密码。')
+      // 提示用户联系管理员获取临时密码
+      alert('密码重置请求已提交，请联系管理员获取临时密码。')
     } catch (error) {
       console.error('Error resetting password:', error)
       throw error
