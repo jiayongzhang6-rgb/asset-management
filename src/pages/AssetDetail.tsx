@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿﻿﻿import React, { useState, useEffect, useRef } from 'react'
+﻿﻿﻿﻿﻿﻿﻿﻿﻿import React, { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '../App'
 import { supabase, type Asset, type MaintenanceRecord, type AssetImage } from '../lib/supabase'
@@ -752,14 +752,12 @@ export default function AssetDetail() {
                   上传图片
                 </button>
               )}
-              {user?.role === 'admin' && (
-                <button
+              <button
                   onClick={() => setIsEditDialogOpen(true)}
                   className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
                 >
                   编辑
                 </button>
-              )}
               {user?.role === 'admin' && (
                 <button
                   onClick={handleDelete}
