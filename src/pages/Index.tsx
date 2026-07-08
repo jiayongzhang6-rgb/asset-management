@@ -557,119 +557,95 @@ export default function Index() {
       alert('只有管理员可以批量导出二维码')
       return
     }
-    
+
     if (selectedIds.length === 0) {
       alert('请选择要导出二维码的资产')
       return
     }
-    
     try {
       const QRCode = (await import('qrcode')).default
-      
       const qrPromises = selectedIds.map(async (id) => {
         const asset = assets.find(a => a.id === id)
         if (asset) {
-          try {
-            const qrData = `${window.location.origin}/asset/${asset.asset_code}`
-            const url = await QRCode.toDataURL(qrData, {
-              width: 150,
-              margin: 2
-            })
-            return { asset, url }
-          } catch (qrError) {
-            console.error('Error generating QR code for asset:', asset.asset_code, qrError)
-            return null
-          }
+          const qrData = `${window.location.origin}/asset/${asset.asset_code}`
+          const url = await QRCode.toDataURL(qrData, {
+            width: 200,
+            margin: 2
+          })
+          return { asset, url }
         }
         return null
       })
-      
       const qrResults = await Promise.all(qrPromises)
       const validResults = qrResults.filter((result): result is { asset: Asset; url: string } => result !== null)
-      
-      const colsPerPage = 6
-      const rowsPerPage = 3
-      
-      let htmlContent = `
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>资产二维码</title>
-  <style>
-    @page {
-      size: A4;
-      margin: 15mm;
-    }
-    body {
-      font-family: 'Microsoft YaHei', sans-serif;
-      margin: 0;
-      padding: 0;
-    }
-    .qr-container {
-      display: grid;
-      grid-template-columns: repeat(${colsPerPage}, 1fr);
-      grid-template-rows: repeat(${rowsPerPage}, 1fr);
-      gap: 15px;
-      width: 100%;
-      height: 100%;
-      page-break-after: always;
-    }
-    .qr-item {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      text-align: center;
-    }
-    .qr-item img {
-      width: 150px;
-      height: 150px;
-      object-fit: contain;
-    }
-    .qr-item .code {
-      margin-top: 8px;
-      font-size: 12px;
-      font-weight: bold;
-      color: #333;
-      word-break: break-word;
-    }
-    @media print {
-      .qr-container {
-        page-break-after: always;
-      }
-    }
-  </style>
-</head>
-<body>
-      `
-      
-      const itemsPerPage = colsPerPage * rowsPerPage
-      
-      for (let pageIndex = 0; pageIndex < Math.ceil(validResults.length / itemsPerPage); pageIndex++) {
-        const pageItems = validResults.slice(pageIndex * itemsPerPage, (pageIndex + 1) * itemsPerPage)
-        
-        htmlContent += '<div class="qr-container">'
-        
-        for (const item of pageItems) {
-          htmlContent += `
-            <div class="qr-item">
-              <img src="${item.url}" alt="${item.asset.asset_code}" />
-              <div class="code">${item.asset.asset_code}</div>
+
+      const html = `
+        <!DOCTYPE html>
+        <html lang="zh-CN">
+        <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>资产二维码批量导出</title>
+          <style>
+            body {
+              font-family: Arial, sans-serif;
+              margin: 20px;
+              background-color: #f5f5f5;
+            }
+            .container {
+              max-width: 1200px;
+              margin: 0 auto;
+            }
+            h1 {
+              text-align: center;
+              color: #333;
+            }
+            .qr-grid {
+              display: grid;
+              grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+              gap: 20px;
+              margin-top: 30px;
+            }
+            .qr-item {
+              background: white;
+              padding: 20px;
+              border-radius: 8px;
+              box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+              text-align: center;
+            }
+            .qr-code {
+              margin: 0 auto 10px;
+            }
+            .asset-info {
+              font-size: 14px;
+              color: #666;
+            }
+            .asset-code {
+              font-weight: bold;
+              color: #333;
+              margin-bottom: 5px;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <h1>资产二维码批量导出</h1>
+            <div class="qr-grid">
+              ${validResults.map(({ asset, url }) => `
+                <div class="qr-item">
+                  <div class="asset-code">${asset.asset_code}</div>
+                  <div class="asset-info">${asset.brand} ${asset.model}</div>
+                  <div class="asset-info">${asset.user_name}</div>
+                  <img class="qr-code" src="${url}" alt="${asset.asset_code}" width="200" height="200">
+                </div>
+              `).join('')}
             </div>
-          `
-        }
-        
-        htmlContent += '</div>'
-      }
-      
-      htmlContent += `
-</body>
-</html>
+          </div>
+        </body>
+        </html>
       `
-      
-      const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' })
+
+      const blob = new Blob([html], { type: 'text/html' })
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
