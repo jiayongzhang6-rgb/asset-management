@@ -410,6 +410,12 @@ export default function Index() {
         const { data: asset, error: getError } = await supabase.from('assets').select('*').eq('id', id).single()
         if (getError) throw getError
         
+        // 先删除相关的维护记录
+        await supabase.from('maintenance_records').delete().eq('asset_id', id)
+        
+        // 先删除相关的图片记录
+        await supabase.from('asset_images').delete().eq('asset_code', asset.asset_code)
+        
         const { data, error } = await supabase.from('assets').delete().eq('id', id)
         if (error) throw error
         
@@ -467,6 +473,12 @@ export default function Index() {
           // 获取要删除的资产信息
           const { data: asset, error: getError } = await supabase.from('assets').select('*').eq('id', id).single()
           if (getError) throw getError
+          
+          // 先删除相关的维护记录
+          await supabase.from('maintenance_records').delete().eq('asset_id', id)
+          
+          // 先删除相关的图片记录
+          await supabase.from('asset_images').delete().eq('asset_code', asset.asset_code)
           
           const { data, error } = await supabase.from('assets').delete().eq('id', id)
           if (error) throw error
