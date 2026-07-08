@@ -525,7 +525,7 @@ export default function Index() {
     }
     try {
       const QRCode = (await import('qrcode')).default
-      const { Document, Packer, Paragraph, Table, TableRow, TableCell, WidthType, AlignmentType, ImageRun, convertInchesToTwip } = await import('docx')
+      const { Document, Packer, Paragraph, Table, TableRow, TableCell, WidthType, AlignmentType, ImageRun } = await import('docx')
       
       const qrPromises = selectedIds.map(async (id) => {
         const asset = assets.find(a => a.id === id)
@@ -542,10 +542,16 @@ export default function Index() {
       const qrResults = await Promise.all(qrPromises)
       const validResults = qrResults.filter((result): result is { asset: Asset; url: string } => result !== null)
       
-      // 将图片数据转换为 Buffer
+      // 将图片数据转换为 Uint8Array（浏览器环境）
       const getImageBuffer = (dataUrl: string) => {
         const base64Data = dataUrl.split(',')[1]
-        return Buffer.from(base64Data, 'base64')
+        const binaryString = window.atob(base64Data)
+        const len = binaryString.length
+        const bytes = new Uint8Array(len)
+        for (let i = 0; i < len; i++) {
+          bytes[i] = binaryString.charCodeAt(i)
+        }
+        return bytes
       }
       
       // 创建文档
@@ -591,7 +597,6 @@ export default function Index() {
             
             const tableCell = new TableCell({
               width: { size: 6, type: WidthType.CM },
-              height: { size: convertInchesToTwip(4.66 / 2.54), type: WidthType.DXA },
               alignment: AlignmentType.CENTER,
               verticalAlign: 'center',
               children: [
@@ -626,7 +631,6 @@ export default function Index() {
             // 空单元格
             const tableCell = new TableCell({
               width: { size: 6, type: WidthType.CM },
-              height: { size: convertInchesToTwip(4.66 / 2.54), type: WidthType.DXA },
               children: []
             })
             tableRow.children.push(tableCell)
@@ -640,7 +644,17 @@ export default function Index() {
       
       // 导出文档
       const buffer = await Packer.toBuffer(doc)
-      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' })
+      
+      // 处理不同的返回类型（Buffer 或 ArrayBuffer）
+      let blob: Blob
+      if (buffer instanceof ArrayBuffer) {
+        blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' })
+      } else if (buffer instanceof Buffer) {
+        blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' })
+      } else {
+        blob = new Blob([new Uint8Array(buffer as any)], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' })
+      }
+      
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
@@ -653,7 +667,7 @@ export default function Index() {
       alert('二维码导出成功')
     } catch (error) {
       console.error('Error exporting QR codes:', error)
-      alert('二维码导出失败')
+      alert(`二维码导出失败: ${error}`)
     }
   }
 
