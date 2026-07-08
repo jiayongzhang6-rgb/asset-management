@@ -111,31 +111,46 @@ export default function Import() {
     }
 
     setIsUploading(true)
+    let successCount = 0
+    let failCount = 0
+    
     try {
       // 将导入的资产添加到Supabase中
       for (const asset of previewData) {
-        const { data, error } = await supabase.from('assets').insert(asset)
-        if (error) throw error
-        
-        // 记录操作历史
-        if (user) {
-          await supabase.from('operation_history').insert({
-            asset_id: data[0].id,
-            operation_type: 'create',
-            new_data: asset,
-            user_email: user.email
-          })
+        try {
+          const { data, error } = await supabase.from('assets').insert(asset)
+          if (error) {
+            console.error('Error inserting asset:', error)
+            failCount++
+            continue
+          }
+          
+          successCount++
+          
+          // 记录操作历史
+          if (user && data && data.length > 0) {
+            try {
+              await supabase.from('operation_history').insert({
+                asset_code: asset.asset_code,
+                operation_type: 'create',
+                user_email: user.email,
+                created_at: new Date().toISOString()
+              })
+            } catch (historyError) {
+              console.error('Error recording operation history:', historyError)
+            }
+          }
+        } catch (assetError) {
+          console.error('Error processing asset:', assetError)
+          failCount++
         }
       }
       
-      // 模拟导入操作
-      setTimeout(() => {
-        alert('资产导入成功')
-        navigate('/')
-      }, 1000)
+      alert(`资产导入完成！成功：${successCount} 条，失败：${failCount} 条`)
+      navigate('/')
     } catch (error) {
       console.error('导入失败:', error)
-      alert('资产导入失败')
+      alert(`资产导入失败，成功：${successCount} 条，失败：${failCount} 条`)
     } finally {
       setIsUploading(false)
     }
