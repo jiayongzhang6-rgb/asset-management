@@ -570,17 +570,24 @@ export default function Index() {
       const qrPromises = selectedIds.map(async (id) => {
         const asset = assets.find(a => a.id === id)
         if (asset) {
-          const qrData = `${window.location.origin}/asset/${asset.asset_code}`
-          const url = await QRCode.toDataURL(qrData, {
-            width: 120,
-            margin: 2
-          })
-          return { asset, url }
+          try {
+            const qrData = `${window.location.origin}/asset/${asset.asset_code}`
+            const url = await QRCode.toDataURL(qrData, {
+              width: 120,
+              margin: 2
+            })
+            console.log('QR code generated for asset:', asset.asset_code, 'URL length:', url.length)
+            return { asset, url }
+          } catch (qrError) {
+            console.error('Error generating QR code for asset:', asset.asset_code, qrError)
+            return null
+          }
         }
         return null
       })
       const qrResults = await Promise.all(qrPromises)
       const validResults = qrResults.filter((result): result is { asset: Asset; url: string } => result !== null)
+      console.log('Valid QR results:', validResults.length)
       
       const doc = new Document({
         sections: [{
@@ -616,38 +623,69 @@ export default function Index() {
             const item = rowItems[colIndex]
             
             if (item) {
-              const base64Data = item.url.split(',')[1]
-              const binaryString = window.atob(base64Data)
-              const bytes = new Uint8Array(binaryString.length)
-              for (let i = 0; i < binaryString.length; i++) {
-                bytes[i] = binaryString.charCodeAt(i)
+              try {
+                const base64Data = item.url.split(',')[1]
+                if (!base64Data) {
+                  console.error('QR code base64 data is empty for asset:', item.asset.asset_code)
+                  throw new Error('QR code data is empty')
+                }
+                
+                const cleanBase64 = base64Data.replace(/\s/g, '')
+                const binaryString = window.atob(cleanBase64)
+                const length = binaryString.length
+                
+                if (length <= 0 || length > 1000000) {
+                  console.error('Invalid binary string length:', length)
+                  throw new Error('Invalid QR code data length')
+                }
+                
+                const bytes = new Uint8Array(length)
+                for (let i = 0; i < length; i++) {
+                  bytes[i] = binaryString.charCodeAt(i)
+                }
+                
+                const tableCell = new TableCell({
+                  width: { size: 1500, type: WidthType.DXA },
+                  children: [
+                    new Paragraph({
+                      alignment: AlignmentType.CENTER,
+                      spacing: { before: 100, after: 100 },
+                      children: [
+                        new ImageRun({
+                          data: bytes,
+                          transformation: { width: 150, height: 150 }
+                        })
+                      ]
+                    }),
+                    new Paragraph({
+                      alignment: AlignmentType.CENTER,
+                      spacing: { before: 50, after: 50 },
+                      children: [{
+                        text: item.asset.asset_code,
+                        bold: true,
+                        size: 20
+                      }]
+                    })
+                  ]
+                })
+                tableRow.children.push(tableCell)
+              } catch (cellError) {
+                console.error('Error processing QR code for asset:', item.asset.asset_code, cellError)
+                const tableCell = new TableCell({
+                  width: { size: 1500, type: WidthType.DXA },
+                  children: [
+                    new Paragraph({
+                      alignment: AlignmentType.CENTER,
+                      children: [{
+                        text: item.asset.asset_code,
+                        bold: true,
+                        size: 20
+                      }]
+                    })
+                  ]
+                })
+                tableRow.children.push(tableCell)
               }
-              
-              const tableCell = new TableCell({
-                width: { size: 1500, type: WidthType.DXA },
-                children: [
-                  new Paragraph({
-                    alignment: AlignmentType.CENTER,
-                    spacing: { before: 100, after: 100 },
-                    children: [
-                      new ImageRun({
-                        data: bytes,
-                        transformation: { width: 150, height: 150 }
-                      })
-                    ]
-                  }),
-                  new Paragraph({
-                    alignment: AlignmentType.CENTER,
-                    spacing: { before: 50, after: 50 },
-                    children: [{
-                      text: item.asset.asset_code,
-                      bold: true,
-                      size: 20
-                    }]
-                  })
-                ]
-              })
-              tableRow.children.push(tableCell)
             } else {
               const tableCell = new TableCell({
                 width: { size: 1500, type: WidthType.DXA },
