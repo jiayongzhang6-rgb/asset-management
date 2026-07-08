@@ -553,7 +553,6 @@ export default function Index() {
   }
 
   const handleBatchExportQR = async () => {
-    // 权限控制：只有管理员可以批量导出二维码
     if (user && user.role !== 'admin') {
       alert('只有管理员可以批量导出二维码')
       return
@@ -563,9 +562,9 @@ export default function Index() {
       alert('请选择要导出二维码的资产')
       return
     }
+    
     try {
       const QRCode = (await import('qrcode')).default
-      const { Document, Packer, Paragraph, Table, TableRow, TableCell, WidthType, AlignmentType, ImageRun } = await import('docx')
       
       const qrPromises = selectedIds.map(async (id) => {
         const asset = assets.find(a => a.id === id)
@@ -573,10 +572,9 @@ export default function Index() {
           try {
             const qrData = `${window.location.origin}/asset/${asset.asset_code}`
             const url = await QRCode.toDataURL(qrData, {
-              width: 120,
+              width: 150,
               margin: 2
             })
-            console.log('QR code generated for asset:', asset.asset_code, 'URL length:', url.length)
             return { asset, url }
           } catch (qrError) {
             console.error('Error generating QR code for asset:', asset.asset_code, qrError)
@@ -585,144 +583,97 @@ export default function Index() {
         }
         return null
       })
+      
       const qrResults = await Promise.all(qrPromises)
       const validResults = qrResults.filter((result): result is { asset: Asset; url: string } => result !== null)
-      console.log('Valid QR results:', validResults.length)
-      
-      const doc = new Document({
-        sections: [{
-          properties: {
-            page: {
-              margin: { top: 500, right: 500, bottom: 500, left: 500 }
-            }
-          },
-          children: []
-        }]
-      })
       
       const colsPerPage = 6
       const rowsPerPage = 3
+      
+      let htmlContent = `
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>资产二维码</title>
+  <style>
+    @page {
+      size: A4;
+      margin: 15mm;
+    }
+    body {
+      font-family: 'Microsoft YaHei', sans-serif;
+      margin: 0;
+      padding: 0;
+    }
+    .qr-container {
+      display: grid;
+      grid-template-columns: repeat(${colsPerPage}, 1fr);
+      grid-template-rows: repeat(${rowsPerPage}, 1fr);
+      gap: 15px;
+      width: 100%;
+      height: 100%;
+      page-break-after: always;
+    }
+    .qr-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+    }
+    .qr-item img {
+      width: 150px;
+      height: 150px;
+      object-fit: contain;
+    }
+    .qr-item .code {
+      margin-top: 8px;
+      font-size: 12px;
+      font-weight: bold;
+      color: #333;
+      word-break: break-word;
+    }
+    @media print {
+      .qr-container {
+        page-break-after: always;
+      }
+    }
+  </style>
+</head>
+<body>
+      `
+      
       const itemsPerPage = colsPerPage * rowsPerPage
       
       for (let pageIndex = 0; pageIndex < Math.ceil(validResults.length / itemsPerPage); pageIndex++) {
         const pageItems = validResults.slice(pageIndex * itemsPerPage, (pageIndex + 1) * itemsPerPage)
         
-        const table = new Table({
-          width: { size: 9000, type: WidthType.DXA },
-          rows: []
-        })
+        htmlContent += '<div class="qr-container">'
         
-        for (let rowIndex = 0; rowIndex < rowsPerPage; rowIndex++) {
-          const rowItems = pageItems.slice(rowIndex * colsPerPage, (rowIndex + 1) * colsPerPage)
-          
-          const tableRow = new TableRow({
-            children: []
-          })
-          
-          for (let colIndex = 0; colIndex < colsPerPage; colIndex++) {
-            const item = rowItems[colIndex]
-            
-            if (item) {
-              try {
-                const base64Data = item.url.split(',')[1]
-                if (!base64Data) {
-                  console.error('QR code base64 data is empty for asset:', item.asset.asset_code)
-                  throw new Error('QR code data is empty')
-                }
-                
-                const cleanBase64 = base64Data.replace(/\s/g, '')
-                const binaryString = window.atob(cleanBase64)
-                const length = binaryString.length
-                
-                if (length <= 0 || length > 1000000) {
-                  console.error('Invalid binary string length:', length)
-                  throw new Error('Invalid QR code data length')
-                }
-                
-                const bytes = new Uint8Array(length)
-                for (let i = 0; i < length; i++) {
-                  bytes[i] = binaryString.charCodeAt(i)
-                }
-                
-                const tableCell = new TableCell({
-                  width: { size: 1500, type: WidthType.DXA },
-                  children: [
-                    new Paragraph({
-                      alignment: AlignmentType.CENTER,
-                      spacing: { before: 100, after: 100 },
-                      children: [
-                        new ImageRun({
-                          data: bytes,
-                          transformation: { width: 150, height: 150 }
-                        })
-                      ]
-                    }),
-                    new Paragraph({
-                      alignment: AlignmentType.CENTER,
-                      spacing: { before: 50, after: 50 },
-                      children: [{
-                        text: item.asset.asset_code,
-                        bold: true,
-                        size: 20
-                      }]
-                    })
-                  ]
-                })
-                tableRow.children.push(tableCell)
-              } catch (cellError) {
-                console.error('Error processing QR code for asset:', item.asset.asset_code, cellError)
-                const tableCell = new TableCell({
-                  width: { size: 1500, type: WidthType.DXA },
-                  children: [
-                    new Paragraph({
-                      alignment: AlignmentType.CENTER,
-                      children: [{
-                        text: item.asset.asset_code,
-                        bold: true,
-                        size: 20
-                      }]
-                    })
-                  ]
-                })
-                tableRow.children.push(tableCell)
-              }
-            } else {
-              const tableCell = new TableCell({
-                width: { size: 1500, type: WidthType.DXA },
-                children: []
-              })
-              tableRow.children.push(tableCell)
-            }
-          }
-          
-          table.rows.push(tableRow)
+        for (const item of pageItems) {
+          htmlContent += `
+            <div class="qr-item">
+              <img src="${item.url}" alt="${item.asset.asset_code}" />
+              <div class="code">${item.asset.asset_code}</div>
+            </div>
+          `
         }
         
-        doc.sections[0].children.push(table)
-        
-        if (pageIndex < Math.ceil(validResults.length / itemsPerPage) - 1) {
-          doc.sections[0].children.push(new Paragraph({
-            pageBreakBefore: true,
-            children: []
-          }))
-        }
+        htmlContent += '</div>'
       }
       
-      const buffer = await Packer.toBuffer(doc)
+      htmlContent += `
+</body>
+</html>
+      `
       
-      let blob: Blob
-      if (buffer instanceof ArrayBuffer) {
-        blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' })
-      } else if (buffer instanceof Buffer) {
-        blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' })
-      } else {
-        blob = new Blob([new Uint8Array(buffer as any)], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' })
-      }
-      
+      const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' })
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `资产二维码_${new Date().toISOString().split('T')[0]}.docx`
+      a.download = `资产二维码_${new Date().toISOString().split('T')[0]}.html`
       document.body.appendChild(a)
       a.click()
       document.body.removeChild(a)
