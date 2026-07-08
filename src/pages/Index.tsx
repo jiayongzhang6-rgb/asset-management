@@ -525,12 +525,14 @@ export default function Index() {
     }
     try {
       const QRCode = (await import('qrcode')).default
+      const { Document, Packer, Paragraph, Table, TableRow, TableCell, WidthType, AlignmentType, ImageRun, convertInchesToTwip } = await import('docx')
+      
       const qrPromises = selectedIds.map(async (id) => {
         const asset = assets.find(a => a.id === id)
         if (asset) {
           const qrData = `${window.location.origin}/asset/${asset.asset_code}`
           const url = await QRCode.toDataURL(qrData, {
-            width: 200,
+            width: 150,
             margin: 2
           })
           return { asset, url }
@@ -540,79 +542,109 @@ export default function Index() {
       const qrResults = await Promise.all(qrPromises)
       const validResults = qrResults.filter((result): result is { asset: Asset; url: string } => result !== null)
       
-      // 生成HTML页面
-      const html = `
-        <!DOCTYPE html>
-        <html lang="zh-CN">
-        <head>
-          <meta charset="UTF-8">
-          <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <title>资产二维码批量导出</title>
-          <style>
-            body {
-              font-family: Arial, sans-serif;
-              margin: 20px;
-              background-color: #f5f5f5;
-            }
-            .container {
-              max-width: 1200px;
-              margin: 0 auto;
-            }
-            h1 {
-              text-align: center;
-              color: #333;
-            }
-            .qr-grid {
-              display: grid;
-              grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-              gap: 20px;
-              margin-top: 30px;
-            }
-            .qr-item {
-              background: white;
-              padding: 20px;
-              border-radius: 8px;
-              box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-              text-align: center;
-            }
-            .qr-code {
-              margin: 0 auto 10px;
-            }
-            .asset-info {
-              font-size: 14px;
-              color: #666;
-            }
-            .asset-code {
-              font-weight: bold;
-              color: #333;
-              margin-bottom: 5px;
-            }
-          </style>
-        </head>
-        <body>
-          <div class="container">
-            <h1>资产二维码批量导出</h1>
-            <div class="qr-grid">
-              ${validResults.map(({ asset, url }) => `
-                <div class="qr-item">
-                  <div class="asset-code">${asset.asset_code}</div>
-                  <div class="asset-info">${asset.brand} ${asset.model}</div>
-                  <div class="asset-info">${asset.user_name}</div>
-                  <img class="qr-code" src="${url}" alt="${asset.asset_code}" width="200" height="200">
-                </div>
-              `).join('')}
-            </div>
-          </div>
-        </body>
-        </html>
-      `
+      // 将图片数据转换为 Buffer
+      const getImageBuffer = (dataUrl: string) => {
+        const base64Data = dataUrl.split(',')[1]
+        return Buffer.from(base64Data, 'base64')
+      }
       
-      // 创建并下载文件
-      const blob = new Blob([html], { type: 'text/html' })
+      // 创建文档
+      const doc = new Document({
+        sections: [{
+          properties: {
+            page: {
+              margin: {
+                top: 0,
+                right: 0,
+                bottom: 0,
+                left: 0,
+                header: 0,
+                footer: 0,
+              }
+            }
+          },
+          children: []
+        }]
+      })
+      
+      // 创建表格（所有内容在同一页，不进行分页）
+      const colsPerPage = 6
+      const table = new Table({
+        width: { size: 19, type: WidthType.INCH },
+        rows: []
+      })
+      
+      // 按行分组
+      for (let rowIndex = 0; rowIndex < Math.ceil(validResults.length / colsPerPage); rowIndex++) {
+        const rowItems = validResults.slice(rowIndex * colsPerPage, (rowIndex + 1) * colsPerPage)
+        
+        const tableRow = new TableRow({
+          children: []
+        })
+        
+        // 填充每行的单元格
+        for (let colIndex = 0; colIndex < colsPerPage; colIndex++) {
+          const item = rowItems[colIndex]
+          
+          if (item) {
+            const imageBuffer = getImageBuffer(item.url)
+            
+            const tableCell = new TableCell({
+              width: { size: 6, type: WidthType.CM },
+              height: { size: convertInchesToTwip(4.66 / 2.54), type: WidthType.DXA },
+              alignment: AlignmentType.CENTER,
+              verticalAlign: 'center',
+              children: [
+                new Paragraph({
+                  alignment: AlignmentType.CENTER,
+                  spacing: { before: 0, after: 0 },
+                  children: [
+                    new ImageRun({
+                      data: imageBuffer,
+                      transformation: {
+                        width: 100,
+                        height: 100
+                      }
+                    })
+                  ]
+                }),
+                new Paragraph({
+                  alignment: AlignmentType.CENTER,
+                  spacing: { before: 0, after: 0 },
+                  children: [
+                    {
+                      text: item.asset.asset_code,
+                      bold: true,
+                      size: 18
+                    }
+                  ]
+                })
+              ]
+            })
+            tableRow.children.push(tableCell)
+          } else {
+            // 空单元格
+            const tableCell = new TableCell({
+              width: { size: 6, type: WidthType.CM },
+              height: { size: convertInchesToTwip(4.66 / 2.54), type: WidthType.DXA },
+              children: []
+            })
+            tableRow.children.push(tableCell)
+          }
+        }
+        
+        table.rows.push(tableRow)
+      }
+      
+      doc.sections[0].children.push(table)
+      
+      // 导出文档
+      const buffer = await Packer.toBuffer(doc)
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' })
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `资产二维码_${new Date().toISOString().split('T')[0]}.html`
+      a.download = `资产二维码_${new Date().toISOString().split('T')[0]}.docx`
       document.body.appendChild(a)
       a.click()
       document.body.removeChild(a)
