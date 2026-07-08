@@ -10,6 +10,7 @@ export default function OperationHistory() {
   const [loading, setLoading] = useState(true)
   const [assetCodeFilter, setAssetCodeFilter] = useState('')
   const [filteredHistory, setFilteredHistory] = useState<any[]>([])
+  const [selectedIds, setSelectedIds] = useState<string[]>([])
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -25,6 +26,7 @@ export default function OperationHistory() {
     } else {
       setFilteredHistory(history)
     }
+    setSelectedIds([])
   }, [assetCodeFilter, history])
 
   const fetchHistory = async () => {
@@ -83,6 +85,44 @@ export default function OperationHistory() {
     }
   }
 
+  const handleSelectAll = (checked: boolean) => {
+    if (checked) {
+      setSelectedIds(filteredHistory.map(item => String(item.id)))
+    } else {
+      setSelectedIds([])
+    }
+  }
+
+  const handleSelectOne = (id: string | number, checked: boolean) => {
+    const idStr = String(id)
+    if (checked) {
+      setSelectedIds([...selectedIds, idStr])
+    } else {
+      setSelectedIds(selectedIds.filter(selectedId => selectedId !== idStr))
+    }
+  }
+
+  const handleBatchDelete = async () => {
+    if (selectedIds.length === 0) {
+      alert('请选择要删除的操作历史记录')
+      return
+    }
+    if (confirm(`确定要删除选中的 ${selectedIds.length} 条操作历史记录吗？`)) {
+      try {
+        for (const id of selectedIds) {
+          const { error } = await supabase.from('operation_history').delete().eq('id', id)
+          if (error) throw error
+        }
+        await fetchHistory()
+        setSelectedIds([])
+        alert('操作历史记录批量删除成功')
+      } catch (error) {
+        console.error('Error batch deleting operation history:', error)
+        alert('操作历史记录批量删除失败')
+      }
+    }
+  }
+
   return (
     <div className="min-h-screen bg-gray-100">
       <header className="bg-white shadow">
@@ -120,18 +160,28 @@ export default function OperationHistory() {
         <div className="bg-white rounded-lg shadow p-6 mb-6">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
             <h2 className="text-xl font-semibold">所有操作历史</h2>
-            <div className="relative">
-              <input
-                type="text"
-                placeholder="按资产编码筛选"
-                className="pl-10 pr-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                value={assetCodeFilter}
-                onChange={(e) => setAssetCodeFilter(e.target.value)}
-              />
-              <div className="absolute left-3 top-2.5 text-gray-400">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
+            <div className="flex items-center gap-4">
+              {user?.role === 'admin' && selectedIds.length > 0 && (
+                <button
+                  onClick={handleBatchDelete}
+                  className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
+                >
+                  批量删除 ({selectedIds.length})
+                </button>
+              )}
+              <div className="relative">
+                <input
+                  type="text"
+                  placeholder="按资产编码筛选"
+                  className="pl-10 pr-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  value={assetCodeFilter}
+                  onChange={(e) => setAssetCodeFilter(e.target.value)}
+                />
+                <div className="absolute left-3 top-2.5 text-gray-400">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                </div>
               </div>
             </div>
           </div>
@@ -149,6 +199,16 @@ export default function OperationHistory() {
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
+                    {user?.role === 'admin' && (
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        <input
+                          type="checkbox"
+                          checked={filteredHistory.length > 0 && selectedIds.length === filteredHistory.length}
+                          onChange={(e) => handleSelectAll(e.target.checked)}
+                          className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        />
+                      </th>
+                    )}
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">时间</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">资产编码</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">操作类型</th>
@@ -160,6 +220,16 @@ export default function OperationHistory() {
                 <tbody className="bg-white divide-y divide-gray-200">
                   {filteredHistory.map((item) => (
                     <tr key={item.id}>
+                      {user?.role === 'admin' && (
+                        <td className="px-4 py-3">
+                          <input
+                            type="checkbox"
+                            checked={selectedIds.includes(String(item.id))}
+                            onChange={(e) => handleSelectOne(item.id, e.target.checked)}
+                            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          />
+                        </td>
+                      )}
                       <td className="px-4 py-3 text-sm text-gray-900">
                         {/* 手动调整UTC时间到北京时间（+8小时） */}
                         {(() => {
