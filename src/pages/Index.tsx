@@ -175,17 +175,18 @@ export default function Index() {
 
   const handleSelectAll = (checked: boolean) => {
     if (checked) {
-      setSelectedIds(assets.map(asset => asset.id.toString()))
+      setSelectedIds(assets.map(asset => String(asset.id)))
     } else {
       setSelectedIds([])
     }
   }
 
-  const handleSelectOne = (id: string, checked: boolean) => {
+  const handleSelectOne = (id: string | number, checked: boolean) => {
+    const idStr = String(id)
     if (checked) {
-      setSelectedIds([...selectedIds, id])
+      setSelectedIds([...selectedIds, idStr])
     } else {
-      setSelectedIds(selectedIds.filter(selectedId => selectedId !== id))
+      setSelectedIds(selectedIds.filter(selectedId => selectedId !== idStr))
     }
   }
 
@@ -931,7 +932,7 @@ export default function Index() {
                       <td className="px-4 py-3 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                         <input
                           type="checkbox"
-                          checked={selectedIds.includes(asset.id)}
+                          checked={selectedIds.includes(String(asset.id))}
                           onChange={(e) => {
                             e.stopPropagation()
                             handleSelectOne(asset.id, e.target.checked)
