@@ -80,7 +80,7 @@ export default function Import() {
             department: item['部门'] || item['Department'] || item['department'] || '',
             user_name: item['使用人'] || item['用户'] || item['User'] || item['user_name'] || item['使用人姓名'] || '',
             location: item['地点'] || item['位置'] || item['Location'] || item['location'] || '',
-            status: item['状态'] || item['Status'] || item['status'] || 'active',
+            status: ['active', 'idle', 'maintenance'].includes(item['状态']?.trim()) ? item['状态'].trim() : ['active', 'idle', 'maintenance'].includes(item['Status']?.trim()) ? item['Status'].trim() : ['active', 'idle', 'maintenance'].includes(item['status']?.trim()) ? item['status'].trim() : 'active',
             notes: [
               item['备注'] || item['Notes'] || item['notes'] || '',
               ...otherFields

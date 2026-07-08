@@ -544,14 +544,25 @@ export default function Index() {
       
       // 将图片数据转换为 Uint8Array（浏览器环境）
       const getImageBuffer = (dataUrl: string) => {
-        const base64Data = dataUrl.split(',')[1]
-        const binaryString = window.atob(base64Data)
-        const len = binaryString.length
-        const bytes = new Uint8Array(len)
-        for (let i = 0; i < len; i++) {
-          bytes[i] = binaryString.charCodeAt(i)
+        try {
+          const base64Data = dataUrl.split(',')[1]
+          if (!base64Data || base64Data.length === 0) {
+            throw new Error('Invalid base64 data')
+          }
+          const binaryString = window.atob(base64Data)
+          const len = binaryString.length
+          if (len > 1000000) {
+            throw new Error('Image data too large')
+          }
+          const bytes = new Uint8Array(len)
+          for (let i = 0; i < len; i++) {
+            bytes[i] = binaryString.charCodeAt(i)
+          }
+          return bytes
+        } catch (error) {
+          console.error('Error converting image data:', error)
+          throw error
         }
-        return bytes
       }
       
       // 创建文档
