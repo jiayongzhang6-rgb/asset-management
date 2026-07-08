@@ -69,6 +69,7 @@ export default function Import() {
           if (item['IP地址']) otherFields.push(`IP地址: ${item['IP地址']}`)
           
           return {
+            asset_code: item['资产编码'] || item['asset_code'] || item['AssetCode'] || generateAssetCode(index),
             brand: item['品牌'] || item['Brand'] || item['brand'] || '',
             model: item['型号'] || item['Model'] || item['model'] || item['计算机名'] || '',
             cpu: item['CPU'] || item['cpu'] || '',
@@ -79,12 +80,11 @@ export default function Import() {
             department: item['部门'] || item['Department'] || item['department'] || '',
             user_name: item['使用人'] || item['用户'] || item['User'] || item['user_name'] || item['使用人姓名'] || '',
             location: item['地点'] || item['位置'] || item['Location'] || item['location'] || '',
-            status: 'active',
+            status: item['状态'] || item['Status'] || item['status'] || 'active',
             notes: [
               item['备注'] || item['Notes'] || item['notes'] || '',
               ...otherFields
-            ].filter(Boolean).join('; '),
-            asset_code: generateAssetCode(index)
+            ].filter(Boolean).join('; ')
           }
         })
         
@@ -113,31 +113,78 @@ export default function Import() {
     setIsUploading(true)
     let successCount = 0
     let failCount = 0
+    let updateCount = 0
+    let insertCount = 0
     
     try {
       // 将导入的资产添加到Supabase中
       for (const asset of previewData) {
         try {
-          const { data, error } = await supabase.from('assets').insert(asset)
-          if (error) {
-            console.error('Error inserting asset:', error)
-            failCount++
-            continue
+          // 先检查资产编码是否已存在
+          const { data: existingAsset, error: checkError } = await supabase
+            .from('assets')
+            .select('id')
+            .eq('asset_code', asset.asset_code)
+            .single()
+          
+          if (checkError && checkError.code !== 'PGRST116') {
+            throw checkError
           }
           
-          successCount++
-          
-          // 记录操作历史
-          if (user && data && data.length > 0) {
-            try {
-              await supabase.from('operation_history').insert({
-                asset_code: asset.asset_code,
-                operation_type: 'create',
-                user_email: user.email,
-                created_at: new Date().toISOString()
-              })
-            } catch (historyError) {
-              console.error('Error recording operation history:', historyError)
+          if (existingAsset) {
+            // 资产编码已存在，执行更新
+            const { error: updateError } = await supabase
+              .from('assets')
+              .update(asset)
+              .eq('asset_code', asset.asset_code)
+            
+            if (updateError) {
+              console.error('Error updating asset:', updateError)
+              failCount++
+              continue
+            }
+            
+            updateCount++
+            successCount++
+            
+            // 记录操作历史
+            if (user) {
+              try {
+                await supabase.from('operation_history').insert({
+                  asset_code: asset.asset_code,
+                  operation_type: 'update',
+                  user_email: user.email,
+                  created_at: new Date().toISOString()
+                })
+              } catch (historyError) {
+                console.error('Error recording operation history:', historyError)
+              }
+            }
+          } else {
+            // 资产编码不存在，执行插入
+            const { data, error: insertError } = await supabase.from('assets').insert(asset)
+            
+            if (insertError) {
+              console.error('Error inserting asset:', insertError)
+              failCount++
+              continue
+            }
+            
+            insertCount++
+            successCount++
+            
+            // 记录操作历史
+            if (user && data && data.length > 0) {
+              try {
+                await supabase.from('operation_history').insert({
+                  asset_code: asset.asset_code,
+                  operation_type: 'create',
+                  user_email: user.email,
+                  created_at: new Date().toISOString()
+                })
+              } catch (historyError) {
+                console.error('Error recording operation history:', historyError)
+              }
             }
           }
         } catch (assetError) {
@@ -146,11 +193,11 @@ export default function Import() {
         }
       }
       
-      alert(`资产导入完成！成功：${successCount} 条，失败：${failCount} 条`)
+      alert(`资产导入完成！成功：${successCount} 条（新增：${insertCount} 条，更新：${updateCount} 条），失败：${failCount} 条`)
       navigate('/')
     } catch (error) {
       console.error('导入失败:', error)
-      alert(`资产导入失败，成功：${successCount} 条，失败：${failCount} 条`)
+      alert(`资产导入失败，成功：${successCount} 条（新增：${insertCount} 条，更新：${updateCount} 条），失败：${failCount} 条`)
     } finally {
       setIsUploading(false)
     }
@@ -160,6 +207,7 @@ export default function Import() {
     // 创建一个包含模板数据的Excel文件
     const templateData = [
       {
+        '资产编码': '',
         '品牌': 'Dell',
         '型号': 'OptiPlex 7090',
         'CPU': 'Intel Core i5-11500',
@@ -170,9 +218,11 @@ export default function Import() {
         '部门': '技术部',
         '使用人': '张三',
         '位置': 'A区-101',
+        '状态': 'active',
         '备注': '办公用机'
       },
       {
+        '资产编码': '',
         '品牌': 'HP',
         '型号': 'EliteBook 840 G8',
         'CPU': 'Intel Core i7-1165G7',
@@ -183,6 +233,7 @@ export default function Import() {
         '部门': '市场部',
         '使用人': '李四',
         '位置': 'B区-202',
+        '状态': 'active',
         '备注': '笔记本电脑'
       }
     ];
@@ -299,10 +350,11 @@ export default function Import() {
             <h2 className="text-xl font-semibold mb-4">导入说明</h2>
             <ul className="space-y-2 text-sm text-gray-600">
               <li>1. 下载模板文件，按照模板格式填写资产信息</li>
-              <li>2. 支持的字段：品牌、型号、CPU、内存、存储、显卡、操作系统、部门、用户、位置、状态、备注</li>
+              <li>2. 支持的字段：资产编码、品牌、型号、CPU、内存、存储、显卡、操作系统、部门、用户、位置、状态、备注</li>
               <li>3. 状态字段可选值：active（使用中）、idle（闲置）、maintenance（维修中）</li>
               <li>4. 必填字段：品牌、型号、CPU、内存、存储、操作系统、部门、用户、位置</li>
-              <li>5. 上传文件后会显示预览，确认无误后点击开始导入</li>
+              <li>5. 如果资产编码已存在，系统会更新该资产信息；如果不存在，系统会新建资产</li>
+              <li>6. 上传文件后会显示预览，确认无误后点击开始导入</li>
             </ul>
           </div>
         </div>
