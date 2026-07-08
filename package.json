@@ -16,6 +16,7 @@
     "autoprefixer": "^10.5.0",
     "chart.js": "^4.5.1",
     "docx": "^9.7.1",
+    "html-docx-js": "^0.3.1",
     "postcss": "^8.5.10",
     "qrcode": "^1.5.4",
     "react": "^19.2.4",

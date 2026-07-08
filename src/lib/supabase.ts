@@ -55,6 +55,19 @@ export type AssetImage = {
 }
 export type AssetImageInsert = Omit<AssetImage, 'id' | 'created_at' | 'updated_at'>
 
+export type UsageHistory = {
+  id: number
+  asset_id: string
+  asset_code: string
+  operation_type: string
+  user_email: string
+  changes: string
+  created_at: string
+  updated_at: string
+}
+export type UsageHistoryInsert = Omit<UsageHistory, 'id' | 'created_at' | 'updated_at'>
+export type UsageHistoryUpdate = Partial<UsageHistoryInsert>
+
 // 初始化数据库表结构
 export const initDatabase = async () => {
   console.log('Starting database initialization...')
@@ -228,6 +241,53 @@ export const initDatabase = async () => {
     }
   } catch (error) {
     console.error('Error in asset_images initialization:', error)
+  }
+  
+  // 检查 usage_history 表
+  try {
+    const { data: usageTables, error: usageTablesError } = await supabase
+      .from('information_schema.tables')
+      .select('table_name')
+      .eq('table_schema', 'public')
+      .eq('table_name', 'usage_history')
+
+    if (usageTablesError) {
+      console.error('Error checking usage_history table:', usageTablesError)
+    } else if (usageTables.length === 0) {
+      console.log('Creating usage_history table...')
+      const { error: createUsageError } = await supabase.rpc('execute_sql', {
+        sql: `
+          CREATE TABLE usage_history (
+            id bigint primary key generated always as identity,
+            asset_id uuid not null,
+            asset_code VARCHAR(50) NOT NULL,
+            operation_type VARCHAR(20) NOT NULL,
+            user_email VARCHAR(255) NOT NULL,
+            changes text,
+            created_at timestamp with time zone default now(),
+            updated_at timestamp with time zone default now(),
+            foreign key (asset_id) references assets(id)
+          );
+          
+          ALTER TABLE usage_history ENABLE ROW LEVEL SECURITY;
+          
+          CREATE POLICY "Allow public read access" ON usage_history FOR SELECT USING (true);
+          CREATE POLICY "Allow public insert access" ON usage_history FOR INSERT WITH CHECK (true);
+          CREATE POLICY "Allow public update access" ON usage_history FOR UPDATE USING (true);
+          CREATE POLICY "Allow public delete access" ON usage_history FOR DELETE USING (true);
+        `
+      })
+
+      if (createUsageError) {
+        console.error('Error creating usage_history table:', createUsageError)
+      } else {
+        console.log('Usage history table created successfully')
+      }
+    } else {
+      console.log('usage_history table already exists')
+    }
+  } catch (error) {
+    console.error('Error in usage_history initialization:', error)
   }
   
   console.log('Database initialization completed')

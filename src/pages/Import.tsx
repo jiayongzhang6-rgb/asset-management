@@ -159,6 +159,19 @@ export default function Import() {
               } catch (historyError) {
                 console.error('Error recording operation history:', historyError)
               }
+              
+              // 记录使用历史到 usage_history（独立保存，不受操作历史删除影响）
+              try {
+                const usageHistoryData = {
+                  asset_id: existingAsset.id,
+                  asset_code: asset.asset_code,
+                  operation_type: 'update',
+                  user_email: user.email
+                }
+                await supabase.from('usage_history').insert(usageHistoryData)
+              } catch (usageError) {
+                console.error('Error recording usage history:', usageError)
+              }
             }
           } else {
             // 资产编码不存在，执行插入
@@ -184,6 +197,19 @@ export default function Import() {
                 })
               } catch (historyError) {
                 console.error('Error recording operation history:', historyError)
+              }
+              
+              // 记录使用历史到 usage_history（独立保存，不受操作历史删除影响）
+              try {
+                const usageHistoryData = {
+                  asset_id: data[0].id,
+                  asset_code: asset.asset_code,
+                  operation_type: 'create',
+                  user_email: user.email
+                }
+                await supabase.from('usage_history').insert(usageHistoryData)
+              } catch (usageError) {
+                console.error('Error recording usage history:', usageError)
               }
             }
           }

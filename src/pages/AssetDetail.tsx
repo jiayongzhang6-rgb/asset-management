@@ -1,7 +1,7 @@
-﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import React, { useState, useEffect, useRef } from 'react'
+﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import React, { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '../App'
-import { supabase, type Asset, type MaintenanceRecord, type AssetImage } from '../lib/supabase'
+import { supabase, type Asset, type MaintenanceRecord, type AssetImage, type UsageHistory } from '../lib/supabase'
 
 export default function AssetDetail() {
   const { id } = useParams<{ id: string }>()
@@ -16,7 +16,7 @@ export default function AssetDetail() {
   const [isEditMaintenanceDialogOpen, setIsEditMaintenanceDialogOpen] = useState(false)
   const [editingMaintenanceRecord, setEditingMaintenanceRecord] = useState<MaintenanceRecord | null>(null)
   const [qrCodeUrl, setQrCodeUrl] = useState('')
-  const [assetHistory, setAssetHistory] = useState<any[]>([])
+  const [assetHistory, setAssetHistory] = useState<UsageHistory[]>([])
   const [assetImages, setAssetImages] = useState<AssetImage[]>([])
   const [isImageUploadDialogOpen, setIsImageUploadDialogOpen] = useState(false)
   const [uploading, setUploading] = useState(false)
@@ -180,20 +180,20 @@ export default function AssetDetail() {
     }
   }
 
-  // 从Supabase中获取资产历史
+  // 从Supabase中获取资产使用历史
   const fetchAssetHistory = async () => {
     if (!id || !asset) return
     try {
       const { data, error } = await supabase
-        .from('operation_history')
+        .from('usage_history')
         .select('*')
         .eq('asset_code', asset.asset_code)
         .order('created_at', { ascending: false })
       if (error) throw error
       setAssetHistory(data || [])
-      console.log('AssetDetail: Asset history fetched successfully', data)
+      console.log('AssetDetail: Usage history fetched successfully', data)
     } catch (error) {
-      console.error('Error fetching asset history:', error)
+      console.error('Error fetching usage history:', error)
     }
   }
 
@@ -293,9 +293,8 @@ export default function AssetDetail() {
       throw updateError
     }
     
-    // 记录操作历史
+    // 记录操作历史到 operation_history（用于操作历史页面）
     if (user && changes.length > 0) {
-      console.log('AssetDetail: Recording operation history')
       try {
         const historyData = {
           asset_code: assetCodeToUse,
@@ -304,23 +303,32 @@ export default function AssetDetail() {
           created_at: new Date().toISOString(),
           changes: changes.join('\n')
         }
-        console.log('AssetDetail: Inserting operation history with data:', historyData)
-        
-        const { error: historyError } = await supabase
-          .from('operation_history')
-          .insert(historyData)
-        
-        if (historyError) {
-          console.error('AssetDetail: History insert error:', historyError)
-          // 历史记录失败不影响主操作
-        }
+        await supabase.from('operation_history').insert(historyData)
       } catch (historyError) {
         console.error('AssetDetail: Error recording operation history:', historyError)
       }
     }
     
+    // 记录使用历史到 usage_history（独立保存，不受操作历史删除影响）
+    if (user && changes.length > 0) {
+      try {
+        const usageHistoryData = {
+          asset_id: asset.id,
+          asset_code: assetCodeToUse,
+          operation_type: 'update',
+          user_email: user.email,
+          changes: changes.join('\n')
+        }
+        console.log('AssetDetail: Inserting usage history with data:', usageHistoryData)
+        await supabase.from('usage_history').insert(usageHistoryData)
+      } catch (usageError) {
+        console.error('AssetDetail: Error recording usage history:', usageError)
+      }
+    }
+    
     setIsEditDialogOpen(false)
     await fetchAsset() // 重新获取资产数据
+    await fetchAssetHistory() // 刷新使用历史
     alert('资产更新成功')
   } catch (error) {
     console.error('Error updating asset:', error)
@@ -340,9 +348,8 @@ export default function AssetDetail() {
         const { data, error } = await supabase.from('assets').delete().eq('id', asset.id)
         if (error) throw error
         
-        // 记录操作历史
+        // 记录操作历史到 operation_history（用于操作历史页面）
         if (user) {
-          console.log('AssetDetail: Recording operation history for delete')
           try {
             const historyData = {
               asset_code: asset.asset_code,
@@ -350,11 +357,24 @@ export default function AssetDetail() {
               user_email: user.email,
               created_at: new Date().toISOString()
             }
-            
-            // 尝试插入操作历史
             await supabase.from('operation_history').insert(historyData)
           } catch (historyError) {
             console.error('AssetDetail: Error recording operation history for delete:', historyError)
+          }
+        }
+        
+        // 记录使用历史到 usage_history（独立保存，不受操作历史删除影响）
+        if (user) {
+          try {
+            const usageHistoryData = {
+              asset_id: asset.id,
+              asset_code: asset.asset_code,
+              operation_type: 'delete',
+              user_email: user.email
+            }
+            await supabase.from('usage_history').insert(usageHistoryData)
+          } catch (usageError) {
+            console.error('AssetDetail: Error recording usage history for delete:', usageError)
           }
         }
         

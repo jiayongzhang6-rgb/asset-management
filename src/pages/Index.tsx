@@ -281,13 +281,22 @@ export default function Index() {
           
           if (historyError) {
             console.error('Index: Error recording operation history:', historyError)
-            alert(`资产创建成功，但操作历史记录失败: ${historyError.message}`)
-          } else {
-            console.log('Index: Operation history recorded successfully for create:', historyResult)
           }
         } catch (historyError) {
           console.error('Index: Exception recording operation history:', historyError)
-          alert(`资产创建成功，但操作历史记录失败: ${historyError.message}`)
+        }
+        
+        // 记录使用历史到 usage_history（独立保存，不受操作历史删除影响）
+        try {
+          const usageHistoryData = {
+            asset_id: data[0].id,
+            asset_code: data[0].asset_code,
+            operation_type: 'create',
+            user_email: user.email
+          }
+          await supabase.from('usage_history').insert(usageHistoryData)
+        } catch (usageError) {
+          console.error('Index: Error recording usage history for create:', usageError)
         }
       }
       
@@ -338,13 +347,22 @@ export default function Index() {
             
             if (historyError) {
               console.error('Index: Error recording operation history:', historyError)
-              alert(`资产更新成功，但操作历史记录失败: ${historyError.message}`)
-            } else {
-              console.log('Index: Operation history recorded successfully for update:', historyResult)
             }
           } catch (historyError) {
             console.error('Index: Exception recording operation history:', historyError)
-            alert(`资产更新成功，但操作历史记录失败: ${historyError.message}`)
+          }
+          
+          // 记录使用历史到 usage_history（独立保存，不受操作历史删除影响）
+          try {
+            const usageHistoryData = {
+              asset_id: editingAsset.id,
+              asset_code: editingAsset.asset_code,
+              operation_type: 'update',
+              user_email: user.email
+            }
+            await supabase.from('usage_history').insert(usageHistoryData)
+          } catch (usageError) {
+            console.error('Index: Error recording usage history for update:', usageError)
           }
         }
         
@@ -437,13 +455,22 @@ export default function Index() {
             
             if (historyError) {
               console.error('Index: Error recording operation history:', historyError)
-              alert(`资产删除成功，但操作历史记录失败: ${historyError.message}`)
-            } else {
-              console.log('Index: Operation history recorded successfully for delete:', historyResult)
             }
           } catch (historyError) {
             console.error('Index: Exception recording operation history:', historyError)
-            alert(`资产删除成功，但操作历史记录失败: ${historyError.message}`)
+          }
+          
+          // 记录使用历史到 usage_history（独立保存，不受操作历史删除影响）
+          try {
+            const usageHistoryData = {
+              asset_id: asset.id,
+              asset_code: asset.asset_code,
+              operation_type: 'delete',
+              user_email: user.email
+            }
+            await supabase.from('usage_history').insert(usageHistoryData)
+          } catch (usageError) {
+            console.error('Index: Error recording usage history for delete:', usageError)
           }
         }
         
@@ -499,6 +526,19 @@ export default function Index() {
             } catch (historyError) {
               console.error('Index: Error recording operation history for delete:', historyError)
             }
+            
+            // 记录使用历史到 usage_history（独立保存，不受操作历史删除影响）
+            try {
+              const usageHistoryData = {
+                asset_id: asset.id,
+                asset_code: asset.asset_code,
+                operation_type: 'delete',
+                user_email: user.email
+              }
+              await supabase.from('usage_history').insert(usageHistoryData)
+            } catch (usageError) {
+              console.error('Index: Error recording usage history for delete:', usageError)
+            }
           }
         }
         
@@ -532,7 +572,7 @@ export default function Index() {
         if (asset) {
           const qrData = `${window.location.origin}/asset/${asset.asset_code}`
           const url = await QRCode.toDataURL(qrData, {
-            width: 150,
+            width: 120,
             margin: 2
           })
           return { asset, url }
@@ -542,121 +582,96 @@ export default function Index() {
       const qrResults = await Promise.all(qrPromises)
       const validResults = qrResults.filter((result): result is { asset: Asset; url: string } => result !== null)
       
-      // 将图片数据转换为 Uint8Array（浏览器环境）
-      const getImageBuffer = (dataUrl: string) => {
-        try {
-          const base64Data = dataUrl.split(',')[1]
-          if (!base64Data || base64Data.length === 0) {
-            throw new Error('Invalid base64 data')
-          }
-          const binaryString = window.atob(base64Data)
-          const len = binaryString.length
-          if (len > 1000000) {
-            throw new Error('Image data too large')
-          }
-          const bytes = new Uint8Array(len)
-          for (let i = 0; i < len; i++) {
-            bytes[i] = binaryString.charCodeAt(i)
-          }
-          return bytes
-        } catch (error) {
-          console.error('Error converting image data:', error)
-          throw error
-        }
-      }
-      
-      // 创建文档
       const doc = new Document({
         sections: [{
           properties: {
             page: {
-              margin: {
-                top: 0,
-                right: 0,
-                bottom: 0,
-                left: 0,
-                header: 0,
-                footer: 0,
-              }
+              margin: { top: 500, right: 500, bottom: 500, left: 500 }
             }
           },
           children: []
         }]
       })
       
-      // 创建表格（所有内容在同一页，不进行分页）
       const colsPerPage = 6
-      const table = new Table({
-        width: { size: 19, type: WidthType.INCH },
-        rows: []
-      })
+      const rowsPerPage = 3
+      const itemsPerPage = colsPerPage * rowsPerPage
       
-      // 按行分组
-      for (let rowIndex = 0; rowIndex < Math.ceil(validResults.length / colsPerPage); rowIndex++) {
-        const rowItems = validResults.slice(rowIndex * colsPerPage, (rowIndex + 1) * colsPerPage)
+      for (let pageIndex = 0; pageIndex < Math.ceil(validResults.length / itemsPerPage); pageIndex++) {
+        const pageItems = validResults.slice(pageIndex * itemsPerPage, (pageIndex + 1) * itemsPerPage)
         
-        const tableRow = new TableRow({
-          children: []
+        const table = new Table({
+          width: { size: 9000, type: WidthType.DXA },
+          rows: []
         })
         
-        // 填充每行的单元格
-        for (let colIndex = 0; colIndex < colsPerPage; colIndex++) {
-          const item = rowItems[colIndex]
+        for (let rowIndex = 0; rowIndex < rowsPerPage; rowIndex++) {
+          const rowItems = pageItems.slice(rowIndex * colsPerPage, (rowIndex + 1) * colsPerPage)
           
-          if (item) {
-            const imageBuffer = getImageBuffer(item.url)
+          const tableRow = new TableRow({
+            children: []
+          })
+          
+          for (let colIndex = 0; colIndex < colsPerPage; colIndex++) {
+            const item = rowItems[colIndex]
             
-            const tableCell = new TableCell({
-              width: { size: 6, type: WidthType.CM },
-              alignment: AlignmentType.CENTER,
-              verticalAlign: 'center',
-              children: [
-                new Paragraph({
-                  alignment: AlignmentType.CENTER,
-                  spacing: { before: 0, after: 0 },
-                  children: [
-                    new ImageRun({
-                      data: imageBuffer,
-                      transformation: {
-                        width: 100,
-                        height: 100
-                      }
-                    })
-                  ]
-                }),
-                new Paragraph({
-                  alignment: AlignmentType.CENTER,
-                  spacing: { before: 0, after: 0 },
-                  children: [
-                    {
+            if (item) {
+              const base64Data = item.url.split(',')[1]
+              const binaryString = window.atob(base64Data)
+              const bytes = new Uint8Array(binaryString.length)
+              for (let i = 0; i < binaryString.length; i++) {
+                bytes[i] = binaryString.charCodeAt(i)
+              }
+              
+              const tableCell = new TableCell({
+                width: { size: 1500, type: WidthType.DXA },
+                children: [
+                  new Paragraph({
+                    alignment: AlignmentType.CENTER,
+                    spacing: { before: 100, after: 100 },
+                    children: [
+                      new ImageRun({
+                        data: bytes,
+                        transformation: { width: 150, height: 150 }
+                      })
+                    ]
+                  }),
+                  new Paragraph({
+                    alignment: AlignmentType.CENTER,
+                    spacing: { before: 50, after: 50 },
+                    children: [{
                       text: item.asset.asset_code,
                       bold: true,
-                      size: 18
-                    }
-                  ]
-                })
-              ]
-            })
-            tableRow.children.push(tableCell)
-          } else {
-            // 空单元格
-            const tableCell = new TableCell({
-              width: { size: 6, type: WidthType.CM },
-              children: []
-            })
-            tableRow.children.push(tableCell)
+                      size: 20
+                    }]
+                  })
+                ]
+              })
+              tableRow.children.push(tableCell)
+            } else {
+              const tableCell = new TableCell({
+                width: { size: 1500, type: WidthType.DXA },
+                children: []
+              })
+              tableRow.children.push(tableCell)
+            }
           }
+          
+          table.rows.push(tableRow)
         }
         
-        table.rows.push(tableRow)
+        doc.sections[0].children.push(table)
+        
+        if (pageIndex < Math.ceil(validResults.length / itemsPerPage) - 1) {
+          doc.sections[0].children.push(new Paragraph({
+            pageBreakBefore: true,
+            children: []
+          }))
+        }
       }
       
-      doc.sections[0].children.push(table)
-      
-      // 导出文档
       const buffer = await Packer.toBuffer(doc)
       
-      // 处理不同的返回类型（Buffer 或 ArrayBuffer）
       let blob: Blob
       if (buffer instanceof ArrayBuffer) {
         blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' })
