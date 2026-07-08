@@ -166,17 +166,16 @@ export const initDatabase = async () => {
       console.log('Creating maintenance_records table...')
       const { error: createMaintenanceError } = await supabase.rpc('execute_sql', {
         sql: `
-          CREATE TABLE maintenance_records (
+          CREATE TABLE IF NOT EXISTS maintenance_records (
             id bigint primary key generated always as identity,
-            asset_id uuid not null,
+            asset_id bigint,
             issue_description text not null,
             repair_description text,
             repair_date date,
             repair_cost decimal(10, 2),
             status text not null default 'pending',
             created_at timestamp with time zone default now(),
-            updated_at timestamp with time zone default now(),
-            foreign key (asset_id) references assets(id)
+            updated_at timestamp with time zone default now()
           );
           
           ALTER TABLE maintenance_records ENABLE ROW LEVEL SECURITY;
@@ -257,16 +256,15 @@ export const initDatabase = async () => {
       console.log('Creating usage_history table...')
       const { error: createUsageError } = await supabase.rpc('execute_sql', {
         sql: `
-          CREATE TABLE usage_history (
+          CREATE TABLE IF NOT EXISTS usage_history (
             id bigint primary key generated always as identity,
-            asset_id uuid not null,
+            asset_id bigint,
             asset_code VARCHAR(50) NOT NULL,
             operation_type VARCHAR(20) NOT NULL,
             user_email VARCHAR(255) NOT NULL,
             changes text,
             created_at timestamp with time zone default now(),
-            updated_at timestamp with time zone default now(),
-            foreign key (asset_id) references assets(id)
+            updated_at timestamp with time zone default now()
           );
           
           ALTER TABLE usage_history ENABLE ROW LEVEL SECURITY;
