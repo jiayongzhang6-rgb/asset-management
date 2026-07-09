@@ -259,12 +259,12 @@ export default function Index() {
         asset_code: generateAssetCode()
       }
       console.log('Index: Creating asset with data:', assetData)
-      const { data, error } = await supabase.from('assets').insert(assetData)
+      const { data, error } = await supabase.from('assets').insert(assetData).select()
       if (error) throw error
       console.log('Index: Asset created successfully:', data)
       
       // 记录操作历史
-      if (user) {
+      if (user && data && data.length > 0) {
         console.log('Index: Recording operation history for create')
         try {
           // 使用资产编码作为唯一标识
@@ -294,9 +294,16 @@ export default function Index() {
             operation_type: 'create',
             user_email: user.email
           }
-          await supabase.from('usage_history').insert(usageHistoryData)
+          console.log('Index: Inserting usage history:', usageHistoryData)
+          const { error: usageError } = await supabase.from('usage_history').insert(usageHistoryData)
+          if (usageError) {
+            console.error('Index: Error recording usage history:', usageError)
+            alert(`写入使用历史失败: ${usageError.message}`)
+          } else {
+            console.log('Index: Usage history recorded successfully')
+          }
         } catch (usageError) {
-          console.error('Index: Error recording usage history for create:', usageError)
+          console.error('Index: Exception recording usage history:', usageError)
         }
       }
       
@@ -360,9 +367,16 @@ export default function Index() {
               operation_type: 'update',
               user_email: user.email
             }
-            await supabase.from('usage_history').insert(usageHistoryData)
+            console.log('Index: Inserting usage history:', usageHistoryData)
+            const { error: usageError } = await supabase.from('usage_history').insert(usageHistoryData)
+            if (usageError) {
+              console.error('Index: Error recording usage history:', usageError)
+              alert(`写入使用历史失败: ${usageError.message}`)
+            } else {
+              console.log('Index: Usage history recorded successfully')
+            }
           } catch (usageError) {
-            console.error('Index: Error recording usage history for update:', usageError)
+            console.error('Index: Exception recording usage history:', usageError)
           }
         }
         
@@ -468,9 +482,16 @@ export default function Index() {
               operation_type: 'delete',
               user_email: user.email
             }
-            await supabase.from('usage_history').insert(usageHistoryData)
+            console.log('Index: Inserting usage history:', usageHistoryData)
+            const { error: usageError } = await supabase.from('usage_history').insert(usageHistoryData)
+            if (usageError) {
+              console.error('Index: Error recording usage history:', usageError)
+              alert(`写入使用历史失败: ${usageError.message}`)
+            } else {
+              console.log('Index: Usage history recorded successfully')
+            }
           } catch (usageError) {
-            console.error('Index: Error recording usage history for delete:', usageError)
+            console.error('Index: Exception recording usage history:', usageError)
           }
         }
         
@@ -535,9 +556,15 @@ export default function Index() {
                 operation_type: 'delete',
                 user_email: user.email
               }
-              await supabase.from('usage_history').insert(usageHistoryData)
+              console.log('Index: Inserting usage history:', usageHistoryData)
+              const { error: usageError } = await supabase.from('usage_history').insert(usageHistoryData)
+              if (usageError) {
+                console.error('Index: Error recording usage history:', usageError)
+              } else {
+                console.log('Index: Usage history recorded successfully')
+              }
             } catch (usageError) {
-              console.error('Index: Error recording usage history for delete:', usageError)
+              console.error('Index: Exception recording usage history:', usageError)
             }
           }
         }

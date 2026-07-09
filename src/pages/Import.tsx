@@ -168,14 +168,20 @@ export default function Import() {
                   operation_type: 'update',
                   user_email: user.email
                 }
-                await supabase.from('usage_history').insert(usageHistoryData)
+                console.log('Import: Inserting usage history:', usageHistoryData)
+                const { error: usageError } = await supabase.from('usage_history').insert(usageHistoryData)
+                if (usageError) {
+                  console.error('Import: Error recording usage history:', usageError)
+                } else {
+                  console.log('Import: Usage history recorded successfully')
+                }
               } catch (usageError) {
-                console.error('Error recording usage history:', usageError)
+                console.error('Import: Exception recording usage history:', usageError)
               }
             }
           } else {
             // 资产编码不存在，执行插入
-            const { data, error: insertError } = await supabase.from('assets').insert(asset)
+            const { data, error: insertError } = await supabase.from('assets').insert(asset).select()
             
             if (insertError) {
               console.error('Error inserting asset:', insertError)
@@ -200,16 +206,24 @@ export default function Import() {
               }
               
               // 记录使用历史到 usage_history（独立保存，不受操作历史删除影响）
-              try {
-                const usageHistoryData = {
-                  asset_id: data[0].id,
-                  asset_code: asset.asset_code,
-                  operation_type: 'create',
-                  user_email: user.email
+              if (data && data.length > 0) {
+                try {
+                  const usageHistoryData = {
+                    asset_id: data[0].id,
+                    asset_code: asset.asset_code,
+                    operation_type: 'create',
+                    user_email: user.email
+                  }
+                  console.log('Import: Inserting usage history:', usageHistoryData)
+                  const { error: usageError } = await supabase.from('usage_history').insert(usageHistoryData)
+                  if (usageError) {
+                    console.error('Import: Error recording usage history:', usageError)
+                  } else {
+                    console.log('Import: Usage history recorded successfully')
+                  }
+                } catch (usageError) {
+                  console.error('Import: Exception recording usage history:', usageError)
                 }
-                await supabase.from('usage_history').insert(usageHistoryData)
-              } catch (usageError) {
-                console.error('Error recording usage history:', usageError)
               }
             }
           }

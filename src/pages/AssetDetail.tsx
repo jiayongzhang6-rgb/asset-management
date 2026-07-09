@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import React, { useState, useEffect, useRef } from 'react'
+﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import React, { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '../App'
 import { supabase, type Asset, type MaintenanceRecord, type AssetImage, type UsageHistory } from '../lib/supabase'
@@ -319,10 +319,16 @@ export default function AssetDetail() {
           user_email: user.email,
           changes: changes.join('\n')
         }
-        console.log('AssetDetail: Inserting usage history with data:', usageHistoryData)
-        await supabase.from('usage_history').insert(usageHistoryData)
+        console.log('AssetDetail: Inserting usage history:', usageHistoryData)
+        const { error: usageError } = await supabase.from('usage_history').insert(usageHistoryData)
+        if (usageError) {
+          console.error('AssetDetail: Error recording usage history:', usageError)
+          alert(`写入使用历史失败: ${usageError.message}`)
+        } else {
+          console.log('AssetDetail: Usage history recorded successfully')
+        }
       } catch (usageError) {
-        console.error('AssetDetail: Error recording usage history:', usageError)
+        console.error('AssetDetail: Exception recording usage history:', usageError)
       }
     }
     
@@ -372,9 +378,16 @@ export default function AssetDetail() {
               operation_type: 'delete',
               user_email: user.email
             }
-            await supabase.from('usage_history').insert(usageHistoryData)
+            console.log('AssetDetail: Inserting usage history:', usageHistoryData)
+            const { error: usageError } = await supabase.from('usage_history').insert(usageHistoryData)
+            if (usageError) {
+              console.error('AssetDetail: Error recording usage history:', usageError)
+              alert(`写入使用历史失败: ${usageError.message}`)
+            } else {
+              console.log('AssetDetail: Usage history recorded successfully')
+            }
           } catch (usageError) {
-            console.error('AssetDetail: Error recording usage history for delete:', usageError)
+            console.error('AssetDetail: Exception recording usage history:', usageError)
           }
         }
         
