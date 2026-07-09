@@ -163,7 +163,6 @@ export default function Import() {
               // 记录使用历史到 usage_history（独立保存，不受操作历史删除影响）
               try {
                 const usageHistoryData = {
-                  asset_id: existingAsset.id,
                   asset_code: asset.asset_code,
                   operation_type: 'update',
                   user_email: user.email
@@ -209,7 +208,6 @@ export default function Import() {
               if (data && data.length > 0) {
                 try {
                   const usageHistoryData = {
-                    asset_id: data[0].id,
                     asset_code: asset.asset_code,
                     operation_type: 'create',
                     user_email: user.email

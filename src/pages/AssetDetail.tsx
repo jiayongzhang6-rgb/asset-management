@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import React, { useState, useEffect, useRef } from 'react'
+﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import React, { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '../App'
 import { supabase, type Asset, type MaintenanceRecord, type AssetImage, type UsageHistory } from '../lib/supabase'
@@ -313,7 +313,6 @@ export default function AssetDetail() {
     if (user && changes.length > 0) {
       try {
         const usageHistoryData = {
-          asset_id: asset.id,
           asset_code: assetCodeToUse,
           operation_type: 'update',
           user_email: user.email,
@@ -373,11 +372,10 @@ export default function AssetDetail() {
         if (user) {
           try {
             const usageHistoryData = {
-              asset_id: asset.id,
-              asset_code: asset.asset_code,
-              operation_type: 'delete',
-              user_email: user.email
-            }
+            asset_code: asset.asset_code,
+            operation_type: 'delete',
+            user_email: user.email
+          }
             console.log('AssetDetail: Inserting usage history:', usageHistoryData)
             const { error: usageError } = await supabase.from('usage_history').insert(usageHistoryData)
             if (usageError) {

@@ -57,7 +57,6 @@ export type AssetImageInsert = Omit<AssetImage, 'id' | 'created_at' | 'updated_a
 
 export type UsageHistory = {
   id: number
-  asset_id: string
   asset_code: string
   operation_type: string
   user_email: string
@@ -258,7 +257,6 @@ export const initDatabase = async () => {
         sql: `
           CREATE TABLE IF NOT EXISTS usage_history (
             id bigint primary key generated always as identity,
-            asset_id bigint,
             asset_code VARCHAR(50) NOT NULL,
             operation_type VARCHAR(20) NOT NULL,
             user_email VARCHAR(255) NOT NULL,
