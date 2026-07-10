@@ -13,6 +13,7 @@ create table if not exists assets (
   user_name text not null,
   location text not null,
   status text not null default 'active',
+  monthly_rent decimal(10, 2) default 0,
   notes text,
   created_at timestamp with time zone default now(),
   updated_at timestamp with time zone default now()

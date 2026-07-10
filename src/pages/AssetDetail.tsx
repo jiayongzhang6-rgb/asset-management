@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import React, { useState, useEffect, useRef } from 'react'
+﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import React, { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '../App'
 import { supabase, type Asset, type MaintenanceRecord, type AssetImage, type UsageHistory } from '../lib/supabase'
@@ -34,7 +34,8 @@ export default function AssetDetail() {
     user_name: '',
     location: '',
     status: 'active',
-    notes: ''
+    notes: '',
+    monthly_rent: ''
   })
   const [maintenanceFormData, setMaintenanceFormData] = useState({
     issue_description: '',
@@ -161,7 +162,8 @@ export default function AssetDetail() {
           user_name: assetData.user_name || '',
           location: assetData.location || '',
           status: assetData.status || 'active',
-          notes: assetData.notes || ''
+          notes: assetData.notes || '',
+          monthly_rent: assetData.monthly_rent || ''
         })
       } else {
         console.error('AssetDetail: No asset found with code:', cleanedId)
@@ -873,6 +875,10 @@ export default function AssetDetail() {
                   </span>
                 </div>
                 <div className="flex justify-between">
+                  <span className="text-gray-600">月租费</span>
+                  <span className="font-medium text-blue-600">{asset.monthly_rent ? `¥${asset.monthly_rent}` : '-'}</span>
+                </div>
+                <div className="flex justify-between">
                   <span className="text-gray-600">创建时间</span>
                   <span className="font-medium">{new Date(asset.created_at).toLocaleString()}</span>
                 </div>
@@ -1174,6 +1180,17 @@ export default function AssetDetail() {
                     className="w-full px-3 py-2 border rounded"
                     value={formData.location}
                     onChange={(e) => setFormData({ ...formData, location: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">月租费（元）</label>
+                  <input
+                    type="number"
+                    className="w-full px-3 py-2 border rounded"
+                    value={formData.monthly_rent}
+                    onChange={(e) => setFormData({ ...formData, monthly_rent: e.target.value })}
+                    min="0"
+                    step="0.01"
                   />
                 </div>
                 <div className="md:col-span-2">

@@ -81,6 +81,7 @@ export default function Import() {
             user_name: item['使用人'] || item['用户'] || item['User'] || item['user_name'] || item['使用人姓名'] || '',
             location: item['地点'] || item['位置'] || item['Location'] || item['location'] || '',
             status: ['active', 'idle', 'maintenance'].includes(item['状态']?.trim()) ? item['状态'].trim() : ['active', 'idle', 'maintenance'].includes(item['Status']?.trim()) ? item['Status'].trim() : ['active', 'idle', 'maintenance'].includes(item['status']?.trim()) ? item['status'].trim() : 'active',
+            monthly_rent: Number(item['月租费']) || Number(item['monthly_rent']) || Number(item['MonthlyRent']) || 0,
             notes: [
               item['备注'] || item['Notes'] || item['notes'] || '',
               ...otherFields
@@ -257,6 +258,7 @@ export default function Import() {
         '使用人': '张三',
         '位置': 'A区-101',
         '状态': 'active',
+        '月租费': 0,
         '备注': '办公用机'
       },
       {
@@ -272,6 +274,7 @@ export default function Import() {
         '使用人': '李四',
         '位置': 'B区-202',
         '状态': 'active',
+        '月租费': 0,
         '备注': '笔记本电脑'
       }
     ];
@@ -388,7 +391,7 @@ export default function Import() {
             <h2 className="text-xl font-semibold mb-4">导入说明</h2>
             <ul className="space-y-2 text-sm text-gray-600">
               <li>1. 下载模板文件，按照模板格式填写资产信息</li>
-              <li>2. 支持的字段：资产编码、品牌、型号、CPU、内存、存储、显卡、操作系统、部门、用户、位置、状态、备注</li>
+              <li>2. 支持的字段：资产编码、品牌、型号、CPU、内存、存储、显卡、操作系统、部门、用户、位置、状态、月租费、备注</li>
               <li>3. 状态字段可选值：active（使用中）、idle（闲置）、maintenance（维修中）</li>
               <li>4. 必填字段：品牌、型号、CPU、内存、存储、操作系统、部门、用户、位置</li>
               <li>5. 如果资产编码已存在，系统会更新该资产信息；如果不存在，系统会新建资产</li>

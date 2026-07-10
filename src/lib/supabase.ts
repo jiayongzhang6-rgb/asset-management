@@ -36,6 +36,7 @@ export type Asset = {
   location: string
   status: string
   notes: string
+  monthly_rent: number
   created_at: string
   updated_at: string
 }
@@ -149,6 +150,36 @@ export const initDatabase = async () => {
     }
   } catch (error) {
     console.error('Error in operation_history initialization:', error)
+  }
+  
+  // 检查 assets 表是否有 monthly_rent 列
+  try {
+    const { data: assetsColumns, error: assetsColumnsError } = await supabase
+      .from('information_schema.columns')
+      .select('column_name')
+      .eq('table_schema', 'public')
+      .eq('table_name', 'assets')
+    
+    if (assetsColumnsError) {
+      console.error('Error checking assets table columns:', assetsColumnsError)
+    } else {
+      const hasMonthlyRent = assetsColumns.some(col => col.column_name === 'monthly_rent')
+      if (!hasMonthlyRent) {
+        console.log('Adding monthly_rent column to assets table...')
+        const { error: addColumnError } = await supabase.rpc('execute_sql', {
+          sql: `ALTER TABLE assets ADD COLUMN monthly_rent decimal(10, 2) default 0;`
+        })
+        if (addColumnError) {
+          console.error('Error adding monthly_rent column:', addColumnError)
+        } else {
+          console.log('monthly_rent column added successfully')
+        }
+      } else {
+        console.log('assets table already has monthly_rent column')
+      }
+    }
+  } catch (error) {
+    console.error('Error adding monthly_rent column:', error)
   }
   
   // 检查 maintenance_records 表
