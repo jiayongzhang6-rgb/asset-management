@@ -143,8 +143,14 @@ export default function Index() {
       setAssets(data || [])
       setTotalAssets(count || 0)
       console.log('Index: Assets fetched successfully', data)
-      
-      // 获取租金统计数据
+    } catch (error) {
+      console.error('Error fetching assets:', error)
+    } finally {
+      setLoading(false)
+    }
+    
+    // 单独获取租金统计数据，不影响资产加载
+    try {
       const now = new Date()
       const currentYear = now.getFullYear()
       const currentMonth = now.getMonth() + 1
@@ -172,9 +178,7 @@ export default function Index() {
         accumulatedPaid
       })
     } catch (error) {
-      console.error('Error fetching assets:', error)
-    } finally {
-      setLoading(false)
+      console.error('Error fetching rent stats:', error)
     }
   }
 
