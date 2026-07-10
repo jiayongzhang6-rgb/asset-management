@@ -44,3 +44,34 @@ create policy "Allow public update access" on assets
 create policy "Allow public delete access" on assets
   for delete using (true);
 
+-- 创建租金记录表
+create table if not exists rent_records (
+  id bigint primary key generated always as identity,
+  asset_code VARCHAR(50) NOT NULL,
+  asset_id VARCHAR(50),
+  department VARCHAR(100),
+  user_name VARCHAR(255),
+  monthly_rent decimal(10, 2) NOT NULL,
+  year integer NOT NULL,
+  month integer NOT NULL,
+  status VARCHAR(20) NOT NULL DEFAULT 'unpaid',
+  paid_date timestamp with time zone,
+  created_at timestamp with time zone default now(),
+  updated_at timestamp with time zone default now()
+);
+
+-- 创建索引
+create index if not exists idx_rent_records_asset_code on rent_records(asset_code);
+create index if not exists idx_rent_records_year_month on rent_records(year, month);
+create index if not exists idx_rent_records_department on rent_records(department);
+create index if not exists idx_rent_records_status on rent_records(status);
+
+-- 启用行级安全
+alter table rent_records enable row level security;
+
+-- 创建策略
+create policy "Allow public read access" on rent_records for select using (true);
+create policy "Allow public insert access" on rent_records for insert with check (true);
+create policy "Allow public update access" on rent_records for update using (true);
+create policy "Allow public delete access" on rent_records for delete using (true);
+

@@ -19,6 +19,13 @@ export default function Index() {
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
   const [editingAsset, setEditingAsset] = useState(null)
+  const [rentStats, setRentStats] = useState({
+    currentMonthTotal: 0,
+    currentMonthPaid: 0,
+    currentMonthUnpaid: 0,
+    accumulatedTotal: 0,
+    accumulatedPaid: 0
+  })
   const [formData, setFormData] = useState({
     brand: '',
     model: '',
@@ -136,6 +143,34 @@ export default function Index() {
       setAssets(data || [])
       setTotalAssets(count || 0)
       console.log('Index: Assets fetched successfully', data)
+      
+      // 获取租金统计数据
+      const now = new Date()
+      const currentYear = now.getFullYear()
+      const currentMonth = now.getMonth() + 1
+      
+      const { data: currentMonthRecords } = await supabase
+        .from('rent_records')
+        .select('monthly_rent, status')
+        .eq('year', currentYear)
+        .eq('month', currentMonth)
+      
+      const { data: allRecords } = await supabase
+        .from('rent_records')
+        .select('monthly_rent, status')
+      
+      const currentMonthTotal = (currentMonthRecords || []).reduce((sum, r) => sum + Number(r.monthly_rent), 0)
+      const currentMonthPaid = (currentMonthRecords || []).filter(r => r.status === 'paid').reduce((sum, r) => sum + Number(r.monthly_rent), 0)
+      const accumulatedTotal = (allRecords || []).reduce((sum, r) => sum + Number(r.monthly_rent), 0)
+      const accumulatedPaid = (allRecords || []).filter(r => r.status === 'paid').reduce((sum, r) => sum + Number(r.monthly_rent), 0)
+      
+      setRentStats({
+        currentMonthTotal,
+        currentMonthPaid,
+        currentMonthUnpaid: currentMonthTotal - currentMonthPaid,
+        accumulatedTotal,
+        accumulatedPaid
+      })
     } catch (error) {
       console.error('Error fetching assets:', error)
     } finally {
@@ -800,6 +835,12 @@ export default function Index() {
                 >
                   操作历史
                 </button>
+                <button
+                  onClick={() => navigate('/rent')}
+                  className="bg-white text-blue-600 px-3 py-1 rounded text-sm font-medium hover:bg-blue-50"
+                >
+                  月租明细
+                </button>
               </>
             )}
             <button
@@ -894,8 +935,34 @@ export default function Index() {
                 </svg>
               </div>
               <div>
-                <p className="text-sm text-gray-600">报废</p>
+                <p className="text-sm text-gray-600">维修中</p>
                 <p className="text-2xl font-bold">{allAssets.filter(a => a.status === 'maintenance').length}</p>
+              </div>
+            </div>
+          </div>
+          <div className="bg-white rounded-lg shadow p-4">
+            <div className="flex items-center gap-3">
+              <div className="bg-blue-100 p-2 rounded-full">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <div>
+                <p className="text-sm text-gray-600">当月租金</p>
+                <p className="text-2xl font-bold text-blue-600">¥{rentStats.currentMonthTotal.toFixed(2)}</p>
+              </div>
+            </div>
+          </div>
+          <div className="bg-white rounded-lg shadow p-4">
+            <div className="flex items-center gap-3">
+              <div className="bg-green-100 p-2 rounded-full">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <div>
+                <p className="text-sm text-gray-600">累计收取</p>
+                <p className="text-2xl font-bold text-green-600">¥{rentStats.accumulatedPaid.toFixed(2)}</p>
               </div>
             </div>
           </div>
@@ -936,6 +1003,10 @@ export default function Index() {
                 <option value="idle">闲置</option>
                 <option value="maintenance">维修中</option>
               </select>
+              <div className="px-3 py-2 bg-blue-50 border border-blue-200 rounded text-sm">
+                <span className="text-gray-600">筛选月租合计:</span>
+                <span className="font-bold text-blue-600 ml-2">¥{allAssets.reduce((sum, a) => sum + (Number(a.monthly_rent) || 0), 0).toFixed(2)}</span>
+              </div>
               {selectedIds.length > 0 && (
                 <>
                   <button
@@ -1235,6 +1306,7 @@ export default function Index() {
                     required
                   />
                 </div>
+                {user?.role === 'admin' && (
                 <div>
                   <label className="block text-sm font-medium text-secondary-700 mb-1">月租费（元）</label>
                   <input
@@ -1246,6 +1318,7 @@ export default function Index() {
                     step="0.01"
                   />
                 </div>
+              )}
               </div>
               <div>
                 <label className="block text-sm font-medium text-secondary-700 mb-1">备注</label>
@@ -1410,6 +1483,7 @@ export default function Index() {
                     required
                   />
                 </div>
+                {user?.role === 'admin' && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">月租费（元）</label>
                   <input
@@ -1421,7 +1495,7 @@ export default function Index() {
                     step="0.01"
                   />
                 </div>
-              </div>
+              )}
               {user?.role === 'admin' && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">备注</label>
@@ -1433,6 +1507,7 @@ export default function Index() {
                   />
                 </div>
               )}
+              </div>
               <div className="flex justify-end gap-2">
                 <button
                   type="button"

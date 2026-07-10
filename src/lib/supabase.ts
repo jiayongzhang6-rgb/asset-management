@@ -68,6 +68,23 @@ export type UsageHistory = {
 export type UsageHistoryInsert = Omit<UsageHistory, 'id' | 'created_at' | 'updated_at'>
 export type UsageHistoryUpdate = Partial<UsageHistoryInsert>
 
+export type RentRecord = {
+  id: number
+  asset_code: string
+  asset_id: string
+  department: string
+  user_name: string
+  monthly_rent: number
+  year: number
+  month: number
+  status: 'paid' | 'unpaid'
+  paid_date: string | null
+  created_at: string
+  updated_at: string
+}
+export type RentRecordInsert = Omit<RentRecord, 'id' | 'created_at' | 'updated_at'>
+export type RentRecordUpdate = Partial<RentRecordInsert>
+
 // 初始化数据库表结构
 export const initDatabase = async () => {
   console.log('Starting database initialization...')
@@ -315,6 +332,61 @@ export const initDatabase = async () => {
     }
   } catch (error) {
     console.error('Error in usage_history initialization:', error)
+  }
+  
+  // 检查 rent_records 表
+  try {
+    const { data: rentTables, error: rentTablesError } = await supabase
+      .from('information_schema.tables')
+      .select('table_name')
+      .eq('table_schema', 'public')
+      .eq('table_name', 'rent_records')
+
+    if (rentTablesError) {
+      console.error('Error checking rent_records table:', rentTablesError)
+    } else if (rentTables.length === 0) {
+      console.log('Creating rent_records table...')
+      const { error: createRentError } = await supabase.rpc('execute_sql', {
+        sql: `
+          CREATE TABLE IF NOT EXISTS rent_records (
+            id bigint primary key generated always as identity,
+            asset_code VARCHAR(50) NOT NULL,
+            asset_id VARCHAR(50),
+            department VARCHAR(100),
+            user_name VARCHAR(255),
+            monthly_rent decimal(10, 2) NOT NULL,
+            year integer NOT NULL,
+            month integer NOT NULL,
+            status VARCHAR(20) NOT NULL DEFAULT 'unpaid',
+            paid_date timestamp with time zone,
+            created_at timestamp with time zone default now(),
+            updated_at timestamp with time zone default now()
+          );
+          
+          CREATE INDEX idx_rent_records_asset_code ON rent_records(asset_code);
+          CREATE INDEX idx_rent_records_year_month ON rent_records(year, month);
+          CREATE INDEX idx_rent_records_department ON rent_records(department);
+          CREATE INDEX idx_rent_records_status ON rent_records(status);
+          
+          ALTER TABLE rent_records ENABLE ROW LEVEL SECURITY;
+          
+          CREATE POLICY "Allow public read access" ON rent_records FOR SELECT USING (true);
+          CREATE POLICY "Allow public insert access" ON rent_records FOR INSERT WITH CHECK (true);
+          CREATE POLICY "Allow public update access" ON rent_records FOR UPDATE USING (true);
+          CREATE POLICY "Allow public delete access" ON rent_records FOR DELETE USING (true);
+        `
+      })
+
+      if (createRentError) {
+        console.error('Error creating rent_records table:', createRentError)
+      } else {
+        console.log('Rent records table created successfully')
+      }
+    } else {
+      console.log('rent_records table already exists')
+    }
+  } catch (error) {
+    console.error('Error in rent_records initialization:', error)
   }
   
   console.log('Database initialization completed')

@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import React, { useState, useEffect, useRef } from 'react'
+﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import React, { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '../App'
 import { supabase, type Asset, type MaintenanceRecord, type AssetImage, type UsageHistory } from '../lib/supabase'
@@ -1182,6 +1182,7 @@ export default function AssetDetail() {
                     onChange={(e) => setFormData({ ...formData, location: e.target.value })}
                   />
                 </div>
+                {user?.role === 'admin' && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">月租费（元）</label>
                   <input
@@ -1193,6 +1194,7 @@ export default function AssetDetail() {
                     step="0.01"
                   />
                 </div>
+              )}
                 <div className="md:col-span-2">
                   <label className="block text-sm font-medium text-gray-700 mb-1">备注</label>
                   <textarea
