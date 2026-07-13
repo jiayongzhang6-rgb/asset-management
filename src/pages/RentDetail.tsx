@@ -10,10 +10,25 @@ export default function RentDetail() {
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear())
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1)
   const [departmentFilter, setDepartmentFilter] = useState('all')
-  
+  const [departments, setDepartments] = useState<string[]>([])
+
   const years = Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i)
   const months = Array.from({ length: 12 }, (_, i) => i + 1)
   
+  const fetchDepartments = async () => {
+    try {
+      const { data } = await supabase
+        .from('assets')
+        .select('department')
+        .not('department', 'is', null)
+        .not('department', 'eq', '')
+      const uniqueDepartments = [...new Set((data || []).map(a => a.department))].filter(d => d)
+      setDepartments(uniqueDepartments)
+    } catch (error) {
+      console.error('Error fetching departments:', error)
+    }
+  }
+
   const fetchRentRecords = async () => {
     setLoading(true)
     try {
@@ -22,14 +37,43 @@ export default function RentDetail() {
         .select('*')
         .eq('year', selectedYear)
         .eq('month', selectedMonth)
-      
+
       if (departmentFilter !== 'all') {
         query = query.eq('department', departmentFilter)
       }
-      
+
       const { data, error } = await query.order('department').order('asset_code')
       if (error) throw error
-      setRentRecords(data || [])
+
+      // 获取最新资产数据，实现月租实时显示
+      if (data && data.length > 0) {
+        const assetCodes = [...new Set(data.map(r => r.asset_code))]
+        const { data: assetsData, error: assetsError } = await supabase
+          .from('assets')
+          .select('asset_code, monthly_rent, department, user_name')
+          .in('asset_code', assetCodes)
+
+        if (assetsError) throw assetsError
+
+        const assetMap = new Map((assetsData || []).map(a => [a.asset_code, a]))
+
+        const updatedRecords = data.map(record => {
+          const latestAsset = assetMap.get(record.asset_code)
+          if (latestAsset) {
+            return {
+              ...record,
+              monthly_rent: latestAsset.monthly_rent ?? record.monthly_rent,
+              department: latestAsset.department ?? record.department,
+              user_name: latestAsset.user_name ?? record.user_name
+            }
+          }
+          return record
+        })
+
+        setRentRecords(updatedRecords)
+      } else {
+        setRentRecords([])
+      }
     } catch (error) {
       console.error('Error fetching rent records:', error)
     } finally {
@@ -147,14 +191,17 @@ export default function RentDetail() {
   }
   
   useEffect(() => {
+    fetchDepartments()
+  }, [])
+
+  useEffect(() => {
     fetchRentRecords()
   }, [selectedYear, selectedMonth, departmentFilter])
   
   const totalRent = rentRecords.reduce((sum, r) => sum + Number(r.monthly_rent), 0)
   const paidRent = rentRecords.filter(r => r.status === 'paid').reduce((sum, r) => sum + Number(r.monthly_rent), 0)
   const unpaidRent = totalRent - paidRent
-  const departments = [...new Set(rentRecords.map(r => r.department))].filter(d => d)
-  
+
   return (
     <div className="min-h-screen bg-gray-100">
       <div className="max-w-7xl mx-auto px-4 py-6">
