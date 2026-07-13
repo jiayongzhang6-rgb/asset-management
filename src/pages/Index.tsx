@@ -46,6 +46,8 @@ export default function Index() {
   const [departmentFilter, setDepartmentFilter] = useState('all')
   // 全部资产数据（用于汇总统计）
   const [allAssets, setAllAssets] = useState<Asset[]>([])
+  // 所有部门列表（不受筛选影响）
+  const [departments, setDepartments] = useState<string[]>([])
   
   // 计算资产状态分布数据
   const getStatusDistribution = () => {
@@ -99,6 +101,21 @@ export default function Index() {
   useEffect(() => {
     initDatabase()
   }, [])
+
+  // 获取所有部门列表（不受筛选影响）
+  const fetchDepartments = async () => {
+    try {
+      const { data } = await supabase
+        .from('assets')
+        .select('department')
+        .not('department', 'is', null)
+        .not('department', 'eq', '')
+      const uniqueDepartments = [...new Set((data || []).map(a => a.department))].filter(d => d)
+      setDepartments(uniqueDepartments)
+    } catch (error) {
+      console.error('Error fetching departments:', error)
+    }
+  }
 
   // 从Supabase中获取资产数据
   const fetchAssets = async () => {
@@ -162,6 +179,7 @@ export default function Index() {
   }
 
   useEffect(() => {
+    fetchDepartments()
     fetchAssets()
   }, [])
 
@@ -971,8 +989,7 @@ export default function Index() {
                 onChange={(e) => setDepartmentFilter(e.target.value)}
               >
                 <option value="all">全部部门</option>
-                {/* 部门选项会根据实际数据动态生成 */}
-                {[...new Set(allAssets.map(a => a.department))].filter(d => d).map(dept => (
+                {departments.map(dept => (
                   <option key={dept} value={dept}>{dept}</option>
                 ))}
               </select>
