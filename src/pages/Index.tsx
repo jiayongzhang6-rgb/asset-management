@@ -20,10 +20,6 @@ export default function Index() {
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
   const [editingAsset, setEditingAsset] = useState(null)
   const [rentStats, setRentStats] = useState({
-    currentMonthTotal: 0,
-    currentMonthPaid: 0,
-    currentMonthUnpaid: 0,
-    accumulatedTotal: 0,
     accumulatedPaid: 0
   })
   const [formData, setFormData] = useState({
@@ -149,34 +145,17 @@ export default function Index() {
       setLoading(false)
     }
     
-    // 单独获取租金统计数据，不影响资产加载
+    // 单独获取累计已缴租金（不随筛选变化）
     try {
-      const now = new Date()
-      const currentYear = now.getFullYear()
-      const currentMonth = now.getMonth() + 1
-      
-      const { data: currentMonthRecords } = await supabase
-        .from('rent_records')
-        .select('monthly_rent, status')
-        .eq('year', currentYear)
-        .eq('month', currentMonth)
-      
       const { data: allRecords } = await supabase
         .from('rent_records')
         .select('monthly_rent, status')
-      
-      const currentMonthTotal = (currentMonthRecords || []).reduce((sum, r) => sum + Number(r.monthly_rent), 0)
-      const currentMonthPaid = (currentMonthRecords || []).filter(r => r.status === 'paid').reduce((sum, r) => sum + Number(r.monthly_rent), 0)
-      const accumulatedTotal = (allRecords || []).reduce((sum, r) => sum + Number(r.monthly_rent), 0)
-      const accumulatedPaid = (allRecords || []).filter(r => r.status === 'paid').reduce((sum, r) => sum + Number(r.monthly_rent), 0)
-      
-      setRentStats({
-        currentMonthTotal,
-        currentMonthPaid,
-        currentMonthUnpaid: currentMonthTotal - currentMonthPaid,
-        accumulatedTotal,
-        accumulatedPaid
-      })
+
+      const accumulatedPaid = (allRecords || [])
+        .filter(r => r.status === 'paid')
+        .reduce((sum, r) => sum + Number(r.monthly_rent), 0)
+
+      setRentStats({ accumulatedPaid })
     } catch (error) {
       console.error('Error fetching rent stats:', error)
     }
@@ -952,8 +931,8 @@ export default function Index() {
                 </svg>
               </div>
               <div>
-                <p className="text-sm text-gray-600">当月租金</p>
-                <p className="text-2xl font-bold text-blue-600">¥{rentStats.currentMonthTotal.toFixed(2)}</p>
+                <p className="text-sm text-gray-600">当月租金（实时）</p>
+                <p className="text-2xl font-bold text-blue-600">¥{allAssets.reduce((sum, a) => sum + (Number(a.monthly_rent) || 0), 0).toFixed(2)}</p>
               </div>
             </div>
           </div>
