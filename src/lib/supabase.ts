@@ -109,6 +109,7 @@ export const initDatabase = async () => {
             asset_code VARCHAR(50) NOT NULL,
             operation_type VARCHAR(20) NOT NULL,
             user_email VARCHAR(255) NOT NULL,
+            changes text,
             created_at TIMESTAMP DEFAULT NOW()
           );
           
@@ -142,6 +143,7 @@ export const initDatabase = async () => {
         
         const hasAssetCode = columns.some(col => col.column_name === 'asset_code')
         const hasAssetId = columns.some(col => col.column_name === 'asset_id')
+        const hasChanges = columns.some(col => col.column_name === 'changes')
         
         if (!hasAssetCode && hasAssetId) {
           console.log('Migrating operation_history from asset_id to asset_code...')
@@ -162,6 +164,19 @@ export const initDatabase = async () => {
           }
         } else if (hasAssetCode) {
           console.log('operation_history table already has asset_code column')
+        }
+
+        // 检查并添加 changes 列
+        if (!hasChanges) {
+          console.log('Adding changes column to operation_history table...')
+          const { error: addChangesError } = await supabase.rpc('execute_sql', {
+            sql: `ALTER TABLE operation_history ADD COLUMN changes text;`
+          })
+          if (addChangesError) {
+            console.error('Error adding changes column:', addChangesError)
+          } else {
+            console.log('changes column added successfully')
+          }
         }
       }
     }

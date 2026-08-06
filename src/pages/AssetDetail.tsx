@@ -256,7 +256,7 @@ export default function AssetDetail() {
     console.log('AssetDetail: Asset code to use for history:', assetCodeToUse)
     
     // 根据用户角色过滤可修改的字段
-    let updateData = { ...formData }
+    let updateData: Record<string, any> = { ...formData }
     if (user?.role !== 'admin') {
       // 普通用户只能修改以下字段
       updateData = {
@@ -265,6 +265,12 @@ export default function AssetDetail() {
         location: formData.location,
         notes: formData.notes
       }
+    }
+
+    // 将 monthly_rent 转换为数字或 null，避免空字符串导致数据库更新失败
+    if ('monthly_rent' in updateData) {
+      const rentValue = parseFloat(updateData.monthly_rent)
+      updateData.monthly_rent = isNaN(rentValue) ? 0 : rentValue
     }
     
     // 计算变更内容
@@ -337,9 +343,9 @@ export default function AssetDetail() {
     await fetchAsset() // 重新获取资产数据
     await fetchAssetHistory() // 刷新使用历史
     alert('资产更新成功')
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error updating asset:', error)
-    alert('资产更新失败')
+    alert(`资产更新失败: ${error?.message || JSON.stringify(error)}`)
   }
 }
 
