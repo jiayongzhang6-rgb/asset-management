@@ -19,6 +19,8 @@ export default function Index() {
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
   const [editingAsset, setEditingAsset] = useState(null)
+  const [isBatchStatusDialogOpen, setIsBatchStatusDialogOpen] = useState(false)
+  const [batchStatus, setBatchStatus] = useState('active')
   const [rentStats, setRentStats] = useState({
     accumulatedPaid: 0
   })
@@ -802,6 +804,120 @@ export default function Index() {
     }
   }
 
+  // 批量修改使用状态
+  const handleBatchEditStatus = async () => {
+    if (selectedIds.length === 0) {
+      alert('请选择要修改状态的资产')
+      return
+    }
+
+    const statusText = batchStatus === 'active' ? '使用中' : batchStatus === 'idle' ? '闲置' : '维修中'
+    if (!confirm(`确定要将选中的 ${selectedIds.length} 个资产状态修改为「${statusText}」吗？`)) {
+      return
+    }
+
+    try {
+      // 获取选中资产的 asset_code 列表
+      const selectedAssets = assets.filter(asset => selectedIds.includes(String(asset.id)))
+      const assetCodes = selectedAssets.map(a => a.asset_code)
+
+      // 批量更新状态
+      const { error } = await supabase
+        .from('assets')
+        .update({
+          status: batchStatus,
+          updated_at: new Date().toISOString()
+        })
+        .in('asset_code', assetCodes)
+
+      if (error) throw error
+
+      // 记录操作历史
+      if (user) {
+        for (const asset of selectedAssets) {
+          try {
+            await supabase.from('operation_history').insert({
+              asset_code: asset.asset_code,
+              operation_type: 'update',
+              user_email: user.email,
+              created_at: new Date().toISOString(),
+              changes: `状态: ${asset.status === 'active' ? '使用中' : asset.status === 'idle' ? '闲置' : '维修中'} → ${statusText}`
+            })
+          } catch (e) {
+            console.error('Error recording history:', e)
+          }
+          try {
+            await supabase.from('usage_history').insert({
+              asset_code: asset.asset_code,
+              operation_type: 'update',
+              user_email: user.email,
+              changes: `状态: ${asset.status === 'active' ? '使用中' : asset.status === 'idle' ? '闲置' : '维修中'} → ${statusText}`
+            })
+          } catch (e) {
+            console.error('Error recording usage history:', e)
+          }
+        }
+      }
+
+      await fetchAssets()
+      setSelectedIds([])
+      setIsBatchStatusDialogOpen(false)
+      alert(`成功修改 ${selectedAssets.length} 个资产的状态`)
+    } catch (error: any) {
+      console.error('Error batch updating status:', error)
+      alert(`批量修改状态失败: ${error?.message || JSON.stringify(error)}`)
+    }
+  }
+
+  // 单个资产快速状态切换
+  const handleQuickStatusChange = async (asset: Asset, newStatus: string) => {
+    if (newStatus === asset.status) return
+
+    try {
+      const { error } = await supabase
+        .from('assets')
+        .update({
+          status: newStatus,
+          updated_at: new Date().toISOString()
+        })
+        .eq('asset_code', asset.asset_code)
+
+      if (error) throw error
+
+      // 记录操作历史
+      if (user) {
+        const statusText = newStatus === 'active' ? '使用中' : newStatus === 'idle' ? '闲置' : '维修中'
+        const oldStatusText = asset.status === 'active' ? '使用中' : asset.status === 'idle' ? '闲置' : '维修中'
+        try {
+          await supabase.from('operation_history').insert({
+            asset_code: asset.asset_code,
+            operation_type: 'update',
+            user_email: user.email,
+            created_at: new Date().toISOString(),
+            changes: `状态: ${oldStatusText} → ${statusText}`
+          })
+        } catch (e) {
+          console.error('Error recording history:', e)
+        }
+        try {
+          await supabase.from('usage_history').insert({
+            asset_code: asset.asset_code,
+            operation_type: 'update',
+            user_email: user.email,
+            changes: `状态: ${oldStatusText} → ${statusText}`
+          })
+        } catch (e) {
+          console.error('Error recording usage history:', e)
+        }
+      }
+
+      await fetchAssets()
+    } catch (error: any) {
+      console.error('Error quick status change:', error)
+      alert(`状态修改失败: ${error?.message || JSON.stringify(error)}`)
+    }
+  }
+
   // 检查认证状态并导航
   useEffect(() => {
     if (!isAuthenticated) {
@@ -1024,6 +1140,12 @@ export default function Index() {
               {selectedIds.length > 0 && (
                 <>
                   <button
+                    onClick={() => setIsBatchStatusDialogOpen(true)}
+                    className="px-3 py-2 bg-blue-500 text-white rounded text-sm hover:bg-blue-600"
+                  >
+                    批量修改状态 ({selectedIds.length})
+                  </button>
+                  <button
                     onClick={handleBatchDelete}
                     className="px-3 py-2 bg-red-500 text-white rounded text-sm hover:bg-red-600"
                   >
@@ -1069,18 +1191,19 @@ export default function Index() {
                   <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">品牌/型号</th>
                   <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">状态</th>
                   <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">月租费</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">操作</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
                 {loading ? (
                   <tr>
-                    <td colSpan={11} className="px-4 py-8 text-center">
+                    <td colSpan={13} className="px-4 py-8 text-center">
                       加载中...
                     </td>
                   </tr>
                 ) : assets.length === 0 ? (
                   <tr>
-                    <td colSpan={11} className="px-4 py-8 text-center">
+                    <td colSpan={13} className="px-4 py-8 text-center">
                       无资产数据
                     </td>
                   </tr>
@@ -1129,13 +1252,33 @@ export default function Index() {
                       <td className="px-4 py-3">
                         <div className="text-sm text-gray-900">{asset.brand} {asset.model}</div>
                       </td>
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${asset.status === 'active' ? 'bg-green-100 text-green-800' : asset.status === 'idle' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'}`}>
-                          {asset.status === 'active' ? '使用中' : asset.status === 'idle' ? '闲置' : '维修中'}
-                        </span>
+                      <td className="px-4 py-3 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                        <select
+                          value={asset.status}
+                          onChange={(e) => handleQuickStatusChange(asset, e.target.value)}
+                          className={`text-xs font-semibold rounded-full px-2 py-1 border-0 cursor-pointer ${asset.status === 'active' ? 'bg-green-100 text-green-800' : asset.status === 'idle' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'}`}
+                        >
+                          <option value="active">使用中</option>
+                          <option value="idle">闲置</option>
+                          <option value="maintenance">维修中</option>
+                        </select>
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap">
                         <div className="text-sm text-gray-900">{asset.monthly_rent ? `¥${asset.monthly_rent}` : '-'}</div>
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                        <button
+                          onClick={() => handleEdit(asset)}
+                          className="text-blue-600 hover:text-blue-900 text-sm font-medium mr-2"
+                        >
+                          编辑
+                        </button>
+                        <button
+                          onClick={() => navigate(`/asset/${asset.asset_code}`)}
+                          className="text-gray-600 hover:text-gray-900 text-sm font-medium"
+                        >
+                          详情
+                        </button>
                       </td>
                     </tr>
                   ))
@@ -1538,6 +1681,56 @@ export default function Index() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* 批量修改状态对话框 */}
+      {isBatchStatusDialogOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl p-6 max-w-md w-full">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold">批量修改状态</h2>
+              <button
+                onClick={() => setIsBatchStatusDialogOpen(false)}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="space-y-4">
+              <p className="text-sm text-gray-600">
+                将选中的 <span className="font-bold text-blue-600">{selectedIds.length}</span> 个资产的状态修改为：
+              </p>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">目标状态</label>
+                <select
+                  className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  value={batchStatus}
+                  onChange={(e) => setBatchStatus(e.target.value)}
+                >
+                  <option value="active">使用中</option>
+                  <option value="idle">闲置</option>
+                  <option value="maintenance">维修中</option>
+                </select>
+              </div>
+              <div className="flex justify-end gap-2">
+                <button
+                  onClick={() => setIsBatchStatusDialogOpen(false)}
+                  className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
+                >
+                  取消
+                </button>
+                <button
+                  onClick={handleBatchEditStatus}
+                  className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                >
+                  确认修改
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
