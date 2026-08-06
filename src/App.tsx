@@ -11,14 +11,23 @@ import Users from './pages/Users'
 import ChangePassword from './pages/ChangePassword'
 import NotFound from './pages/NotFound'
 
+// 格式化用户标识用于显示：手机号用户显示手机号，邮箱用户显示邮箱
+export function formatUserIdentifier(email: string | undefined): string {
+  if (!email) return ''
+  if (email.endsWith('@phone.local')) {
+    return email.replace('@phone.local', '')
+  }
+  return email
+}
+
 // 简化的AuthProvider，不使用Supabase
 interface AuthContextType {
   user: any
   loading: boolean
-  signIn: (email: string, password: string) => Promise<void>
-  signUp: (email: string, password: string) => Promise<void>
+  signIn: (emailOrPhone: string, password: string) => Promise<void>
+  signUp: (emailOrPhone: string, password: string) => Promise<void>
   signOut: () => Promise<void>
-  resetPassword: (email: string) => Promise<void>
+  resetPassword: (emailOrPhone: string) => Promise<void>
   updatePassword: (oldPassword: string, newPassword: string) => Promise<void>
   isAuthenticated: boolean
   pendingRedirect: string | null
@@ -47,9 +56,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [pendingRedirect, setPendingRedirect] = useState<string | null>(null)
 
   // 2. 修正后的登录/创建逻辑
-  const signIn = async (email: string, password: string) => {
+  const signIn = async (emailOrPhone: string, password: string) => {
     setLoading(true)
     try {
+      // 如果是手机号（纯数字），转换为邮箱格式查询
+      const email = /^\d{11}$/.test(emailOrPhone) ? `${emailOrPhone}@phone.local` : emailOrPhone
+
       // 直接在我们的 users 表中查询用户信息并验证密码
       const { data: users, error: fetchError } = await supabase.from('users').select('*').eq('email', email)
       if (fetchError) throw fetchError
@@ -66,7 +78,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           throw new Error('密码错误')
         }
       } else {
-        throw new Error('邮箱不存在')
+        throw new Error('账号不存在')
       }
 
       setUser(userData)
@@ -80,15 +92,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  const signUp = async (email: string, password: string) => {
+  const signUp = async (emailOrPhone: string, password: string) => {
     setLoading(true)
     try {
+      // 如果是手机号（纯数字），转换为邮箱格式存储
+      const email = /^\d{11}$/.test(emailOrPhone) ? `${emailOrPhone}@phone.local` : emailOrPhone
+
       // 首先检查用户是否已存在
       const { data: existingUsers, error: fetchError } = await supabase.from('users').select('*').eq('email', email)
       if (fetchError) throw fetchError
 
       if (existingUsers && existingUsers.length > 0) {
-        throw new Error('该邮箱已被注册')
+        throw new Error('该手机号已被注册')
       }
 
       // 直接在 users 表中创建用户记录，不使用 Supabase Auth
@@ -117,15 +132,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     localStorage.removeItem('user')
   }
 
-  const resetPassword = async (email: string) => {
+  const resetPassword = async (emailOrPhone: string) => {
     setLoading(true)
     try {
+      // 如果是手机号（纯数字），转换为邮箱格式查询
+      const email = /^\d{11}$/.test(emailOrPhone) ? `${emailOrPhone}@phone.local` : emailOrPhone
+
       // 检查用户是否存在
       const { data: users, error: fetchError } = await supabase.from('users').select('*').eq('email', email)
       if (fetchError) throw fetchError
 
       if (!users || users.length === 0) {
-        throw new Error('邮箱不存在')
+        throw new Error('账号不存在')
       }
 
       // 生成一个临时密码

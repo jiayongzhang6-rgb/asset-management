@@ -2,6 +2,7 @@
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '../App'
 import { supabase, type Asset, type MaintenanceRecord, type AssetImage, type UsageHistory } from '../lib/supabase'
+import { formatUserIdentifier } from '../App'
 
 export default function AssetDetail() {
   const { id } = useParams<{ id: string }>()
@@ -705,7 +706,7 @@ export default function AssetDetail() {
         <div className="container mx-auto px-4 py-3 flex items-center justify-between">
           <h1 className="text-2xl font-bold">德泽智联IT资产管理系统</h1>
           <div className="flex items-center gap-2">
-            <span>{user?.email}</span>
+            <span>{formatUserIdentifier(user?.email)}</span>
             {(user?.role === 'admin') && (
               <>
                 <button
