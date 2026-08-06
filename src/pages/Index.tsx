@@ -284,7 +284,8 @@ export default function Index() {
       user_name: '',
       location: '',
       status: 'active',
-      notes: ''
+      notes: '',
+      monthly_rent: ''
     })
   }
 
@@ -293,6 +294,7 @@ export default function Index() {
     try {
       const assetData = {
         ...formData,
+        monthly_rent: formData.monthly_rent ? parseFloat(formData.monthly_rent) : 0,
         asset_code: generateAssetCode()
       }
       console.log('Index: Creating asset with data:', assetData)
@@ -358,13 +360,19 @@ export default function Index() {
     if (editingAsset) {
       try {
         // 权限控制：普通用户只能修改使用人、位置、部门等信息
-        let updateData = formData
+        let updateData: Record<string, any> = { ...formData }
         if (user && user.role !== 'admin') {
           updateData = {
             user_name: formData.user_name,
             location: formData.location,
             department: formData.department
           }
+        }
+
+        // 将 monthly_rent 转换为数字，避免空字符串导致数据库更新失败
+        if ('monthly_rent' in updateData) {
+          const rentValue = parseFloat(updateData.monthly_rent)
+          updateData.monthly_rent = isNaN(rentValue) ? 0 : rentValue
         }
         
         console.log('Index: Updating asset with data:', updateData)
