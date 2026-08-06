@@ -163,7 +163,7 @@ export default function AssetDetail() {
           location: assetData.location || '',
           status: assetData.status || 'active',
           notes: assetData.notes || '',
-          monthly_rent: assetData.monthly_rent || ''
+          monthly_rent: assetData.monthly_rent != null ? String(assetData.monthly_rent) : ''
         })
       } else {
         console.error('AssetDetail: No asset found with code:', cleanedId)
@@ -293,8 +293,11 @@ export default function AssetDetail() {
     // 开始事务
     const { error: updateError } = await supabase
       .from('assets')
-      .update(updateData)
-      .eq('id', asset.id)
+      .update({
+        ...updateData,
+        updated_at: new Date().toISOString()
+      })
+      .eq('asset_code', asset.asset_code)
     
     if (updateError) {
       console.error('AssetDetail: Update error:', updateError)
@@ -358,7 +361,7 @@ export default function AssetDetail() {
     
     if (asset && confirm('确定要删除这个资产吗？')) {
       try {
-        const { data, error } = await supabase.from('assets').delete().eq('id', asset.id)
+        const { data, error } = await supabase.from('assets').delete().eq('asset_code', asset.asset_code)
         if (error) throw error
         
         // 记录操作历史到 operation_history（用于操作历史页面）

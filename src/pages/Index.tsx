@@ -15,7 +15,7 @@ export default function Index() {
   const [assets, setAssets] = useState<Asset[]>([])
   const [loading, setLoading] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
-  const [selectedIds, setSelectedIds] = useState<string[]>([])
+  const [selectedIds, setSelectedIds] = useState<(string | number)[]>([])
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
   const [editingAsset, setEditingAsset] = useState(null)
@@ -376,7 +376,13 @@ export default function Index() {
         }
         
         console.log('Index: Updating asset with data:', updateData)
-        const { data, error } = await supabase.from('assets').update(updateData).eq('id', editingAsset.id)
+        const { data, error } = await supabase
+          .from('assets')
+          .update({
+            ...updateData,
+            updated_at: new Date().toISOString()
+          })
+          .eq('asset_code', editingAsset.asset_code)
         if (error) throw error
         console.log('Index: Asset updated successfully')
         
@@ -452,7 +458,7 @@ export default function Index() {
         location: asset.location || '',
         status: asset.status || 'active',
         notes: asset.notes || '',
-        monthly_rent: asset.monthly_rent || ''
+        monthly_rent: asset.monthly_rent != null ? String(asset.monthly_rent) : ''
       })
     } else {
       setFormData({
@@ -468,13 +474,13 @@ export default function Index() {
         location: asset.location || '',
         status: asset.status || 'active',
         notes: asset.notes || '',
-        monthly_rent: asset.monthly_rent || ''
+        monthly_rent: asset.monthly_rent != null ? String(asset.monthly_rent) : ''
       })
     }
     setIsEditDialogOpen(true)
   }
 
-  const handleDelete = async (id: string) => {
+  const handleDelete = async (id: string | number) => {
     // 权限控制：只有管理员可以删除资产
     if (user && user.role !== 'admin') {
       alert('只有管理员可以删除资产')
@@ -493,7 +499,7 @@ export default function Index() {
         // 先删除相关的图片记录
         await supabase.from('asset_images').delete().eq('asset_code', asset.asset_code)
         
-        const { data, error } = await supabase.from('assets').delete().eq('id', id)
+        const { data, error } = await supabase.from('assets').delete().eq('asset_code', asset.asset_code)
         if (error) throw error
         
         // 记录操作历史
@@ -572,7 +578,7 @@ export default function Index() {
           // 先删除相关的图片记录
           await supabase.from('asset_images').delete().eq('asset_code', asset.asset_code)
           
-          const { data, error } = await supabase.from('assets').delete().eq('id', id)
+          const { data, error } = await supabase.from('assets').delete().eq('asset_code', asset.asset_code)
           if (error) throw error
           
           // 记录操作历史

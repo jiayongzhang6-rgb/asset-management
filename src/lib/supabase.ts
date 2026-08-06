@@ -22,7 +22,7 @@ export type MaintenanceRecord = {
 }
 
 export type Asset = {
-  id: string // 使用 string 类型以兼容 UUID
+  id: number | string
   asset_code: string
   brand: string
   model: string
