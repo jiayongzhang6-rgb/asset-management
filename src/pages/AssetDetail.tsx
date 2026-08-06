@@ -343,9 +343,9 @@ export default function AssetDetail() {
     await fetchAsset() // 重新获取资产数据
     await fetchAssetHistory() // 刷新使用历史
     alert('资产更新成功')
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error updating asset:', error)
-    alert('资产更新失败')
+    alert(`资产更新失败: ${error?.message || JSON.stringify(error)}`)
   }
 }
 
