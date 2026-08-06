@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useAuth } from '../App'
+import { useAuth, formatUserIdentifier } from '../App'
 import { supabase } from '../lib/supabase'
 
 export default function OperationHistory() {
@@ -137,7 +137,7 @@ export default function OperationHistory() {
             <h1 className="text-2xl font-bold">操作历史记录</h1>
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-gray-600">{user?.email}</span>
+            <span className="text-gray-600">{formatUserIdentifier(user?.email)}</span>
             {user?.role === 'admin' && (
               <button
                 onClick={() => navigate('/users')}

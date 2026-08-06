@@ -6,7 +6,7 @@ export default function Login() {
   const navigate = useNavigate()
   const location = useLocation()
   const { signIn, signUp, resetPassword, pendingRedirect, setPendingRedirect } = useAuth()
-  const [email, setEmail] = useState('')
+  const [phone, setPhone] = useState('')
   const [password, setPassword] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [isSignUp, setIsSignUp] = useState(false)
@@ -19,7 +19,6 @@ export default function Login() {
     const tempPassword = params.get('tempPassword')
     if (tempPassword) {
       setPassword(tempPassword)
-      // 可以在这里添加一个提示，告诉用户这是临时密码
       alert('这是您的临时密码，请登录后修改密码。')
     }
   }, [location.search])
@@ -31,13 +30,11 @@ export default function Login() {
 
     try {
       if (isForgotPassword) {
-        await resetPassword(email)
-        // 重置密码成功后，返回登录页面
+        await resetPassword(phone)
         setIsForgotPassword(false)
       } else if (isSignUp) {
-        await signUp(email, password)
+        await signUp(phone, password)
         alert('注册成功！')
-        // 注册成功后，如果有待跳转页面，跳转到该页面
         if (pendingRedirect) {
           navigate(pendingRedirect)
           setPendingRedirect(null)
@@ -45,8 +42,7 @@ export default function Login() {
           navigate('/')
         }
       } else {
-        await signIn(email, password)
-        // 登录成功后，如果有待跳转页面，跳转到该页面
+        await signIn(phone, password)
         if (pendingRedirect) {
           navigate(pendingRedirect)
           setPendingRedirect(null)
@@ -72,6 +68,13 @@ export default function Login() {
             请先登录以查看资产详情
           </div>
         )}
+        {isSignUp && (
+          <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-md">
+            <p className="text-sm text-blue-700 font-medium">
+              请使用手机号注册，需输入11位手机号码。
+            </p>
+          </div>
+        )}
         {error && (
           <div className="mb-4 p-2 bg-red-100 text-red-700 rounded">
             {error}
@@ -79,15 +82,22 @@ export default function Login() {
         )}
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-gray-700 mb-2">邮箱</label>
+            <label className="block text-gray-700 mb-2">手机号</label>
             <input
-              type="email"
+              type="tel"
               className="w-full px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="your@email.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              placeholder="请输入11位手机号"
+              value={phone}
+              onChange={(e) => {
+                // 只允许输入数字，最多11位
+                const value = e.target.value.replace(/\D/g, '').slice(0, 11)
+                setPhone(value)
+              }}
               required
               disabled={isLoading}
+              pattern="\d{11}"
+              maxLength={11}
+              minLength={11}
             />
           </div>
           {!isForgotPassword && (
@@ -146,7 +156,7 @@ export default function Login() {
         )}
         {!isForgotPassword && !isSignUp && (
           <div className="mt-4 text-center text-sm text-gray-500">
-            有问题请联系管理员账号: 747227185@qq.com
+            有问题请联系管理员
           </div>
         )}
         <div className="mt-4">

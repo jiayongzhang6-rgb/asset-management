@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { useAuth } from '../App'
+import { useAuth, formatUserIdentifier } from '../App'
 import { supabase, type Asset, type AssetCategory, initDatabase } from '../lib/supabase'
 import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js'
 import { Pie } from 'react-chartjs-2'
@@ -939,7 +939,7 @@ export default function Index() {
         <div className="container mx-auto px-4 py-3 flex items-center justify-between">
           <h1 className="text-2xl font-bold">德泽智联IT资产管理系统</h1>
           <div className="flex items-center gap-2">
-            <span>{user?.email}</span>
+            <span>{formatUserIdentifier(user?.email)}</span>
             {(user?.role === 'admin') && (
               <>
                 <button
