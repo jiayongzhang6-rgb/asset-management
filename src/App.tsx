@@ -1,7 +1,7 @@
 import { BrowserRouter, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import React, { createContext, useContext, useState, useEffect } from 'react'
 import { Toaster } from 'react-hot-toast'
-import { supabase, type User } from './lib/supabase'
+import { supabase, type User, initDatabase, warmUpCategoryCheck } from './lib/supabase'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import Index from './pages/Index'
 import AssetDetail from './pages/AssetDetail'
@@ -260,6 +260,12 @@ function URLHandler() {
 }
 
 export default function App() {
+  // 应用启动时：初始化数据库表 + 预热 category 列支持探测（异步不阻塞渲染）
+  useEffect(() => {
+    void initDatabase()
+    warmUpCategoryCheck()
+  }, [])
+
   return (
     <AuthProvider>
       <Toaster position="top-center" toastOptions={{ duration: 3000 }} />

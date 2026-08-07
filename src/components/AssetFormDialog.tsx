@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import toast from 'react-hot-toast'
-import { type Asset, type AssetStatus, type AssetCategory } from '../lib/supabase'
+import { type Asset, type AssetStatus, type AssetCategory, isCategorySupportedSync } from '../lib/supabase'
 
 const categories: AssetCategory[] = ['笔记本', '台式机', '显示器', '外设', '服务器', '网络设备', '其他']
 
@@ -146,20 +146,22 @@ export default function AssetFormDialog({ asset, isOpen, onClose, onSave }: Asse
                 required
               />
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">分类</label>
-              <select
-                className={inputClass}
-                value={formData.category}
-                onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                required
-              >
-                <option value="">请选择分类</option>
-                {categories.map(cat => (
-                  <option key={cat} value={cat}>{cat}</option>
-                ))}
-              </select>
-            </div>
+            {isCategorySupportedSync() && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">分类</label>
+                <select
+                  className={inputClass}
+                  value={formData.category}
+                  onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                  required
+                >
+                  <option value="">请选择分类</option>
+                  {categories.map(cat => (
+                    <option key={cat} value={cat}>{cat}</option>
+                  ))}
+                </select>
+              </div>
+            )}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">CPU</label>
               <input

@@ -248,7 +248,14 @@ const DB_VERSION_KEY = 'db_schema_version'
 const CURRENT_DB_VERSION = 4
 
 // 运行时检测 category 列是否可用（PostgREST schema cache 是否已包含）
+// 注意：_categorySupported 取值含义：null=未探测, true=可用, false=不可用
+// 同步代码默认先假定不可用（保守策略），探测结果回来后缓存
 let _categorySupported: boolean | null = null
+
+// 同步获取缓存的检测结果（用于同步 if 判断等），未探测时返回 false（保守策略）
+export function isCategorySupportedSync(): boolean {
+  return _categorySupported === true
+}
 
 export async function isCategorySupported(): Promise<boolean> {
   if (_categorySupported !== null) return _categorySupported
@@ -257,11 +264,21 @@ export async function isCategorySupported(): Promise<boolean> {
     _categorySupported = !error
     if (error) {
       console.warn('Category column not available in schema cache, will strip from requests:', error.message)
+    } else {
+      console.log('Category column is available in schema cache')
     }
     return _categorySupported
-  } catch {
+  } catch (e: any) {
+    console.warn('Category check threw error, treating as unsupported:', e?.message)
     _categorySupported = false
     return false
+  }
+}
+
+// 预热探测（异步、不阻塞启动），让同步 getter 尽快拿到正确结果
+export function warmUpCategoryCheck(): void {
+  if (_categorySupported === null) {
+    void isCategorySupported()
   }
 }
 
@@ -273,6 +290,19 @@ export async function sanitizeAssetData<T extends Record<string, any>>(data: T):
     return rest as T
   }
   return data
+}
+
+// 批量处理（用于 import 等场景）
+export async function sanitizeAssetBatch<T extends Record<string, any>>(items: T[]): Promise<T[]> {
+  const supported = await isCategorySupported()
+  if (supported) return items
+  return items.map(item => {
+    if ('category' in item) {
+      const { category, ...rest } = item
+      return rest as T
+    }
+    return item
+  })
 }
 
 // 重置 category 支持检测（添加列后调用）

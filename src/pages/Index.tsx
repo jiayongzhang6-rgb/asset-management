@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../App'
 import toast from 'react-hot-toast'
 import * as XLSX from 'xlsx'
-import { supabase, type Asset, initDatabase, formatUserIdentifier, formatMemory, formatStorage, getStatusText, getStatusColor, recordAllHistory, generateAssetCode, sanitizeAssetData } from '../lib/supabase'
+import { supabase, type Asset, initDatabase, formatUserIdentifier, formatMemory, formatStorage, getStatusText, getStatusColor, recordAllHistory, generateAssetCode, sanitizeAssetData, isCategorySupportedSync } from '../lib/supabase'
 import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js'
 import { Pie } from 'react-chartjs-2'
 
@@ -168,7 +168,9 @@ export default function Index() {
       if (departmentFilter !== 'all') {
         allQuery = allQuery.eq('department', departmentFilter)
       }
-      if (advancedFilters.category) {
+      // 只有 category 列在 schema cache 中可用时才走后端筛选；否则转到前端过滤
+      const catSupported = isCategorySupportedSync()
+      if (advancedFilters.category && catSupported) {
         allQuery = allQuery.eq('category', advancedFilters.category)
       }
       if (advancedFilters.brand) {
@@ -177,7 +179,10 @@ export default function Index() {
       const { data: allData } = await allQuery
       let filteredAllData = allData || []
 
-      // 前端过滤内存和存储
+      // 前端过滤：内存、存储 + （后端不支持 category 时在此补上）
+      if (advancedFilters.category && !catSupported) {
+        filteredAllData = filteredAllData.filter(a => a.category === advancedFilters.category)
+      }
       if (advancedFilters.minMemory) {
         const minMem = parseFloat(advancedFilters.minMemory)
         if (!isNaN(minMem)) {
@@ -210,7 +215,7 @@ export default function Index() {
       if (departmentFilter !== 'all') {
         query = query.eq('department', departmentFilter)
       }
-      if (advancedFilters.category) {
+      if (advancedFilters.category && catSupported) {
         query = query.eq('category', advancedFilters.category)
       }
       if (advancedFilters.brand) {
@@ -219,8 +224,11 @@ export default function Index() {
       const { data, error, count } = await query.range(offset, offset + pageSize - 1)
       if (error) throw error
 
-      // 前端过滤内存和存储（分页数据）
+      // 前端过滤：内存、存储 + （后端不支持 category 时在此补上）
       let pageData = data || []
+      if (advancedFilters.category && !catSupported) {
+        pageData = pageData.filter((a: any) => a.category === advancedFilters.category)
+      }
       if (advancedFilters.minMemory) {
         const minMem = parseFloat(advancedFilters.minMemory)
         if (!isNaN(minMem)) {

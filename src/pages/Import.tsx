@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../App'
-import { supabase, recordAllHistory, generateAssetCode } from '../lib/supabase'
+import { supabase, recordAllHistory, generateAssetCode, sanitizeAssetData } from '../lib/supabase'
 import toast from 'react-hot-toast'
 import * as XLSX from 'xlsx'
 
@@ -125,9 +125,10 @@ export default function Import() {
           }
           
           if (existingAsset) {
+            const cleanAsset = await sanitizeAssetData(asset)
             const { error: updateError } = await supabase
               .from('assets')
-              .update(asset)
+              .update(cleanAsset)
               .eq('asset_code', asset.asset_code)
             
             if (updateError) {
@@ -143,7 +144,8 @@ export default function Import() {
               await recordAllHistory(asset.asset_code, 'update', user.email)
             }
           } else {
-            const { data, error: insertError } = await supabase.from('assets').insert(asset).select()
+            const cleanAsset = await sanitizeAssetData(asset)
+            const { data, error: insertError } = await supabase.from('assets').insert(cleanAsset).select()
             
             if (insertError) {
               console.error('Error inserting asset:', insertError)
