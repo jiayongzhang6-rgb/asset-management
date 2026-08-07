@@ -1,17 +1,17 @@
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../App'
-import { supabase, formatUserIdentifier } from '../lib/supabase'
+import { supabase, formatUserIdentifier, type User } from '../lib/supabase'
+import toast from 'react-hot-toast'
 
 export default function Users() {
   const navigate = useNavigate()
   const { isAuthenticated, user, signOut } = useAuth()
-  const [users, setUsers] = useState<any[]>([])
+  const [users, setUsers] = useState<User[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     if (isAuthenticated) {
-      // 只有管理员可以访问用户管理页面
       if (user?.role !== 'admin') {
         navigate('/')
       } else {
@@ -30,50 +30,46 @@ export default function Users() {
         .select('*')
       if (error) throw error
       setUsers(data || [])
-      console.log('Users fetched:', data)
     } catch (error) {
       console.error('Error fetching users:', error)
+      toast.error('获取用户列表失败')
     } finally {
       setLoading(false)
     }
   }
 
   const handleDeleteUser = async (userId: number) => {
-    if (confirm('确定要删除这个用户吗？')) {
+    if (window.confirm('确定要删除这个用户吗？')) {
       try {
         const { error } = await supabase
           .from('users')
           .delete()
           .eq('id', userId)
         if (error) throw error
-        // 重新获取用户列表
         await fetchUsers()
-        alert('用户删除成功')
+        toast.success('用户删除成功')
       } catch (error) {
         console.error('Error deleting user:', error)
-        alert('用户删除失败')
+        toast.error('用户删除失败')
       }
     }
   }
 
   const handleResetPassword = async (userId: number, email: string) => {
-    if (confirm('确定要为这个用户重置密码吗？')) {
+    if (window.confirm('确定要为这个用户重置密码吗？')) {
       try {
-        // 生成一个临时密码
         const tempPassword = Math.random().toString(36).substring(2, 10)
         
-        // 更新用户密码
         const { error } = await supabase
           .from('users')
           .update({ password: tempPassword })
           .eq('id', userId)
         if (error) throw error
         
-        // 提示管理员临时密码
-        alert(`密码重置成功！\n用户邮箱: ${email}\n临时密码: ${tempPassword}\n请将临时密码告知用户。`)
+        toast(`密码重置成功！\n用户: ${formatUserIdentifier(email)}\n临时密码: ${tempPassword}`, { duration: 10000 })
       } catch (error) {
         console.error('Error resetting password:', error)
-        alert('密码重置失败')
+        toast.error('密码重置失败')
       }
     }
   }
@@ -127,7 +123,7 @@ export default function Users() {
                 <thead className="bg-gray-50">
                   <tr>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">邮箱</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">账号</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">角色</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">操作</th>
                   </tr>
@@ -139,7 +135,7 @@ export default function Users() {
                         {userItem.id}
                       </td>
                       <td className="px-4 py-3 text-sm text-gray-900">
-                        {userItem.email}
+                        {formatUserIdentifier(userItem.email)}
                       </td>
                       <td className="px-4 py-3 text-sm text-gray-900">
                         <span className={`px-2 py-1 rounded text-xs font-medium ${userItem.role === 'admin' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-800'}`}>

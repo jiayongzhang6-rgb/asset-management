@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { useAuth } from '../App'
-import { supabase } from '../lib/supabase'
-import { RentRecord } from '../lib/supabase'
+import { supabase, type RentRecord, formatUserIdentifier } from '../lib/supabase'
+import toast from 'react-hot-toast'
 
 export default function RentDetail() {
   const { user } = useAuth()
@@ -12,6 +12,7 @@ export default function RentDetail() {
   const [departmentFilter, setDepartmentFilter] = useState('all')
   const [departments, setDepartments] = useState<string[]>([])
 
+  const isAdmin = user?.role === 'admin'
   const years = Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i)
   const months = Array.from({ length: 12 }, (_, i) => i + 1)
   
@@ -76,13 +77,14 @@ export default function RentDetail() {
       }
     } catch (error) {
       console.error('Error fetching rent records:', error)
+      toast.error('获取月租记录失败')
     } finally {
       setLoading(false)
     }
   }
   
   const markAsPaid = async (recordId: number) => {
-    if (!user?.role === 'admin') return
+    if (!isAdmin) return
     try {
       const { error } = await supabase
         .from('rent_records')
@@ -92,14 +94,16 @@ export default function RentDetail() {
         })
         .eq('id', recordId)
       if (error) throw error
+      toast.success('已标记为已缴')
       fetchRentRecords()
     } catch (error) {
       console.error('Error marking as paid:', error)
+      toast.error('操作失败')
     }
   }
   
   const markAsUnpaid = async (recordId: number) => {
-    if (!user?.role === 'admin') return
+    if (!isAdmin) return
     try {
       const { error } = await supabase
         .from('rent_records')
@@ -109,19 +113,21 @@ export default function RentDetail() {
         })
         .eq('id', recordId)
       if (error) throw error
+      toast.success('已标记为未缴')
       fetchRentRecords()
     } catch (error) {
       console.error('Error marking as unpaid:', error)
+      toast.error('操作失败')
     }
   }
   
   const generateMonthlyRecords = async () => {
-    if (!user?.role === 'admin') {
-      alert('只有管理员可以生成月租记录')
+    if (!isAdmin) {
+      toast.error('只有管理员可以生成月租记录')
       return
     }
     
-    if (!confirm(`确定要生成 ${selectedYear}年${selectedMonth}月 的月租记录吗？`)) return
+    if (!window.confirm(`确定要生成 ${selectedYear}年${selectedMonth}月 的月租记录吗？`)) return
     
     try {
       const { data: assets, error: assetsError } = await supabase
@@ -161,11 +167,11 @@ export default function RentDetail() {
         if (insertError) throw insertError
       }
       
-      alert(`成功生成 ${newRecords.length} 条月租记录`)
+      toast.success(`成功生成 ${newRecords.length} 条月租记录`)
       fetchRentRecords()
     } catch (error) {
       console.error('Error generating rent records:', error)
-      alert('生成月租记录失败')
+      toast.error('生成月租记录失败')
     }
   }
   
@@ -237,7 +243,7 @@ export default function RentDetail() {
                   <option key={dept} value={dept}>{dept}</option>
                 ))}
               </select>
-              {user?.role === 'admin' && (
+              {isAdmin && (
                 <button
                   onClick={generateMonthlyRecords}
                   className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 text-sm"
@@ -281,7 +287,7 @@ export default function RentDetail() {
                   <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">月租费</th>
                   <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">状态</th>
                   <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">缴费日期</th>
-                  {user?.role === 'admin' && (
+                  {isAdmin && (
                     <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">操作</th>
                   )}
                 </tr>
@@ -289,13 +295,13 @@ export default function RentDetail() {
               <tbody className="bg-white divide-y divide-gray-200">
                 {loading ? (
                   <tr>
-                    <td colSpan={user?.role === 'admin' ? 7 : 6} className="px-4 py-8 text-center text-gray-500">
+                    <td colSpan={isAdmin ? 7 : 6} className="px-4 py-8 text-center text-gray-500">
                       加载中...
                     </td>
                   </tr>
                 ) : rentRecords.length === 0 ? (
                   <tr>
-                    <td colSpan={user?.role === 'admin' ? 7 : 6} className="px-4 py-8 text-center text-gray-500">
+                    <td colSpan={isAdmin ? 7 : 6} className="px-4 py-8 text-center text-gray-500">
                       暂无月租记录
                     </td>
                   </tr>
@@ -304,7 +310,7 @@ export default function RentDetail() {
                     <tr key={record.id}>
                       <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{record.asset_code}</td>
                       <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{record.department}</td>
-                      <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{record.user_name}</td>
+                      <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{formatUserIdentifier(record.user_name)}</td>
                       <td className="px-4 py-3 whitespace-nowrap text-sm text-right font-medium text-blue-600">¥{record.monthly_rent}</td>
                       <td className="px-4 py-3 whitespace-nowrap">
                         <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${record.status === 'paid' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
@@ -314,7 +320,7 @@ export default function RentDetail() {
                       <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
                         {record.paid_date ? new Date(record.paid_date).toLocaleDateString() : '-'}
                       </td>
-                      {user?.role === 'admin' && (
+                      {isAdmin && (
                         <td className="px-4 py-3 whitespace-nowrap">
                           {record.status === 'unpaid' ? (
                             <button

@@ -477,25 +477,24 @@ export default function Index() {
     }
     if (window.confirm(`确定要删除选中的 ${selectedIds.length} 个资产吗？`)) {
       try {
-        for (const id of selectedIds) {
-          // 获取要删除的资产信息
-          const { data: asset, error: getError } = await supabase.from('assets').select('*').eq('id', id).single()
-          if (getError) throw getError
+        // 并行获取所有要删除的资产信息
+        const assetResults = await Promise.all(
+          selectedIds.map(id => supabase.from('assets').select('*').eq('id', id).single())
+        )
 
-          // 先删除相关的维护记录
-          await supabase.from('maintenance_records').delete().eq('asset_id', id)
-
-          // 先删除相关的图片记录
+        // 并行删除所有资产及其关联数据
+        await Promise.all(assetResults.map(async ({ data: asset }) => {
+          if (!asset) return
+          // 删除关联的维护记录和图片
+          await supabase.from('maintenance_records').delete().eq('asset_id', asset.id)
           await supabase.from('asset_images').delete().eq('asset_code', asset.asset_code)
-
-          const { data, error } = await supabase.from('assets').delete().eq('asset_code', asset.asset_code)
-          if (error) throw error
-
-          // 记录操作历史
+          // 删除资产
+          await supabase.from('assets').delete().eq('asset_code', asset.asset_code)
+          // 记录历史
           if (user) {
             await recordAllHistory(asset.asset_code, 'delete', user.email)
           }
-        }
+        }))
 
         await fetchAssets()
         setSelectedIds([])

@@ -1,16 +1,26 @@
 import { BrowserRouter, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
-import React, { createContext, useContext, useState, useEffect } from 'react'
+import React, { createContext, useContext, useState, useEffect, Suspense, lazy } from 'react'
 import { Toaster } from 'react-hot-toast'
 import { supabase, type User } from './lib/supabase'
-import Index from './pages/Index'
-import AssetDetail from './pages/AssetDetail'
-import Login from './pages/Login'
-import Import from './pages/Import'
-import OperationHistory from './pages/OperationHistory'
-import RentDetail from './pages/RentDetail'
-import Users from './pages/Users'
-import ChangePassword from './pages/ChangePassword'
-import NotFound from './pages/NotFound'
+import { ErrorBoundary } from './components/ErrorBoundary'
+
+// 路由懒加载 - 按需加载页面，减少首屏 bundle 体积
+const Index = lazy(() => import('./pages/Index'))
+const AssetDetail = lazy(() => import('./pages/AssetDetail'))
+const Login = lazy(() => import('./pages/Login'))
+const Import = lazy(() => import('./pages/Import'))
+const OperationHistory = lazy(() => import('./pages/OperationHistory'))
+const RentDetail = lazy(() => import('./pages/RentDetail'))
+const Users = lazy(() => import('./pages/Users'))
+const ChangePassword = lazy(() => import('./pages/ChangePassword'))
+const NotFound = lazy(() => import('./pages/NotFound'))
+
+// 懒加载 fallback
+const PageLoading = () => (
+  <div className="min-h-screen bg-gray-100 flex items-center justify-center">
+    <div className="text-lg text-gray-500">加载中...</div>
+  </div>
+)
 
 // 简化的AuthProvider，不使用Supabase
 interface AuthContextType {
@@ -264,17 +274,21 @@ export default function App() {
       <Toaster position="top-center" toastOptions={{ duration: 3000 }} />
       <BrowserRouter>
         <URLHandler />
-        <Routes>
-          <Route path="/" element={<Index />} />
-          <Route path="/asset/:id" element={<AssetDetail />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/import" element={<Import />} />
-          <Route path="/history" element={<OperationHistory />} />
-          <Route path="/rent" element={<RentDetail />} />
-          <Route path="/users" element={<Users />} />
-          <Route path="/change-password" element={<ChangePassword />} />
-          <Route path="*" element={<NotFound />} />
-        </Routes>
+        <ErrorBoundary>
+          <Suspense fallback={<PageLoading />}>
+            <Routes>
+              <Route path="/" element={<Index />} />
+              <Route path="/asset/:id" element={<AssetDetail />} />
+              <Route path="/login" element={<Login />} />
+              <Route path="/import" element={<Import />} />
+              <Route path="/history" element={<OperationHistory />} />
+              <Route path="/rent" element={<RentDetail />} />
+              <Route path="/users" element={<Users />} />
+              <Route path="/change-password" element={<ChangePassword />} />
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </Suspense>
+        </ErrorBoundary>
       </BrowserRouter>
     </AuthProvider>
   )

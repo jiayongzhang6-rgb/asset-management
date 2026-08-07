@@ -1,15 +1,16 @@
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../App'
-import { supabase, formatUserIdentifier } from '../lib/supabase'
+import { supabase, formatUserIdentifier, getBeijingTime, getOperationTypeText, getOperationTypeColor, type OperationHistoryRecord } from '../lib/supabase'
+import toast from 'react-hot-toast'
 
 export default function OperationHistory() {
   const navigate = useNavigate()
   const { isAuthenticated, user, signOut } = useAuth()
-  const [history, setHistory] = useState<any[]>([])
+  const [history, setHistory] = useState<OperationHistoryRecord[]>([])
   const [loading, setLoading] = useState(true)
   const [assetCodeFilter, setAssetCodeFilter] = useState('')
-  const [filteredHistory, setFilteredHistory] = useState<any[]>([])
+  const [filteredHistory, setFilteredHistory] = useState<OperationHistoryRecord[]>([])
   const [selectedIds, setSelectedIds] = useState<string[]>([])
 
   useEffect(() => {
@@ -39,48 +40,41 @@ export default function OperationHistory() {
       if (error) throw error
       setHistory(data || [])
       setFilteredHistory(data || [])
-      console.log('Operation history fetched:', data)
     } catch (error) {
       console.error('Error fetching operation history:', error)
+      toast.error('获取操作历史失败')
     } finally {
       setLoading(false)
     }
   }
 
-  const getOperationDetails = (item: any) => {
-    // 手动调整UTC时间到北京时间（+8小时）
-    const utcDate = new Date(item.created_at);
-    const beijingDate = new Date(utcDate.getTime() + 8 * 60 * 60 * 1000);
-    const beijingTime = beijingDate.toLocaleString('zh-CN');
+  const getOperationDetails = (item: OperationHistoryRecord) => {
+    const beijingTime = getBeijingTime(item.created_at)
     
     if (item.operation_type === 'create') {
-      return `创建了资产\n资产编码: ${item.asset_code}\n操作人: ${item.user_email}\n时间: ${beijingTime}`
+      return `创建了资产\n资产编码: ${item.asset_code}\n操作人: ${formatUserIdentifier(item.user_email)}\n时间: ${beijingTime}`
     } else if (item.operation_type === 'update') {
-      return `更新了资产\n资产编码: ${item.asset_code}\n操作人: ${item.user_email}\n时间: ${beijingTime}\n变更内容: ${item.changes || '无'}`
+      return `更新了资产\n资产编码: ${item.asset_code}\n操作人: ${formatUserIdentifier(item.user_email)}\n时间: ${beijingTime}\n变更内容: ${item.changes || '无'}`
     } else if (item.operation_type === 'delete') {
-      return `删除了资产\n资产编码: ${item.asset_code}\n操作人: ${item.user_email}\n时间: ${beijingTime}`
+      return `删除了资产\n资产编码: ${item.asset_code}\n操作人: ${formatUserIdentifier(item.user_email)}\n时间: ${beijingTime}`
     }
     return JSON.stringify(item, null, 2)
   }
 
-  const viewAsset = async (assetCode: string) => {
-    try {
-      navigate(`/asset/${assetCode}`)
-    } catch (error) {
-      console.error('Error viewing asset:', error)
-    }
+  const viewAsset = (assetCode: string) => {
+    navigate(`/asset/${assetCode}`)
   }
 
   const handleDeleteHistory = async (historyId: string) => {
-    if (confirm('确定要删除这条操作历史记录吗？')) {
+    if (window.confirm('确定要删除这条操作历史记录吗？')) {
       try {
         const { error } = await supabase.from('operation_history').delete().eq('id', historyId)
         if (error) throw error
         await fetchHistory()
-        alert('操作历史记录删除成功')
+        toast.success('操作历史记录删除成功')
       } catch (error) {
         console.error('Error deleting operation history:', error)
-        alert('操作历史记录删除失败')
+        toast.error('操作历史记录删除失败')
       }
     }
   }
@@ -104,21 +98,19 @@ export default function OperationHistory() {
 
   const handleBatchDelete = async () => {
     if (selectedIds.length === 0) {
-      alert('请选择要删除的操作历史记录')
+      toast.error('请选择要删除的操作历史记录')
       return
     }
-    if (confirm(`确定要删除选中的 ${selectedIds.length} 条操作历史记录吗？`)) {
+    if (window.confirm(`确定要删除选中的 ${selectedIds.length} 条操作历史记录吗？`)) {
       try {
-        for (const id of selectedIds) {
-          const { error } = await supabase.from('operation_history').delete().eq('id', id)
-          if (error) throw error
-        }
+        const { error } = await supabase.from('operation_history').delete().in('id', selectedIds)
+        if (error) throw error
         await fetchHistory()
         setSelectedIds([])
-        alert('操作历史记录批量删除成功')
+        toast.success('操作历史记录批量删除成功')
       } catch (error) {
         console.error('Error batch deleting operation history:', error)
-        alert('操作历史记录批量删除失败')
+        toast.error('操作历史记录批量删除失败')
       }
     }
   }
@@ -231,27 +223,22 @@ export default function OperationHistory() {
                         </td>
                       )}
                       <td className="px-4 py-3 text-sm text-gray-900">
-                        {/* 手动调整UTC时间到北京时间（+8小时） */}
-                        {(() => {
-                          const utcDate = new Date(item.created_at);
-                          const beijingDate = new Date(utcDate.getTime() + 8 * 60 * 60 * 1000);
-                          return beijingDate.toLocaleString('zh-CN');
-                        })()}
+                        {getBeijingTime(item.created_at)}
                       </td>
                       <td className="px-4 py-3 text-sm text-gray-900">
                         {item.asset_code}
                       </td>
-                      <td className="px-4 py-3 text-sm text-gray-900">
-                        {item.operation_type === 'create' && '创建'}
-                        {item.operation_type === 'update' && '更新'}
-                        {item.operation_type === 'delete' && '删除'}
+                      <td className="px-4 py-3 text-sm">
+                        <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${getOperationTypeColor(item.operation_type)}`}>
+                          {getOperationTypeText(item.operation_type)}
+                        </span>
                       </td>
                       <td className="px-4 py-3 text-sm text-gray-900">
-                        {item.user_email}
+                        {formatUserIdentifier(item.user_email)}
                       </td>
                       <td className="px-4 py-3 text-sm text-gray-900">
                         <button
-                          onClick={() => alert(getOperationDetails(item))}
+                          onClick={() => toast(getOperationDetails(item), { duration: 8000 })}
                           className="text-blue-500 hover:underline"
                         >
                           查看详情

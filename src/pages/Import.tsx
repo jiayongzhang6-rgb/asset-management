@@ -1,7 +1,8 @@
-import React, { useState } from 'react'
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../App'
-import { supabase } from '../lib/supabase'
+import { supabase, recordAllHistory, generateAssetCode } from '../lib/supabase'
+import toast from 'react-hot-toast'
 import * as XLSX from 'xlsx'
 
 export default function Import() {
@@ -36,14 +37,6 @@ export default function Import() {
     }
   }
 
-  const generateAssetCode = (index: number) => {
-    const date = new Date()
-    const year = date.getFullYear()
-    const month = String(date.getMonth() + 1).padStart(2, '0')
-    const count = String(index + 1).padStart(3, '0')
-    return `PC-${year}-${month}-${count}`
-  }
-
   const parseExcel = (file: File) => {
     const reader = new FileReader()
     reader.onload = () => {
@@ -55,7 +48,6 @@ export default function Import() {
         const jsonData = XLSX.utils.sheet_to_json(worksheet)
         
         const processedData = jsonData.map((item: any, index: number) => {
-          // 收集其他字段到备注中
           const otherFields = []
           if (item['计算机名']) otherFields.push(`计算机名: ${item['计算机名']}`)
           if (item['主板']) otherFields.push(`主板: ${item['主板']}`)
@@ -67,6 +59,9 @@ export default function Import() {
           if (item['磁盘序号']) otherFields.push(`磁盘序号: ${item['磁盘序号']}`)
           if (item['MAC地址']) otherFields.push(`MAC地址: ${item['MAC地址']}`)
           if (item['IP地址']) otherFields.push(`IP地址: ${item['IP地址']}`)
+          
+          const statusValue = item['状态']?.trim() || item['Status']?.trim() || item['status']?.trim()
+          const validStatuses = ['active', 'idle', 'maintenance', 'retired']
           
           return {
             asset_code: item['资产编码'] || item['asset_code'] || item['AssetCode'] || generateAssetCode(index),
@@ -80,7 +75,7 @@ export default function Import() {
             department: item['部门'] || item['Department'] || item['department'] || '',
             user_name: item['使用人'] || item['用户'] || item['User'] || item['user_name'] || item['使用人姓名'] || '',
             location: item['地点'] || item['位置'] || item['Location'] || item['location'] || '',
-            status: ['active', 'idle', 'maintenance'].includes(item['状态']?.trim()) ? item['状态'].trim() : ['active', 'idle', 'maintenance'].includes(item['Status']?.trim()) ? item['Status'].trim() : ['active', 'idle', 'maintenance'].includes(item['status']?.trim()) ? item['status'].trim() : 'active',
+            status: validStatuses.includes(statusValue) ? statusValue : 'active',
             monthly_rent: Number(item['月租费']) || Number(item['monthly_rent']) || Number(item['MonthlyRent']) || 0,
             notes: [
               item['备注'] || item['Notes'] || item['notes'] || '',
@@ -90,24 +85,23 @@ export default function Import() {
         })
         
         setPreviewData(processedData)
-        alert(`成功解析 ${processedData.length} 条数据`)
+        toast.success(`成功解析 ${processedData.length} 条数据`)
       } catch (error) {
         console.error('文件解析失败:', error)
-        alert('文件解析失败，请检查文件格式')
+        toast.error('文件解析失败，请检查文件格式')
       }
     }
     reader.readAsArrayBuffer(file)
   }
 
   const handleImport = async () => {
-    // 权限控制：只有管理员可以导入资产
     if (user && user.role !== 'admin') {
-      alert('只有管理员可以导入资产')
+      toast.error('只有管理员可以导入资产')
       return
     }
     
     if (previewData.length === 0) {
-      alert('没有可导入的数据')
+      toast.error('没有可导入的数据')
       return
     }
 
@@ -118,10 +112,8 @@ export default function Import() {
     let insertCount = 0
     
     try {
-      // 将导入的资产添加到Supabase中
       for (const asset of previewData) {
         try {
-          // 先检查资产编码是否已存在
           const { data: existingAsset, error: checkError } = await supabase
             .from('assets')
             .select('id')
@@ -133,7 +125,6 @@ export default function Import() {
           }
           
           if (existingAsset) {
-            // 资产编码已存在，执行更新
             const { error: updateError } = await supabase
               .from('assets')
               .update(asset)
@@ -148,39 +139,10 @@ export default function Import() {
             updateCount++
             successCount++
             
-            // 记录操作历史
             if (user) {
-              try {
-                await supabase.from('operation_history').insert({
-                  asset_code: asset.asset_code,
-                  operation_type: 'update',
-                  user_email: user.email,
-                  created_at: new Date().toISOString()
-                })
-              } catch (historyError) {
-                console.error('Error recording operation history:', historyError)
-              }
-              
-              // 记录使用历史到 usage_history（独立保存，不受操作历史删除影响）
-              try {
-                const usageHistoryData = {
-                  asset_code: asset.asset_code,
-                  operation_type: 'update',
-                  user_email: user.email
-                }
-                console.log('Import: Inserting usage history:', usageHistoryData)
-                const { error: usageError } = await supabase.from('usage_history').insert(usageHistoryData)
-                if (usageError) {
-                  console.error('Import: Error recording usage history:', usageError)
-                } else {
-                  console.log('Import: Usage history recorded successfully')
-                }
-              } catch (usageError) {
-                console.error('Import: Exception recording usage history:', usageError)
-              }
+              await recordAllHistory(asset.asset_code, 'update', user.email)
             }
           } else {
-            // 资产编码不存在，执行插入
             const { data, error: insertError } = await supabase.from('assets').insert(asset).select()
             
             if (insertError) {
@@ -192,38 +154,8 @@ export default function Import() {
             insertCount++
             successCount++
             
-            // 记录操作历史
-            if (user && data && data.length > 0) {
-              try {
-                await supabase.from('operation_history').insert({
-                  asset_code: asset.asset_code,
-                  operation_type: 'create',
-                  user_email: user.email,
-                  created_at: new Date().toISOString()
-                })
-              } catch (historyError) {
-                console.error('Error recording operation history:', historyError)
-              }
-              
-              // 记录使用历史到 usage_history（独立保存，不受操作历史删除影响）
-              if (data && data.length > 0) {
-                try {
-                  const usageHistoryData = {
-                    asset_code: asset.asset_code,
-                    operation_type: 'create',
-                    user_email: user.email
-                  }
-                  console.log('Import: Inserting usage history:', usageHistoryData)
-                  const { error: usageError } = await supabase.from('usage_history').insert(usageHistoryData)
-                  if (usageError) {
-                    console.error('Import: Error recording usage history:', usageError)
-                  } else {
-                    console.log('Import: Usage history recorded successfully')
-                  }
-                } catch (usageError) {
-                  console.error('Import: Exception recording usage history:', usageError)
-                }
-              }
+            if (user) {
+              await recordAllHistory(asset.asset_code, 'create', user.email)
             }
           }
         } catch (assetError) {
@@ -232,18 +164,17 @@ export default function Import() {
         }
       }
       
-      alert(`资产导入完成！成功：${successCount} 条（新增：${insertCount} 条，更新：${updateCount} 条），失败：${failCount} 条`)
+      toast.success(`资产导入完成！成功：${successCount} 条（新增：${insertCount}，更新：${updateCount}），失败：${failCount} 条`)
       navigate('/')
     } catch (error) {
       console.error('导入失败:', error)
-      alert(`资产导入失败，成功：${successCount} 条（新增：${insertCount} 条，更新：${updateCount} 条），失败：${failCount} 条`)
+      toast.error(`资产导入失败，成功：${successCount} 条，失败：${failCount} 条`)
     } finally {
       setIsUploading(false)
     }
   }
 
   const downloadTemplate = () => {
-    // 创建一个包含模板数据的Excel文件
     const templateData = [
       {
         '资产编码': '',
@@ -279,12 +210,9 @@ export default function Import() {
       }
     ];
 
-    // 创建工作簿和工作表
     const workbook = XLSX.utils.book_new();
     const worksheet = XLSX.utils.json_to_sheet(templateData);
     XLSX.utils.book_append_sheet(workbook, worksheet, '资产模板');
-
-    // 生成Excel文件并下载
     XLSX.writeFile(workbook, '资产导入模板.xlsx');
   }
 
@@ -392,7 +320,7 @@ export default function Import() {
             <ul className="space-y-2 text-sm text-gray-600">
               <li>1. 下载模板文件，按照模板格式填写资产信息</li>
               <li>2. 支持的字段：资产编码、品牌、型号、CPU、内存、存储、显卡、操作系统、部门、用户、位置、状态、月租费、备注</li>
-              <li>3. 状态字段可选值：active（使用中）、idle（闲置）、maintenance（维修中）</li>
+              <li>3. 状态字段可选值：active（使用中）、idle（闲置）、maintenance（维修中）、retired（已报废）</li>
               <li>4. 必填字段：品牌、型号、CPU、内存、存储、操作系统、部门、用户、位置</li>
               <li>5. 如果资产编码已存在，系统会更新该资产信息；如果不存在，系统会新建资产</li>
               <li>6. 上传文件后会显示预览，确认无误后点击开始导入</li>
