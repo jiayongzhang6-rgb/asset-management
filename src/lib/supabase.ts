@@ -245,7 +245,40 @@ export function getBeijingTime(utcStr: string): string {
 
 // ===== 数据库初始化 =====
 const DB_VERSION_KEY = 'db_schema_version'
-const CURRENT_DB_VERSION = 3
+const CURRENT_DB_VERSION = 4
+
+// 运行时检测 category 列是否可用（PostgREST schema cache 是否已包含）
+let _categorySupported: boolean | null = null
+
+export async function isCategorySupported(): Promise<boolean> {
+  if (_categorySupported !== null) return _categorySupported
+  try {
+    const { error } = await supabase.from('assets').select('category').limit(1)
+    _categorySupported = !error
+    if (error) {
+      console.warn('Category column not available in schema cache, will strip from requests:', error.message)
+    }
+    return _categorySupported
+  } catch {
+    _categorySupported = false
+    return false
+  }
+}
+
+// 在发送给 Supabase 之前，如果 category 列不可用则剥离该字段
+export async function sanitizeAssetData<T extends Record<string, any>>(data: T): Promise<T> {
+  const supported = await isCategorySupported()
+  if (!supported && 'category' in data) {
+    const { category, ...rest } = data
+    return rest as T
+  }
+  return data
+}
+
+// 重置 category 支持检测（添加列后调用）
+export function resetCategoryCheck(): void {
+  _categorySupported = null
+}
 
 async function ensureColumn(table: string, column: string, definition: string): Promise<boolean> {
   const { data: cols } = await supabase
@@ -257,13 +290,23 @@ async function ensureColumn(table: string, column: string, definition: string): 
 
   if (cols && cols.length > 0) return true
 
+  // 尝试通过 RPC 添加列
   const { error } = await supabase.rpc('execute_sql', {
     sql: `ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS ${definition};`
   })
   if (error) {
-    console.error(`Error adding column ${column} to ${table}:`, error)
+    console.warn(`Could not add column ${column} to ${table} via RPC:`, error.message)
     return false
   }
+
+  // 添加列后刷新 PostgREST schema cache，否则 API 仍然看不到新列
+  try {
+    await supabase.rpc('execute_sql', { sql: "NOTIFY pgrst, 'reload schema';" })
+    console.log('PostgREST schema cache reload notified')
+  } catch (e) {
+    console.warn('Could not notify PostgREST schema reload:', e)
+  }
+
   return true
 }
 
@@ -389,9 +432,11 @@ export const initDatabase = async () => {
     await ensureTable(table, sql)
   }
 
-  // 迁移：给 assets 表添加 category 列（version 2 & 3）
-  // 每次启动都尝试确保列存在（不依赖 savedVersion 判断，强制检查）
+  // 迁移：给 assets 表添加 category 列（version 2 & 3 & 4）
+  // 每次启动都尝试确保列存在
   await ensureColumn('assets', 'category', 'category VARCHAR(50) DEFAULT \'\'')
+  // 重置运行时检测，确保后续请求重新检查
+  resetCategoryCheck()
 
   localStorage.setItem(DB_VERSION_KEY, String(CURRENT_DB_VERSION))
   console.log('Database initialization completed (version:', CURRENT_DB_VERSION, ')')

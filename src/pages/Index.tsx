@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../App'
 import toast from 'react-hot-toast'
 import * as XLSX from 'xlsx'
-import { supabase, type Asset, initDatabase, formatUserIdentifier, formatMemory, formatStorage, getStatusText, getStatusColor, recordAllHistory, generateAssetCode } from '../lib/supabase'
+import { supabase, type Asset, initDatabase, formatUserIdentifier, formatMemory, formatStorage, getStatusText, getStatusColor, recordAllHistory, generateAssetCode, sanitizeAssetData } from '../lib/supabase'
 import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js'
 import { Pie } from 'react-chartjs-2'
 
@@ -337,12 +337,10 @@ export default function Index() {
         monthly_rent: formData.monthly_rent ? parseFloat(formData.monthly_rent) : 0,
         asset_code: generateAssetCode(assets.length)
       }
-      // 如果 category 为空，删除该字段避免列不存在报错
-      if (!assetData.category) {
-        delete assetData.category
-      }
-      console.log('Index: Creating asset with data:', assetData)
-      const { data, error } = await supabase.from('assets').insert(assetData).select()
+      // 运行时检测：如果 category 列不可用则自动剥离
+      const cleanData = await sanitizeAssetData(assetData)
+      console.log('Index: Creating asset with data:', cleanData)
+      const { data, error } = await supabase.from('assets').insert(cleanData).select()
       if (error) throw error
       console.log('Index: Asset created successfully:', data)
 
@@ -381,16 +379,14 @@ export default function Index() {
           updateData.monthly_rent = isNaN(rentValue) ? 0 : rentValue
         }
 
-        // 如果 category 为空字符串，删除该字段避免列不存在报错
-        if (updateData.category !== undefined && updateData.category === '') {
-          delete updateData.category
-        }
+        // 运行时检测：如果 category 列不可用则自动剥离
+        const cleanData = await sanitizeAssetData(updateData)
 
-        console.log('Index: Updating asset with data:', updateData)
+        console.log('Index: Updating asset with data:', cleanData)
         const { data, error } = await supabase
           .from('assets')
           .update({
-            ...updateData,
+            ...cleanData,
             updated_at: new Date().toISOString()
           })
           .eq('asset_code', editingAsset.asset_code)

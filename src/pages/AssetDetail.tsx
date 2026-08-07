@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '../App'
 import toast from 'react-hot-toast'
-import { supabase, type Asset, type MaintenanceRecord, type AssetImage, type UsageHistoryRecord, formatUserIdentifier, formatMemory, formatStorage, getStatusText, getStatusColor, getOperationTypeText, getOperationTypeColor, recordAllHistory, getBeijingTime } from '../lib/supabase'
+import { supabase, type Asset, type MaintenanceRecord, type AssetImage, type UsageHistoryRecord, formatUserIdentifier, formatMemory, formatStorage, getStatusText, getStatusColor, getOperationTypeText, getOperationTypeColor, recordAllHistory, getBeijingTime, sanitizeAssetData } from '../lib/supabase'
 
 export default function AssetDetail() {
   const { id } = useParams<{ id: string }>()
@@ -229,31 +229,29 @@ export default function AssetDetail() {
       updateData.monthly_rent = isNaN(rentValue) ? 0 : rentValue
     }
 
-    // 如果 category 为空字符串，删除该字段避免列不存在报错
-    if (updateData.category !== undefined && updateData.category === '') {
-      delete updateData.category
-    }
+    // 运行时检测：如果 category 列不可用则自动剥离
+    const cleanData = await sanitizeAssetData(updateData)
     
     const changes = []
-    if (updateData.brand && updateData.brand !== asset.brand) changes.push(`品牌: ${asset.brand || '无'} → ${updateData.brand || '无'}`)
-    if (updateData.model && updateData.model !== asset.model) changes.push(`型号: ${asset.model || '无'} → ${updateData.model || '无'}`)
-    if (updateData.cpu && updateData.cpu !== asset.cpu) changes.push(`CPU: ${asset.cpu || '无'} → ${updateData.cpu || '无'}`)
-    if (updateData.ram && updateData.ram !== asset.ram) changes.push(`内存: ${asset.ram || '无'} → ${updateData.ram || '无'}`)
-    if (updateData.storage && updateData.storage !== asset.storage) changes.push(`存储: ${asset.storage || '无'} → ${updateData.storage || '无'}`)
-    if (updateData.gpu && updateData.gpu !== asset.gpu) changes.push(`GPU: ${asset.gpu || '无'} → ${updateData.gpu || '无'}`)
-    if (updateData.os && updateData.os !== asset.os) changes.push(`操作系统: ${asset.os || '无'} → ${updateData.os || '无'}`)
-    if (updateData.department !== asset.department) changes.push(`部门: ${asset.department || '无'} → ${updateData.department || '无'}`)
-    if (updateData.user_name !== asset.user_name) changes.push(`使用人: ${asset.user_name || '无'} → ${updateData.user_name || '无'}`)
-    if (updateData.location !== asset.location) changes.push(`位置: ${asset.location || '无'} → ${updateData.location || '无'}`)
-    if (updateData.status && updateData.status !== asset.status) changes.push(`状态: ${getStatusText(asset.status)} → ${getStatusText(updateData.status)}`)
-    if (updateData.notes !== asset.notes) changes.push(`备注: ${asset.notes || '无'} → ${updateData.notes || '无'}`)
+    if (cleanData.brand && cleanData.brand !== asset.brand) changes.push(`品牌: ${asset.brand || '无'} → ${cleanData.brand || '无'}`)
+    if (cleanData.model && cleanData.model !== asset.model) changes.push(`型号: ${asset.model || '无'} → ${cleanData.model || '无'}`)
+    if (cleanData.cpu && cleanData.cpu !== asset.cpu) changes.push(`CPU: ${asset.cpu || '无'} → ${cleanData.cpu || '无'}`)
+    if (cleanData.ram && cleanData.ram !== asset.ram) changes.push(`内存: ${asset.ram || '无'} → ${cleanData.ram || '无'}`)
+    if (cleanData.storage && cleanData.storage !== asset.storage) changes.push(`存储: ${asset.storage || '无'} → ${cleanData.storage || '无'}`)
+    if (cleanData.gpu && cleanData.gpu !== asset.gpu) changes.push(`GPU: ${asset.gpu || '无'} → ${cleanData.gpu || '无'}`)
+    if (cleanData.os && cleanData.os !== asset.os) changes.push(`操作系统: ${asset.os || '无'} → ${cleanData.os || '无'}`)
+    if (cleanData.department !== asset.department) changes.push(`部门: ${asset.department || '无'} → ${cleanData.department || '无'}`)
+    if (cleanData.user_name !== asset.user_name) changes.push(`使用人: ${asset.user_name || '无'} → ${cleanData.user_name || '无'}`)
+    if (cleanData.location !== asset.location) changes.push(`位置: ${asset.location || '无'} → ${cleanData.location || '无'}`)
+    if (cleanData.status && cleanData.status !== asset.status) changes.push(`状态: ${getStatusText(asset.status)} → ${getStatusText(cleanData.status)}`)
+    if (cleanData.notes !== asset.notes) changes.push(`备注: ${asset.notes || '无'} → ${cleanData.notes || '无'}`)
     
     console.log('AssetDetail: Changes to record:', changes)
     
     const { error: updateError } = await supabase
       .from('assets')
       .update({
-        ...updateData,
+        ...cleanData,
         updated_at: new Date().toISOString()
       })
       .eq('asset_code', asset.asset_code)
