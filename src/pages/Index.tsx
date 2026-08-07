@@ -810,201 +810,173 @@ export default function Index() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-100">
-      <style>{`
-        .main-content::after {
-          content: '德泽智联IT资产管理系统';
-          position: fixed;
-          top: 0;
-          left: 0;
-          right: 0;
-          bottom: 0;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          opacity: 0.15;
-          z-index: -1;
-          pointer-events: none;
-          transform: rotate(-30deg);
-          font-size: 120px;
-          font-weight: bold;
-          color: #059669;
-          text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.1);
-          white-space: nowrap;
-          background: transparent;
-        }
-      `}</style>
-      <header className="bg-blue-600 text-white">
-        <div className="container mx-auto px-4 py-3 flex items-center justify-between">
-          <h1 className="text-2xl font-bold">德泽智联IT资产管理系统</h1>
+    <div className="min-h-screen">
+      <div className="watermark" />
+      <header className="gradient-header text-white">
+        <div className="container mx-auto px-4 py-4 flex items-center justify-between relative z-10">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center backdrop-blur-sm">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
+              </svg>
+            </div>
+            <div>
+              <h1 className="text-xl font-bold tracking-tight">德泽智联IT资产管理系统</h1>
+              <p className="text-xs text-white/70">资产管理 · 租费管理 · 统计分析</p>
+            </div>
+          </div>
           <div className="flex items-center gap-2">
-            <span>{formatUserIdentifier(user?.email)}</span>
+            <span className="text-sm text-white/80">{formatUserIdentifier(user?.email)}</span>
             {(user?.role === 'admin') && (
               <>
-                <button
-                  onClick={() => navigate('/import')}
-                  className="bg-white text-blue-600 px-3 py-1 rounded text-sm font-medium hover:bg-blue-50"
-                >
+                <button onClick={() => navigate('/import')} className="btn btn-ghost !text-white !border-white/20 hover:!bg-white/10 text-sm px-3 py-1.5 rounded-lg">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
                   批量导入
                 </button>
-                <button
-                  onClick={handleExportAll}
-                  className="bg-white text-blue-600 px-3 py-1 rounded text-sm font-medium hover:bg-blue-50"
-                >
-                  导出全部数据
+                <button onClick={handleExportAll} className="btn btn-ghost !text-white !border-white/20 hover:!bg-white/10 text-sm px-3 py-1.5 rounded-lg">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                  导出全部
                 </button>
-                <button
-                  onClick={() => setIsAddDialogOpen(true)}
-                  className="bg-white text-blue-600 px-3 py-1 rounded text-sm font-medium hover:bg-blue-50"
-                >
+                <button onClick={() => setIsAddDialogOpen(true)} className="btn btn-ghost !text-white !border-white/20 hover:!bg-white/10 text-sm px-3 py-1.5 rounded-lg">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
                   新增设备
-                </button>
-                <button
-                  onClick={() => navigate('/users')}
-                  className="bg-white text-blue-600 px-3 py-1 rounded text-sm font-medium hover:bg-blue-50"
-                >
-                  用户管理
-                </button>
-                <button
-                  onClick={() => navigate('/history')}
-                  className="bg-white text-blue-600 px-3 py-1 rounded text-sm font-medium hover:bg-blue-50"
-                >
-                  操作历史
-                </button>
-                <button
-                  onClick={() => navigate('/rent')}
-                  className="bg-white text-blue-600 px-3 py-1 rounded text-sm font-medium hover:bg-blue-50"
-                >
-                  月租明细
                 </button>
               </>
             )}
-            <button
-              onClick={() => navigate('/change-password')}
-              className="bg-white text-green-600 px-3 py-1 rounded text-sm font-medium hover:bg-green-50"
-            >
+            <div className="w-px h-6 bg-white/20 mx-1" />
+            {user?.role === 'admin' && (
+              <button onClick={() => navigate('/users')} className="btn btn-ghost !text-white/80 hover:!text-white text-sm px-2 py-1.5">
+                用户管理
+              </button>
+            )}
+            <button onClick={() => navigate('/history')} className="btn btn-ghost !text-white/80 hover:!text-white text-sm px-2 py-1.5">
+              操作历史
+            </button>
+            <button onClick={() => navigate('/rent')} className="btn btn-ghost !text-white/80 hover:!text-white text-sm px-2 py-1.5">
+              月租明细
+            </button>
+            <button onClick={() => navigate('/change-password')} className="btn btn-ghost !text-white/80 hover:!text-white text-sm px-2 py-1.5">
               修改密码
             </button>
-            <button
-              onClick={signOut}
-              className="bg-white text-blue-600 px-3 py-1 rounded text-sm font-medium hover:bg-blue-50"
-            >
+            <button onClick={signOut} className="btn btn-ghost !text-white/80 hover:!text-white hover:!bg-white/10 text-sm px-2 py-1.5">
               退出
             </button>
           </div>
         </div>
       </header>
 
-      <main className="container mx-auto px-4 py-8 main-content" style={{ position: 'relative', minHeight: '80vh' }}>
-        <div style={{ position: 'relative', zIndex: 1 }}>
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-          <div className="bg-white rounded-lg shadow p-4">
+      <main className="relative z-10 container mx-auto px-4 py-6" style={{ minHeight: '80vh' }}>
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7 gap-4 mb-6">
+          <div className="stat-card">
             <div className="flex items-center gap-3">
-              <div className="bg-blue-100 p-2 rounded-full">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <div className="stat-icon bg-blue-50 text-blue-600">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
                 </svg>
               </div>
-              <div>
-                <p className="text-sm text-gray-600">资产总数</p>
-                <p className="text-2xl font-bold">{allAssets.filter(a => a.status !== 'retired').length}</p>
+              <div className="min-w-0">
+                <p className="text-xs text-gray-500 font-medium">资产总数</p>
+                <p className="text-xl font-bold text-gray-900">{allAssets.filter(a => a.status !== 'retired').length}</p>
               </div>
             </div>
           </div>
-          <div className="bg-white rounded-lg shadow p-4">
+          <div className="stat-card">
             <div className="flex items-center gap-3">
-              <div className="bg-green-100 p-2 rounded-full">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <div className="stat-icon bg-green-50 text-green-600">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
               </div>
-              <div>
-                <p className="text-sm text-gray-600">使用中</p>
-                <p className="text-2xl font-bold">{allAssets.filter(a => a.status === 'active').length}</p>
+              <div className="min-w-0">
+                <p className="text-xs text-gray-500 font-medium">使用中</p>
+                <p className="text-xl font-bold text-green-600">{allAssets.filter(a => a.status === 'active').length}</p>
               </div>
             </div>
           </div>
-          <div className="bg-white rounded-lg shadow p-4">
+          <div className="stat-card">
             <div className="flex items-center gap-3">
-              <div className="bg-yellow-100 p-2 rounded-full">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-yellow-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <div className="stat-icon bg-yellow-50 text-yellow-600">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
               </div>
-              <div>
-                <p className="text-sm text-gray-600">闲置</p>
-                <p className="text-2xl font-bold">{allAssets.filter(a => a.status === 'idle').length}</p>
+              <div className="min-w-0">
+                <p className="text-xs text-gray-500 font-medium">闲置</p>
+                <p className="text-xl font-bold text-yellow-600">{allAssets.filter(a => a.status === 'idle').length}</p>
               </div>
             </div>
           </div>
-          <div className="bg-white rounded-lg shadow p-4">
+          <div className="stat-card">
             <div className="flex items-center gap-3">
-              <div className="bg-red-100 p-2 rounded-full">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <div className="stat-icon bg-red-50 text-red-600">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                 </svg>
               </div>
-              <div>
-                <p className="text-sm text-gray-600">维修中</p>
-                <p className="text-2xl font-bold">{allAssets.filter(a => a.status === 'maintenance').length}</p>
+              <div className="min-w-0">
+                <p className="text-xs text-gray-500 font-medium">维修中</p>
+                <p className="text-xl font-bold text-red-600">{allAssets.filter(a => a.status === 'maintenance').length}</p>
               </div>
             </div>
           </div>
-          <div className="bg-white rounded-lg shadow p-4">
+          <div className="stat-card">
             <div className="flex items-center gap-3">
-              <div className="bg-gray-100 p-2 rounded-full">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <div className="stat-icon bg-gray-100 text-gray-600">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                 </svg>
               </div>
-              <div>
-                <p className="text-sm text-gray-600">已报废</p>
-                <p className="text-2xl font-bold">{allAssets.filter(a => a.status === 'retired').length}</p>
+              <div className="min-w-0">
+                <p className="text-xs text-gray-500 font-medium">已报废</p>
+                <p className="text-xl font-bold text-gray-600">{allAssets.filter(a => a.status === 'retired').length}</p>
               </div>
             </div>
           </div>
-          <div className="bg-white rounded-lg shadow p-4">
+          <div className="stat-card">
             <div className="flex items-center gap-3">
-              <div className="bg-blue-100 p-2 rounded-full">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <div className="stat-icon bg-indigo-50 text-indigo-600">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
               </div>
-              <div>
-                <p className="text-sm text-gray-600">当月租金（实时）</p>
-                <p className="text-2xl font-bold text-blue-600">¥{allAssets.reduce((sum, a) => sum + (Number(a.monthly_rent) || 0), 0).toFixed(2)}</p>
+              <div className="min-w-0">
+                <p className="text-xs text-gray-500 font-medium">当月租金</p>
+                <p className="text-xl font-bold text-indigo-600">¥{allAssets.reduce((sum, a) => sum + (Number(a.monthly_rent) || 0), 0).toFixed(2)}</p>
               </div>
             </div>
           </div>
-          <div className="bg-white rounded-lg shadow p-4">
+          <div className="stat-card">
             <div className="flex items-center gap-3">
-              <div className="bg-green-100 p-2 rounded-full">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <div className="stat-icon bg-emerald-50 text-emerald-600">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
               </div>
-              <div>
-                <p className="text-sm text-gray-600">累计收取</p>
-                <p className="text-2xl font-bold text-green-600">¥{rentStats.accumulatedPaid.toFixed(2)}</p>
+              <div className="min-w-0">
+                <p className="text-xs text-gray-500 font-medium">累计收取</p>
+                <p className="text-xl font-bold text-emerald-600">¥{rentStats.accumulatedPaid.toFixed(2)}</p>
               </div>
             </div>
           </div>
         </div>
 
         <div className="card mb-6">
-          <div className="flex flex-col md:flex-row md:items-center gap-4 mb-4">
-            <div className="relative flex-grow">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
+            <div className="search-wrapper flex-grow max-w-md">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
               <input
                 type="text"
-                placeholder="搜索资产编码、品牌、使用人..."
-                className="w-full px-4 py-2 border rounded text-sm"
+                placeholder="搜索资产编码、品牌、型号、使用人..."
+                className="!pl-9"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
             </div>
             <div className="flex flex-wrap gap-2 items-center">
               <select
-                className="px-3 py-2 border rounded text-sm"
+                className="w-auto text-sm"
                 value={departmentFilter}
                 onChange={(e) => setDepartmentFilter(e.target.value)}
               >
@@ -1014,7 +986,7 @@ export default function Index() {
                 ))}
               </select>
               <select
-                className="px-3 py-2 border rounded text-sm"
+                className="w-auto text-sm"
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
               >
@@ -1026,39 +998,30 @@ export default function Index() {
               </select>
               <button
                 onClick={() => setShowAdvancedSearch(!showAdvancedSearch)}
-                className={`px-3 py-2 border rounded text-sm ${showAdvancedSearch ? 'bg-blue-50 border-blue-300 text-blue-700' : 'bg-white text-gray-600'}`}
+                className={`btn text-sm ${showAdvancedSearch ? 'btn-primary' : 'btn-secondary'}`}
               >
-                {showAdvancedSearch ? '收起高级筛选' : '高级筛选'}
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+                </svg>
+                {showAdvancedSearch ? '收起筛选' : '高级筛选'}
               </button>
-              <div className="px-3 py-2 bg-blue-50 border border-blue-200 rounded text-sm">
-                <span className="text-gray-600">筛选月租合计:</span>
-                <span className="font-bold text-blue-600 ml-2">¥{allAssets.reduce((sum, a) => sum + (Number(a.monthly_rent) || 0), 0).toFixed(2)}</span>
+              <div className="px-3 py-1.5 bg-blue-50 border border-blue-200 rounded-lg text-sm">
+                <span className="text-gray-600">筛选月租:</span>
+                <span className="font-bold text-blue-600 ml-1">¥{allAssets.reduce((sum, a) => sum + (Number(a.monthly_rent) || 0), 0).toFixed(2)}</span>
               </div>
               {selectedIds.length > 0 && (
                 <>
-                  <button
-                    onClick={() => setIsBatchStatusDialogOpen(true)}
-                    className="px-3 py-2 bg-blue-500 text-white rounded text-sm hover:bg-blue-600"
-                  >
-                    批量修改状态 ({selectedIds.length})
+                  <button onClick={() => setIsBatchStatusDialogOpen(true)} className="btn btn-primary text-sm">
+                    批量状态 ({selectedIds.length})
                   </button>
-                  <button
-                    onClick={handleBatchDelete}
-                    className="px-3 py-2 bg-red-500 text-white rounded text-sm hover:bg-red-600"
-                  >
+                  <button onClick={handleBatchDelete} className="btn btn-danger text-sm">
                     批量删除 ({selectedIds.length})
                   </button>
-                  <button
-                    onClick={handleBatchExportQR}
-                    className="px-3 py-2 bg-purple-500 text-white rounded text-sm hover:bg-purple-600"
-                  >
-                    批量导出二维码 ({selectedIds.length})
+                  <button onClick={handleBatchExportQR} className="btn btn-secondary text-sm">
+                    导出二维码 ({selectedIds.length})
                   </button>
-                  <button
-                    onClick={handleBatchExportDevices}
-                    className="px-3 py-2 bg-green-500 text-white rounded text-sm hover:bg-green-600"
-                  >
-                    批量导出设备 ({selectedIds.length})
+                  <button onClick={handleBatchExportDevices} className="btn btn-success text-sm">
+                    导出设备 ({selectedIds.length})
                   </button>
                 </>
               )}
@@ -1067,12 +1030,12 @@ export default function Index() {
 
           {/* 高级筛选面板 */}
           {showAdvancedSearch && (
-            <div className="mb-4 p-4 bg-gray-50 border border-gray-200 rounded-lg">
+            <div className="mb-4 p-4 bg-gradient-to-r from-gray-50 to-blue-50 border border-blue-100 rounded-xl slide-down">
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">分类</label>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">分类</label>
                   <select
-                    className="w-full px-3 py-2 border rounded text-sm"
+                    className="w-full text-sm"
                     value={advancedFilters.category}
                     onChange={(e) => setAdvancedFilters({ ...advancedFilters, category: e.target.value })}
                   >
@@ -1083,20 +1046,20 @@ export default function Index() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">品牌</label>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">品牌</label>
                   <input
                     type="text"
-                    className="w-full px-3 py-2 border rounded text-sm"
-                    placeholder="输入品牌"
+                    className="w-full text-sm"
+                    placeholder="输入品牌名称"
                     value={advancedFilters.brand}
                     onChange={(e) => setAdvancedFilters({ ...advancedFilters, brand: e.target.value })}
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">内存 &gt;= (GB)</label>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">内存 ≥ (GB)</label>
                   <input
                     type="number"
-                    className="w-full px-3 py-2 border rounded text-sm"
+                    className="w-full text-sm"
                     placeholder="如 16"
                     value={advancedFilters.minMemory}
                     onChange={(e) => setAdvancedFilters({ ...advancedFilters, minMemory: e.target.value })}
@@ -1104,10 +1067,10 @@ export default function Index() {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">存储 &gt;= (GB)</label>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">存储 ≥ (GB)</label>
                   <input
                     type="number"
-                    className="w-full px-3 py-2 border rounded text-sm"
+                    className="w-full text-sm"
                     placeholder="如 256"
                     value={advancedFilters.minStorage}
                     onChange={(e) => setAdvancedFilters({ ...advancedFilters, minStorage: e.target.value })}
@@ -1118,11 +1081,11 @@ export default function Index() {
             </div>
           )}
 
-          <div className="overflow-x-auto" style={{ maxWidth: '80%', margin: '0 auto' }}>
-            <table className="min-w-full">
-              <thead className="bg-gray-50">
+          <div className="table-container">
+            <table>
+              <thead>
                 <tr>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="w-10">
                     <input
                       type="checkbox"
                       checked={selectedIds.length === assets.length && assets.length > 0}
@@ -1130,42 +1093,50 @@ export default function Index() {
                       className="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50"
                     />
                   </th>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">资产编码</th>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">分类</th>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">CPU</th>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">内存</th>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">硬盘</th>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">显卡</th>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">使用人</th>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">部门</th>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">位置</th>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">品牌/型号</th>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">状态</th>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">月租费</th>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">操作</th>
+                  <th>资产编码</th>
+                  <th>分类</th>
+                  <th>CPU</th>
+                  <th>内存</th>
+                  <th>硬盘</th>
+                  <th>显卡</th>
+                  <th>使用人</th>
+                  <th>部门</th>
+                  <th>位置</th>
+                  <th>品牌/型号</th>
+                  <th>状态</th>
+                  <th className="text-right">月租费</th>
+                  <th>操作</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-200">
+              <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan={14} className="px-4 py-8 text-center">
-                      加载中...
+                    <td colSpan={14} className="px-4 py-12 text-center">
+                      <div className="flex flex-col items-center gap-3">
+                        <div className="spinner" />
+                        <span className="text-gray-500 text-sm">加载中...</span>
+                      </div>
                     </td>
                   </tr>
                 ) : assets.length === 0 ? (
                   <tr>
-                    <td colSpan={14} className="px-4 py-8 text-center">
-                      无资产数据
+                    <td colSpan={14} className="px-4 py-12 text-center">
+                      <div className="flex flex-col items-center gap-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
+                        </svg>
+                        <span className="text-gray-400">暂无资产数据</span>
+                      </div>
                     </td>
                   </tr>
                 ) : (
                   assets.map((asset) => (
                     <tr 
                       key={asset.id} 
-                      className="hover:bg-gray-50 cursor-pointer"
+                      className="cursor-pointer transition-all"
                       onClick={() => navigate(`/asset/${asset.asset_code}`)}
                     >
-                      <td className="px-4 py-3 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                      <td className="w-10" onClick={(e) => e.stopPropagation()}>
                         <input
                           type="checkbox"
                           checked={selectedIds.includes(String(asset.id))}
@@ -1176,41 +1147,28 @@ export default function Index() {
                           className="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50"
                         />
                       </td>
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <div className="text-sm font-medium text-blue-600">{asset.asset_code}</div>
+                      <td>
+                        <span className="text-sm font-medium text-blue-600">{asset.asset_code}</span>
                       </td>
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <div className="text-sm text-gray-900">{asset.category || '-'}</div>
+                      <td><span className="text-sm">{asset.category || '-'}</span></td>
+                      <td>
+                        <span className="text-sm text-gray-700" title={asset.cpu}>{asset.cpu.length > 20 ? asset.cpu.slice(0, 20) + '…' : asset.cpu}</span>
                       </td>
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <div className="text-sm text-gray-900">{asset.cpu}</div>
+                      <td><span className="text-sm font-medium">{formatMemory(asset.ram)}</span></td>
+                      <td><span className="text-sm font-medium">{formatStorage(asset.storage)}</span></td>
+                      <td><span className="text-sm text-gray-700">{asset.gpu || '-'}</span></td>
+                      <td><span className="text-sm font-medium">{asset.user_name}</span></td>
+                      <td><span className="text-sm">{asset.department}</span></td>
+                      <td><span className="text-sm">{asset.location}</span></td>
+                      <td>
+                        <span className="text-sm text-gray-700">{asset.brand} <span className="text-gray-400">{asset.model}</span></span>
                       </td>
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <div className="text-sm text-gray-900">{formatMemory(asset.ram)}</div>
-                      </td>
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <div className="text-sm text-gray-900">{formatStorage(asset.storage)}</div>
-                      </td>
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <div className="text-sm text-gray-900">{asset.gpu || '-'}</div>
-                      </td>
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <div className="text-sm text-gray-900">{asset.user_name}</div>
-                      </td>
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <div className="text-sm text-gray-900">{asset.department}</div>
-                      </td>
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <div className="text-sm text-gray-900">{asset.location}</div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="text-sm text-gray-900">{asset.brand} {asset.model}</div>
-                      </td>
-                      <td className="px-4 py-3 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                      <td onClick={(e) => e.stopPropagation()}>
                         <select
                           value={asset.status}
                           onChange={(e) => handleQuickStatusChange(asset, e.target.value)}
-                          className={`text-xs font-semibold rounded-full px-2 py-1 border-0 cursor-pointer ${getStatusColor(asset.status)}`}
+                          className={`badge border-0 cursor-pointer text-xs font-semibold ${getStatusColor(asset.status)}`}
+                          style={{ padding: '0.15rem 0.625rem' }}
                         >
                           <option value="active">使用中</option>
                           <option value="idle">闲置</option>
@@ -1218,20 +1176,14 @@ export default function Index() {
                           <option value="retired">已报废</option>
                         </select>
                       </td>
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <div className="text-sm text-gray-900">{asset.monthly_rent ? `¥${asset.monthly_rent}` : '-'}</div>
+                      <td className="text-right">
+                        <span className="text-sm font-medium">{asset.monthly_rent ? `¥${asset.monthly_rent}` : '-'}</span>
                       </td>
-                      <td className="px-4 py-3 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                        <button
-                          onClick={() => handleEdit(asset)}
-                          className="text-blue-600 hover:text-blue-900 text-sm font-medium mr-2"
-                        >
+                      <td className="whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                        <button onClick={() => handleEdit(asset)} className="btn btn-ghost text-blue-600 hover:text-blue-800 text-xs !px-2 !py-1">
                           编辑
                         </button>
-                        <button
-                          onClick={() => navigate(`/asset/${asset.asset_code}`)}
-                          className="text-gray-600 hover:text-gray-900 text-sm font-medium"
-                        >
+                        <button onClick={() => navigate(`/asset/${asset.asset_code}`)} className="btn btn-ghost text-gray-600 hover:text-gray-800 text-xs !px-2 !py-1">
                           详情
                         </button>
                       </td>
@@ -1242,20 +1194,19 @@ export default function Index() {
             </table>
           </div>
           
-          {/* 分页控件 */}
-          <div className="flex flex-col md:flex-row justify-between items-center mt-6 gap-4" style={{ maxWidth: '80%', margin: '0 auto' }}>
-            <div className="text-sm text-gray-600">
-              显示 {((page - 1) * pageSize) + 1} 到 {Math.min(page * pageSize, totalAssets)} 条，共 {totalAssets} 条
+          {/* 分页 */}
+          <div className="flex flex-col md:flex-row justify-between items-center mt-4 gap-3">
+            <div className="text-sm text-gray-500">
+              显示 <span className="font-medium text-gray-700">{((page - 1) * pageSize) + 1}</span> 到 <span className="font-medium text-gray-700">{Math.min(page * pageSize, totalAssets)}</span> 条，共 <span className="font-medium text-gray-700">{totalAssets}</span> 条
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-3">
               <select
-                className="input text-sm"
+                className="w-auto text-sm"
                 value={pageSize}
                 onChange={(e) => {
                   setPageSize(parseInt(e.target.value))
                   setPage(1)
                 }}
-                style={{ width: '100px' }}
               >
                 <option value={5}>5条/页</option>
                 <option value={10}>10条/页</option>
@@ -1265,26 +1216,27 @@ export default function Index() {
               </select>
               <div className="flex items-center gap-1">
                 <button
-                  className="btn btn-secondary text-sm"
+                  className="pagination-btn"
                   onClick={() => setPage(prev => Math.max(prev - 1, 1))}
                   disabled={page === 1}
                 >
-                  上一页
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                  </svg>
                 </button>
-                <span className="px-3 py-2 bg-gray-100 rounded text-sm">
-                  {page}
-                </span>
+                <span className="pagination-btn active">{page}</span>
                 <button
-                  className="btn btn-secondary text-sm"
+                  className="pagination-btn"
                   onClick={() => setPage(prev => Math.min(prev + 1, Math.ceil(totalAssets / pageSize)))}
                   disabled={page >= Math.ceil(totalAssets / pageSize)}
                 >
-                  下一页
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
                 </button>
               </div>
             </div>
           </div>
-        </div>
         </div>
       </main>
 

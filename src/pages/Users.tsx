@@ -75,84 +75,106 @@ export default function Users() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-100">
-      <header className="bg-white shadow">
-        <div className="container mx-auto px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <button
-              onClick={() => navigate('/')}
-              className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
-            >
-              返回
-            </button>
-            <h1 className="text-2xl font-bold">用户管理</h1>
+    <div className="min-h-screen">
+      <div className="watermark" />
+      <header className="gradient-header text-white">
+        <div className="container mx-auto px-4 py-4 flex items-center justify-between relative z-10">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center backdrop-blur-sm">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+              </svg>
+            </div>
+            <div>
+              <h1 className="text-xl font-bold tracking-tight">德泽智联IT资产管理系统</h1>
+              <p className="text-xs text-white/70">用户管理 · 权限控制</p>
+            </div>
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-gray-600">{formatUserIdentifier(user?.email)}</span>
-            <button
-              onClick={() => navigate('/history')}
-              className="px-4 py-2 bg-yellow-500 text-white rounded hover:bg-yellow-600"
-            >
+            <span className="text-sm text-white/80">{formatUserIdentifier(user?.email)}</span>
+            <div className="w-px h-6 bg-white/20 mx-1" />
+            <button onClick={() => navigate('/history')} className="btn btn-ghost !text-white/80 hover:!text-white text-sm px-2 py-1.5">
               操作历史
             </button>
-            <button
-              onClick={signOut}
-              className="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600"
-            >
+            <button onClick={() => navigate('/')} className="btn btn-ghost !text-white/80 hover:!text-white hover:!bg-white/10 text-sm px-2 py-1.5">
+              返回首页
+            </button>
+            <button onClick={signOut} className="btn btn-ghost !text-white/80 hover:!text-white hover:!bg-white/10 text-sm px-2 py-1.5">
               退出
             </button>
           </div>
         </div>
       </header>
 
-      <main className="container mx-auto px-4 py-8">
-        <div className="bg-white rounded-lg shadow p-6 mb-6">
-          <h2 className="text-xl font-semibold mb-4">所有用户</h2>
+      <main className="relative z-10 container mx-auto px-4 py-6" style={{ minHeight: '80vh' }}>
+        <div className="card">
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+                </svg>
+              </div>
+              <div>
+                <h2 className="text-lg font-bold text-gray-900">用户管理</h2>
+                <p className="text-sm text-gray-500">管理系统中的所有用户账号</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-gray-500">
+                共 <span className="font-semibold text-blue-600">{users.length}</span> 个用户
+              </span>
+            </div>
+          </div>
 
           {loading ? (
-            <div className="flex items-center justify-center py-12">
-              <div className="text-lg">加载中...</div>
+            <div className="flex flex-col items-center justify-center py-16 gap-3">
+              <div className="spinner" />
+              <span className="text-sm text-gray-500">加载用户列表...</span>
             </div>
           ) : users.length === 0 ? (
-            <div className="text-center py-12 text-gray-500">
-              暂无用户
+            <div className="flex flex-col items-center justify-center py-16 gap-3">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 text-gray-200" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+              </svg>
+              <span className="text-gray-400 text-sm">暂无用户数据</span>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
+            <div className="table-container">
+              <table>
+                <thead>
                   <tr>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">账号</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">角色</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">操作</th>
+                    <th className="w-16">ID</th>
+                    <th>账号</th>
+                    <th>角色</th>
+                    <th className="text-right">操作</th>
                   </tr>
                 </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
+                <tbody>
                   {users.map((userItem) => (
                     <tr key={userItem.id}>
-                      <td className="px-4 py-3 text-sm text-gray-900">
-                        {userItem.id}
+                      <td>
+                        <span className="text-sm font-mono text-gray-400">{userItem.id}</span>
                       </td>
-                      <td className="px-4 py-3 text-sm text-gray-900">
-                        {formatUserIdentifier(userItem.email)}
+                      <td>
+                        <span className="text-sm font-medium text-gray-900">{formatUserIdentifier(userItem.email)}</span>
                       </td>
-                      <td className="px-4 py-3 text-sm text-gray-900">
-                        <span className={`px-2 py-1 rounded text-xs font-medium ${userItem.role === 'admin' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-800'}`}>
+                      <td>
+                        <span className={`badge ${userItem.role === 'admin' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'}`}>
                           {userItem.role === 'admin' ? '管理员' : '普通用户'}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-sm font-medium">
+                      <td className="text-right whitespace-nowrap">
                         <button
                           onClick={() => handleResetPassword(userItem.id, userItem.email)}
-                          className="text-blue-600 hover:text-blue-900 mr-4"
+                          className="btn btn-ghost text-blue-600 hover:text-blue-800 text-xs !px-2 !py-1"
                         >
                           重置密码
                         </button>
                         {userItem.role !== 'admin' && (
                           <button
                             onClick={() => handleDeleteUser(userItem.id)}
-                            className="text-red-600 hover:text-red-900"
+                            className="btn btn-ghost text-red-500 hover:text-red-700 text-xs !px-2 !py-1"
                           >
                             删除
                           </button>

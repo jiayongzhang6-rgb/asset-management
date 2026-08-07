@@ -116,146 +116,184 @@ export default function OperationHistory() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-100">
-      <header className="bg-white shadow">
-        <div className="container mx-auto px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-4">
+    <div className="min-h-screen">
+      <header className="gradient-header text-white">
+        <div className="container mx-auto px-4 py-4 flex items-center justify-between relative z-10">
+          <div className="flex items-center gap-3">
             <button
               onClick={() => navigate('/')}
-              className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
+              className="btn btn-ghost !text-white !border-white/20 hover:!bg-white/10 text-sm px-3 py-1.5 rounded-lg"
             >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+              </svg>
               返回
             </button>
-            <h1 className="text-2xl font-bold">操作历史记录</h1>
+            <div className="w-px h-6 bg-white/20" />
+            <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center backdrop-blur-sm">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <div>
+              <h1 className="text-xl font-bold tracking-tight">操作历史记录</h1>
+              <p className="text-xs text-white/70">系统操作日志 · 审计追踪</p>
+            </div>
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-gray-600">{formatUserIdentifier(user?.email)}</span>
+            <span className="text-sm text-white/80">{formatUserIdentifier(user?.email)}</span>
+            <div className="w-px h-6 bg-white/20 mx-1" />
             {user?.role === 'admin' && (
-              <button
-                onClick={() => navigate('/users')}
-                className="px-4 py-2 bg-purple-500 text-white rounded hover:bg-purple-600"
-              >
+              <button onClick={() => navigate('/users')} className="btn btn-ghost !text-white/80 hover:!text-white text-sm px-2 py-1.5">
                 用户管理
               </button>
             )}
-            <button
-              onClick={signOut}
-              className="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600"
-            >
+            <button onClick={() => navigate('/change-password')} className="btn btn-ghost !text-white/80 hover:!text-white text-sm px-2 py-1.5">
+              修改密码
+            </button>
+            <button onClick={signOut} className="btn btn-ghost !text-white/80 hover:!text-white hover:!bg-white/10 text-sm px-2 py-1.5">
               退出
             </button>
           </div>
         </div>
       </header>
 
-      <main className="container mx-auto px-4 py-8">
-        <div className="bg-white rounded-lg shadow p-6 mb-6">
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
-            <h2 className="text-xl font-semibold">所有操作历史</h2>
-            <div className="flex items-center gap-4">
+      <main className="relative z-10 container mx-auto px-4 py-6" style={{ minHeight: '80vh' }}>
+        <div className="card">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 bg-blue-50 rounded-lg flex items-center justify-center">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <h2 className="text-lg font-semibold text-gray-800">所有操作历史</h2>
+              {filteredHistory.length > 0 && (
+                <span className="px-2.5 py-0.5 bg-blue-50 text-blue-600 text-xs font-medium rounded-full">
+                  共 {filteredHistory.length} 条
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-3">
               {user?.role === 'admin' && selectedIds.length > 0 && (
                 <button
                   onClick={handleBatchDelete}
-                  className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
+                  className="btn btn-danger text-sm"
                 >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
                   批量删除 ({selectedIds.length})
                 </button>
               )}
-              <div className="relative">
+              <div className="search-wrapper">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
                 <input
                   type="text"
-                  placeholder="按资产编码筛选"
-                  className="pl-10 pr-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="按资产编码搜索..."
+                  className="!pl-9"
                   value={assetCodeFilter}
                   onChange={(e) => setAssetCodeFilter(e.target.value)}
                 />
-                <div className="absolute left-3 top-2.5 text-gray-400">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                  </svg>
-                </div>
               </div>
             </div>
           </div>
 
           {loading ? (
-            <div className="flex items-center justify-center py-12">
-              <div className="text-lg">加载中...</div>
+            <div className="flex flex-col items-center justify-center py-20 gap-3">
+              <div className="spinner" />
+              <span className="text-gray-500 text-sm">加载操作历史中...</span>
             </div>
           ) : filteredHistory.length === 0 ? (
-            <div className="text-center py-12 text-gray-500">
-              暂无操作历史记录
+            <div className="flex flex-col items-center justify-center py-20 gap-3">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-14 w-14 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <span className="text-gray-400 text-base">暂无操作历史记录</span>
+              <span className="text-gray-300 text-xs">系统将自动记录资产的操作行为</span>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
+            <div className="table-container">
+              <table>
+                <thead>
                   <tr>
                     {user?.role === 'admin' && (
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="w-10">
                         <input
                           type="checkbox"
                           checked={filteredHistory.length > 0 && selectedIds.length === filteredHistory.length}
                           onChange={(e) => handleSelectAll(e.target.checked)}
-                          className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          className="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50"
                         />
                       </th>
                     )}
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">时间</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">资产编码</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">操作类型</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">操作人</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">详情</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">操作</th>
+                    <th>时间</th>
+                    <th>资产编码</th>
+                    <th>操作类型</th>
+                    <th>操作人</th>
+                    <th>详情</th>
+                    <th className="text-right">操作</th>
                   </tr>
                 </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
+                <tbody>
                   {filteredHistory.map((item) => (
-                    <tr key={item.id}>
+                    <tr key={item.id} className="hover:bg-gray-50/50 transition-colors">
                       {user?.role === 'admin' && (
-                        <td className="px-4 py-3">
+                        <td className="w-10">
                           <input
                             type="checkbox"
                             checked={selectedIds.includes(String(item.id))}
                             onChange={(e) => handleSelectOne(item.id, e.target.checked)}
-                            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                            className="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50"
                           />
                         </td>
                       )}
-                      <td className="px-4 py-3 text-sm text-gray-900">
-                        {getBeijingTime(item.created_at)}
+                      <td>
+                        <span className="text-sm text-gray-600 whitespace-nowrap">{getBeijingTime(item.created_at)}</span>
                       </td>
-                      <td className="px-4 py-3 text-sm text-gray-900">
-                        {item.asset_code}
+                      <td>
+                        <span className="text-sm font-medium text-blue-600">{item.asset_code}</span>
                       </td>
-                      <td className="px-4 py-3 text-sm">
-                        <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${getOperationTypeColor(item.operation_type)}`}>
+                      <td>
+                        <span className={`badge text-xs font-semibold ${getOperationTypeColor(item.operation_type)}`}>
                           {getOperationTypeText(item.operation_type)}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-sm text-gray-900">
-                        {formatUserIdentifier(item.user_email)}
+                      <td>
+                        <span className="text-sm text-gray-700">{formatUserIdentifier(item.user_email)}</span>
                       </td>
-                      <td className="px-4 py-3 text-sm text-gray-900">
+                      <td>
                         <button
                           onClick={() => toast(getOperationDetails(item), { duration: 8000 })}
-                          className="text-blue-500 hover:underline"
+                          className="btn btn-ghost text-blue-600 hover:text-blue-800 text-xs !px-2 !py-1"
                         >
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
                           查看详情
                         </button>
                       </td>
-                      <td className="px-4 py-3 text-sm font-medium flex gap-2">
+                      <td className="text-right whitespace-nowrap">
                         <button
                           onClick={() => viewAsset(item.asset_code)}
-                          className="text-green-600 hover:text-green-900"
+                          className="btn btn-ghost text-gray-600 hover:text-gray-800 text-xs !px-2 !py-1"
                         >
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                          </svg>
                           查看资产
                         </button>
                         {user?.role === 'admin' && (
                           <button
                             onClick={() => handleDeleteHistory(item.id)}
-                            className="text-red-600 hover:text-red-900"
+                            className="btn btn-ghost text-red-500 hover:text-red-700 text-xs !px-2 !py-1"
                           >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
                             删除
                           </button>
                         )}

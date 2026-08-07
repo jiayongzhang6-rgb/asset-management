@@ -209,144 +209,251 @@ export default function RentDetail() {
   const unpaidRent = totalRent - paidRent
 
   return (
-    <div className="min-h-screen bg-gray-100">
-      <div className="max-w-7xl mx-auto px-4 py-6">
-        <div className="bg-white rounded-lg shadow p-6 mb-6">
+    <div className="min-h-screen bg-gray-50">
+      <header className="gradient-header text-white">
+        <div className="container mx-auto px-4 py-4 flex items-center justify-between relative z-10">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center backdrop-blur-sm">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
+              </svg>
+            </div>
+            <div>
+              <h1 className="text-xl font-bold tracking-tight">德泽智联IT资产管理系统</h1>
+              <p className="text-xs text-white/70">月租费用明细 · 租金统计与管理</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-white/80">{formatUserIdentifier(user?.email)}</span>
+            <div className="w-px h-6 bg-white/20 mx-1" />
+            <span className="btn btn-ghost !text-white/80 !cursor-default text-sm px-2 py-1.5">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+              </svg>
+              月租明细
+            </span>
+          </div>
+        </div>
+      </header>
+
+      <main className="container mx-auto px-4 py-6" style={{ minHeight: '80vh' }}>
+        {/* 筛选/控制区域 */}
+        <div className="card mb-6">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-            <h1 className="text-2xl font-bold">月租费用明细</h1>
-            <div className="flex flex-wrap gap-3">
-              <select
-                className="px-3 py-2 border rounded text-sm"
-                value={selectedYear}
-                onChange={(e) => setSelectedYear(Number(e.target.value))}
-              >
-                {years.map(year => (
-                  <option key={year} value={year}>{year}年</option>
-                ))}
-              </select>
-              <select
-                className="px-3 py-2 border rounded text-sm"
-                value={selectedMonth}
-                onChange={(e) => setSelectedMonth(Number(e.target.value))}
-              >
-                {months.map(month => (
-                  <option key={month} value={month}>{month}月</option>
-                ))}
-              </select>
-              <select
-                className="px-3 py-2 border rounded text-sm"
-                value={departmentFilter}
-                onChange={(e) => setDepartmentFilter(e.target.value)}
-              >
-                <option value="all">全部部门</option>
-                {departments.map(dept => (
-                  <option key={dept} value={dept}>{dept}</option>
-                ))}
-              </select>
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 bg-blue-50 rounded-lg flex items-center justify-center">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+                </svg>
+              </div>
+              <h2 className="text-lg font-semibold text-gray-800">查询条件</h2>
+            </div>
+            <div className="flex flex-wrap gap-3 items-center">
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-gray-500 font-medium">年份</span>
+                <select
+                  className="w-auto text-sm min-w-[100px]"
+                  value={selectedYear}
+                  onChange={(e) => setSelectedYear(Number(e.target.value))}
+                >
+                  {years.map(year => (
+                    <option key={year} value={year}>{year}年</option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-gray-500 font-medium">月份</span>
+                <select
+                  className="w-auto text-sm min-w-[90px]"
+                  value={selectedMonth}
+                  onChange={(e) => setSelectedMonth(Number(e.target.value))}
+                >
+                  {months.map(month => (
+                    <option key={month} value={month}>{month}月</option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-gray-500 font-medium">部门</span>
+                <select
+                  className="w-auto text-sm min-w-[120px]"
+                  value={departmentFilter}
+                  onChange={(e) => setDepartmentFilter(e.target.value)}
+                >
+                  <option value="all">全部部门</option>
+                  {departments.map(dept => (
+                    <option key={dept} value={dept}>{dept}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="w-px h-8 bg-gray-200 mx-1" />
               {isAdmin && (
                 <button
                   onClick={generateMonthlyRecords}
-                  className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 text-sm"
+                  className="btn btn-success text-sm"
                 >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                  </svg>
                   生成月租记录
                 </button>
               )}
               <button
                 onClick={exportToCSV}
-                className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"
+                className="btn btn-primary text-sm"
               >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
                 导出CSV
               </button>
             </div>
           </div>
         </div>
-        
+
+        {/* 汇总统计卡片 */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-          <div className="bg-white rounded-lg shadow p-4">
-            <p className="text-sm text-gray-600">本月租金总额</p>
-            <p className="text-2xl font-bold text-blue-600">¥{totalRent.toFixed(2)}</p>
+          <div className="stat-card">
+            <div className="flex items-center gap-3">
+              <div className="stat-icon bg-blue-50 text-blue-600">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
+                </svg>
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs text-gray-500 font-medium">本月租金总额</p>
+                <p className="text-2xl font-bold text-blue-600">¥{totalRent.toFixed(2)}</p>
+              </div>
+            </div>
           </div>
-          <div className="bg-white rounded-lg shadow p-4">
-            <p className="text-sm text-gray-600">已收取</p>
-            <p className="text-2xl font-bold text-green-600">¥{paidRent.toFixed(2)}</p>
+          <div className="stat-card">
+            <div className="flex items-center gap-3">
+              <div className="stat-icon bg-green-50 text-green-600">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs text-gray-500 font-medium">已收取</p>
+                <p className="text-2xl font-bold text-green-600">¥{paidRent.toFixed(2)}</p>
+              </div>
+            </div>
           </div>
-          <div className="bg-white rounded-lg shadow p-4">
-            <p className="text-sm text-gray-600">待收取</p>
-            <p className="text-2xl font-bold text-yellow-600">¥{unpaidRent.toFixed(2)}</p>
+          <div className="stat-card">
+            <div className="flex items-center gap-3">
+              <div className="stat-icon bg-yellow-50 text-yellow-600">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs text-gray-500 font-medium">待收取</p>
+                <p className="text-2xl font-bold text-yellow-600">¥{unpaidRent.toFixed(2)}</p>
+              </div>
+            </div>
           </div>
         </div>
-        
-        <div className="bg-white rounded-lg shadow overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="min-w-full">
-              <thead className="bg-gray-50">
+
+        {/* 月租记录表格 */}
+        <div className="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>资产编码</th>
+                <th>部门</th>
+                <th>使用人</th>
+                <th className="text-right">月租费</th>
+                <th>状态</th>
+                <th>缴费日期</th>
+                {isAdmin && <th className="text-center">操作</th>}
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
                 <tr>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">资产编码</th>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">部门</th>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">使用人</th>
-                  <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">月租费</th>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">状态</th>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">缴费日期</th>
-                  {isAdmin && (
-                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">操作</th>
-                  )}
+                  <td colSpan={isAdmin ? 7 : 6} className="px-4 py-12 text-center">
+                    <div className="flex flex-col items-center gap-3">
+                      <div className="spinner" />
+                      <span className="text-gray-500 text-sm">加载中...</span>
+                    </div>
+                  </td>
                 </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {loading ? (
-                  <tr>
-                    <td colSpan={isAdmin ? 7 : 6} className="px-4 py-8 text-center text-gray-500">
-                      加载中...
+              ) : rentRecords.length === 0 ? (
+                <tr>
+                  <td colSpan={isAdmin ? 7 : 6} className="px-4 py-12 text-center">
+                    <div className="flex flex-col items-center gap-2">
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                      </svg>
+                      <span className="text-gray-400 text-sm">暂无月租记录</span>
+                      <span className="text-gray-300 text-xs">请选择查询条件或点击「生成月租记录」</span>
+                    </div>
+                  </td>
+                </tr>
+              ) : (
+                rentRecords.map(record => (
+                  <tr key={record.id} className="hover:bg-gray-50 transition-colors">
+                    <td>
+                      <span className="text-sm font-medium text-blue-600">{record.asset_code}</span>
                     </td>
-                  </tr>
-                ) : rentRecords.length === 0 ? (
-                  <tr>
-                    <td colSpan={isAdmin ? 7 : 6} className="px-4 py-8 text-center text-gray-500">
-                      暂无月租记录
+                    <td>
+                      <span className="text-sm">{record.department}</span>
                     </td>
-                  </tr>
-                ) : (
-                  rentRecords.map(record => (
-                    <tr key={record.id}>
-                      <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{record.asset_code}</td>
-                      <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{record.department}</td>
-                      <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{formatUserIdentifier(record.user_name)}</td>
-                      <td className="px-4 py-3 whitespace-nowrap text-sm text-right font-medium text-blue-600">¥{record.monthly_rent}</td>
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${record.status === 'paid' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
-                          {record.status === 'paid' ? '已缴' : '未缴'}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
+                    <td>
+                      <span className="text-sm font-medium">{formatUserIdentifier(record.user_name)}</span>
+                    </td>
+                    <td className="text-right">
+                      <span className="text-sm font-semibold text-blue-600">¥{record.monthly_rent}</span>
+                    </td>
+                    <td>
+                      <span className={`badge ${record.status === 'paid' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                        <span className={`w-1.5 h-1.5 rounded-full inline-block mr-1.5 ${record.status === 'paid' ? 'bg-green-500' : 'bg-yellow-500'}`} />
+                        {record.status === 'paid' ? '已缴' : '未缴'}
+                      </span>
+                    </td>
+                    <td>
+                      <span className="text-sm text-gray-500">
                         {record.paid_date ? new Date(record.paid_date).toLocaleDateString() : '-'}
+                      </span>
+                    </td>
+                    {isAdmin && (
+                      <td className="text-center">
+                        {record.status === 'unpaid' ? (
+                          <button
+                            onClick={() => markAsPaid(record.id)}
+                            className="btn btn-success text-xs !px-3 !py-1"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                            </svg>
+                            标记已缴
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => markAsUnpaid(record.id)}
+                            className="btn btn-ghost text-yellow-600 hover:text-yellow-700 hover:bg-yellow-50 text-xs !px-3 !py-1"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                            标记未缴
+                          </button>
+                        )}
                       </td>
-                      {isAdmin && (
-                        <td className="px-4 py-3 whitespace-nowrap">
-                          {record.status === 'unpaid' ? (
-                            <button
-                              onClick={() => markAsPaid(record.id)}
-                              className="px-3 py-1 text-sm bg-green-600 text-white rounded hover:bg-green-700"
-                            >
-                              标记已缴
-                            </button>
-                          ) : (
-                            <button
-                              onClick={() => markAsUnpaid(record.id)}
-                              className="px-3 py-1 text-sm bg-yellow-600 text-white rounded hover:bg-yellow-700"
-                            >
-                              标记未缴
-                            </button>
-                          )}
-                        </td>
-                      )}
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+                    )}
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
         </div>
-      </div>
+
+        {!loading && rentRecords.length > 0 && (
+          <div className="mt-4 text-sm text-gray-400 text-center">
+            共 {rentRecords.length} 条记录
+          </div>
+        )}
+      </main>
     </div>
   )
 }
