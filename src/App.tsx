@@ -1,6 +1,7 @@
 import { BrowserRouter, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import React, { createContext, useContext, useState, useEffect } from 'react'
-import { supabase } from './lib/supabase'
+import { Toaster } from 'react-hot-toast'
+import { supabase, type User } from './lib/supabase'
 import Index from './pages/Index'
 import AssetDetail from './pages/AssetDetail'
 import Login from './pages/Login'
@@ -11,18 +12,9 @@ import Users from './pages/Users'
 import ChangePassword from './pages/ChangePassword'
 import NotFound from './pages/NotFound'
 
-// 格式化用户标识用于显示：手机号用户显示手机号，邮箱用户显示邮箱
-export function formatUserIdentifier(email: string | undefined): string {
-  if (!email) return ''
-  if (email.endsWith('@phone.local')) {
-    return email.replace('@phone.local', '')
-  }
-  return email
-}
-
 // 简化的AuthProvider，不使用Supabase
 interface AuthContextType {
-  user: any
+  user: User | null
   loading: boolean
   signIn: (emailOrPhone: string, password: string) => Promise<void>
   signUp: (emailOrPhone: string, password: string) => Promise<void>
@@ -269,6 +261,7 @@ function URLHandler() {
 export default function App() {
   return (
     <AuthProvider>
+      <Toaster position="top-center" toastOptions={{ duration: 3000 }} />
       <BrowserRouter>
         <URLHandler />
         <Routes>
