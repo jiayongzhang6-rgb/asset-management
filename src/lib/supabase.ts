@@ -245,7 +245,7 @@ export function getBeijingTime(utcStr: string): string {
 
 // ===== 数据库初始化 =====
 const DB_VERSION_KEY = 'db_schema_version'
-const CURRENT_DB_VERSION = 2
+const CURRENT_DB_VERSION = 3
 
 async function ensureColumn(table: string, column: string, definition: string): Promise<boolean> {
   const { data: cols } = await supabase
@@ -389,10 +389,9 @@ export const initDatabase = async () => {
     await ensureTable(table, sql)
   }
 
-  // 迁移：给 assets 表添加 category 列（version 2）
-  if (savedVersion < 2) {
-    await ensureColumn('assets', 'category', 'category VARCHAR(50) DEFAULT \'\'')
-  }
+  // 迁移：给 assets 表添加 category 列（version 2 & 3）
+  // 每次启动都尝试确保列存在（不依赖 savedVersion 判断，强制检查）
+  await ensureColumn('assets', 'category', 'category VARCHAR(50) DEFAULT \'\'')
 
   localStorage.setItem(DB_VERSION_KEY, String(CURRENT_DB_VERSION))
   console.log('Database initialization completed (version:', CURRENT_DB_VERSION, ')')

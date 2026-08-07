@@ -332,10 +332,14 @@ export default function Index() {
   const handleAddSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     try {
-      const assetData = {
+      const assetData: Record<string, any> = {
         ...formData,
         monthly_rent: formData.monthly_rent ? parseFloat(formData.monthly_rent) : 0,
         asset_code: generateAssetCode(assets.length)
+      }
+      // 如果 category 为空，删除该字段避免列不存在报错
+      if (!assetData.category) {
+        delete assetData.category
       }
       console.log('Index: Creating asset with data:', assetData)
       const { data, error } = await supabase.from('assets').insert(assetData).select()
@@ -375,6 +379,11 @@ export default function Index() {
         if ('monthly_rent' in updateData) {
           const rentValue = parseFloat(updateData.monthly_rent)
           updateData.monthly_rent = isNaN(rentValue) ? 0 : rentValue
+        }
+
+        // 如果 category 为空字符串，删除该字段避免列不存在报错
+        if (updateData.category !== undefined && updateData.category === '') {
+          delete updateData.category
         }
 
         console.log('Index: Updating asset with data:', updateData)

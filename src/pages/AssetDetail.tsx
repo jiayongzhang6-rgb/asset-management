@@ -228,6 +228,11 @@ export default function AssetDetail() {
       const rentValue = parseFloat(updateData.monthly_rent)
       updateData.monthly_rent = isNaN(rentValue) ? 0 : rentValue
     }
+
+    // 如果 category 为空字符串，删除该字段避免列不存在报错
+    if (updateData.category !== undefined && updateData.category === '') {
+      delete updateData.category
+    }
     
     const changes = []
     if (updateData.brand && updateData.brand !== asset.brand) changes.push(`品牌: ${asset.brand || '无'} → ${updateData.brand || '无'}`)
