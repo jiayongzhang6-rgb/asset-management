@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "include": ["/*"],
+  "exclude": [
+    "/.env",
+    "/.env/*",
+    "/.git",
+    "/.git/*",
+    "/config.js",
+    "/package.json",
+    "/config.json"
+  ],
+  "fallback": {
+    "file": "/index.html"
+  }
+}
