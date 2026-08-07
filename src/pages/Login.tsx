@@ -82,22 +82,27 @@ export default function Login() {
         )}
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-gray-700 mb-2">手机号</label>
+            <label className="block text-gray-700 mb-2">
+              {isSignUp ? '手机号' : '手机号 / 邮箱'}
+            </label>
             <input
-              type="tel"
+              type={isSignUp ? "tel" : "text"}
               className="w-full px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="请输入11位手机号"
+              placeholder={isSignUp ? "请输入11位手机号" : "请输入手机号或邮箱"}
               value={phone}
               onChange={(e) => {
-                // 只允许输入数字，最多11位
-                const value = e.target.value.replace(/\D/g, '').slice(0, 11)
-                setPhone(value)
+                if (isSignUp) {
+                  // 注册时只允许输入数字，最多11位
+                  const value = e.target.value.replace(/\D/g, '').slice(0, 11)
+                  setPhone(value)
+                } else {
+                  // 登录时允许手机号或邮箱
+                  setPhone(e.target.value)
+                }
               }}
               required
               disabled={isLoading}
-              pattern="\d{11}"
-              maxLength={11}
-              minLength={11}
+              {...(isSignUp ? { pattern: "\\d{11}", maxLength: 11, minLength: 11 } : {})}
             />
           </div>
           {!isForgotPassword && (
