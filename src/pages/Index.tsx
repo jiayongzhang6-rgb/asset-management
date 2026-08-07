@@ -1,12 +1,16 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { useAuth, formatUserIdentifier } from '../App'
-import { supabase, type Asset, type AssetCategory, initDatabase } from '../lib/supabase'
+import { useAuth } from '../App'
+import toast from 'react-hot-toast'
+import * as XLSX from 'xlsx'
+import { supabase, type Asset, initDatabase, formatUserIdentifier, formatMemory, formatStorage, getStatusText, getStatusColor, recordAllHistory, generateAssetCode } from '../lib/supabase'
 import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js'
 import { Pie } from 'react-chartjs-2'
 
 // 注册 Chart.js 组件
 ChartJS.register(ArcElement, Tooltip, Legend)
+
+const categories = ['笔记本', '台式机', '显示器', '外设', '服务器', '网络设备', '其他']
 
 export default function Index() {
   const navigate = useNavigate()
@@ -18,7 +22,7 @@ export default function Index() {
   const [selectedIds, setSelectedIds] = useState<(string | number)[]>([])
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
-  const [editingAsset, setEditingAsset] = useState(null)
+  const [editingAsset, setEditingAsset] = useState<Asset | null>(null)
   const [isBatchStatusDialogOpen, setIsBatchStatusDialogOpen] = useState(false)
   const [batchStatus, setBatchStatus] = useState('active')
   const [rentStats, setRentStats] = useState({
@@ -32,6 +36,7 @@ export default function Index() {
     storage: '',
     gpu: '',
     os: '',
+    category: '',
     department: '',
     user_name: '',
     location: '',
@@ -44,41 +49,59 @@ export default function Index() {
   const [pageSize, setPageSize] = useState(50) // 默认50条一页
   const [totalAssets, setTotalAssets] = useState(0)
   // 筛选相关状态
-  const [statusFilter, setStatusFilter] = useState('all') // all, active, idle, maintenance
+  const [statusFilter, setStatusFilter] = useState('all') // all, active, idle, maintenance, retired
   const [departmentFilter, setDepartmentFilter] = useState('all')
+  // 高级筛选
+  const [showAdvancedSearch, setShowAdvancedSearch] = useState(false)
+  const [advancedFilters, setAdvancedFilters] = useState({
+    category: '',
+    brand: '',
+    minMemory: '',
+    minStorage: ''
+  })
   // 全部资产数据（用于汇总统计）
   const [allAssets, setAllAssets] = useState<Asset[]>([])
   // 所有部门列表（不受筛选影响）
   const [departments, setDepartments] = useState<string[]>([])
-  
+  // 所有分类列表（不受筛选影响）
+  const [categoriesFilter, setCategoriesFilter] = useState<string[]>([])
+
   // 计算资产状态分布数据
   const getStatusDistribution = () => {
     const statusCounts = allAssets.reduce((acc, asset) => {
       acc[asset.status] = (acc[asset.status] || 0) + 1
       return acc
     }, {} as Record<string, number>)
-    
+
+    const labels: string[] = []
+    const data: number[] = []
+    const colors: string[] = []
+
+    const colorMap: Record<string, string> = {
+      active: '#22c55e',
+      idle: '#f59e0b',
+      maintenance: '#ef4444',
+      retired: '#9ca3af'
+    }
+
+    Object.entries(statusCounts).forEach(([status, count]) => {
+      labels.push(getStatusText(status))
+      data.push(count)
+      colors.push(colorMap[status] || '#6b7280')
+    })
+
     return {
-      labels: Object.keys(statusCounts).map(status => 
-        status === 'active' ? '使用中' : 
-        status === 'idle' ? '闲置' : '维修中'
-      ),
+      labels,
       datasets: [
         {
-          data: Object.values(statusCounts),
-          backgroundColor: [
-            '#22c55e', // 绿色 - 使用中
-            '#f59e0b', // 黄色 - 闲置
-            '#ef4444', // 红色 - 维修中
-          ],
+          data,
+          backgroundColor: colors,
           borderWidth: 1,
         },
       ],
     }
   }
-  
 
-  
   const chartOptions = {
     responsive: true,
     plugins: {
@@ -104,16 +127,26 @@ export default function Index() {
     initDatabase()
   }, [])
 
-  // 获取所有部门列表（不受筛选影响）
-  const fetchDepartments = async () => {
+  // 获取所有部门列表和分类列表（不受筛选影响）
+  const fetchDepartmentsAndCategories = async () => {
     try {
-      const { data } = await supabase
+      // 获取部门
+      const { data: deptData } = await supabase
         .from('assets')
         .select('department')
         .not('department', 'is', null)
         .not('department', 'eq', '')
-      const uniqueDepartments = [...new Set((data || []).map(a => a.department))].filter(d => d)
+      const uniqueDepartments = [...new Set((deptData || []).map(a => a.department))].filter(d => d)
       setDepartments(uniqueDepartments)
+
+      // 获取分类
+      const { data: catData } = await supabase
+        .from('assets')
+        .select('category')
+        .not('category', 'is', null)
+        .not('category', 'eq', '')
+      const uniqueCategories = [...new Set((catData || []).map(a => a.category))].filter(c => c)
+      setCategoriesFilter(uniqueCategories)
     } catch (error) {
       console.error('Error fetching departments:', error)
     }
@@ -135,14 +168,38 @@ export default function Index() {
       if (departmentFilter !== 'all') {
         allQuery = allQuery.eq('department', departmentFilter)
       }
+      if (advancedFilters.category) {
+        allQuery = allQuery.eq('category', advancedFilters.category)
+      }
+      if (advancedFilters.brand) {
+        allQuery = allQuery.ilike('brand', `%${advancedFilters.brand}%`)
+      }
       const { data: allData } = await allQuery
-      setAllAssets(allData || [])
-      
+      let filteredAllData = allData || []
+
+      // 前端过滤内存和存储
+      if (advancedFilters.minMemory) {
+        const minMem = parseFloat(advancedFilters.minMemory)
+        if (!isNaN(minMem)) {
+          filteredAllData = filteredAllData.filter(a => {
+            const val = parseFloat(a.ram)
+            return !isNaN(val) && val >= minMem
+          })
+        }
+      }
+      if (advancedFilters.minStorage) {
+        const minStor = parseFloat(advancedFilters.minStorage)
+        if (!isNaN(minStor)) {
+          filteredAllData = filteredAllData.filter(a => {
+            const val = parseFloat(a.storage)
+            return !isNaN(val) && val >= minStor
+          })
+        }
+      }
+      setAllAssets(filteredAllData)
+
       // 2. 获取分页数据
-      // 计算偏移量
       const offset = (page - 1) * pageSize
-      
-      // 获取资产数据，带分页
       let query = supabase.from('assets').select('*', { count: 'exact' })
       if (searchTerm) {
         query = query.or(`asset_code.ilike.%${searchTerm}%,brand.ilike.%${searchTerm}%,model.ilike.%${searchTerm}%,department.ilike.%${searchTerm}%,user_name.ilike.%${searchTerm}%`)
@@ -153,17 +210,45 @@ export default function Index() {
       if (departmentFilter !== 'all') {
         query = query.eq('department', departmentFilter)
       }
+      if (advancedFilters.category) {
+        query = query.eq('category', advancedFilters.category)
+      }
+      if (advancedFilters.brand) {
+        query = query.ilike('brand', `%${advancedFilters.brand}%`)
+      }
       const { data, error, count } = await query.range(offset, offset + pageSize - 1)
       if (error) throw error
-      setAssets(data || [])
+
+      // 前端过滤内存和存储（分页数据）
+      let pageData = data || []
+      if (advancedFilters.minMemory) {
+        const minMem = parseFloat(advancedFilters.minMemory)
+        if (!isNaN(minMem)) {
+          pageData = pageData.filter(a => {
+            const val = parseFloat(a.ram)
+            return !isNaN(val) && val >= minMem
+          })
+        }
+      }
+      if (advancedFilters.minStorage) {
+        const minStor = parseFloat(advancedFilters.minStorage)
+        if (!isNaN(minStor)) {
+          pageData = pageData.filter(a => {
+            const val = parseFloat(a.storage)
+            return !isNaN(val) && val >= minStor
+          })
+        }
+      }
+
+      setAssets(pageData)
       setTotalAssets(count || 0)
-      console.log('Index: Assets fetched successfully', data)
+      console.log('Index: Assets fetched successfully', pageData)
     } catch (error) {
       console.error('Error fetching assets:', error)
     } finally {
       setLoading(false)
     }
-    
+
     // 单独获取累计已缴租金（不随筛选变化）
     try {
       const { data: allRecords } = await supabase
@@ -181,14 +266,12 @@ export default function Index() {
   }
 
   useEffect(() => {
-    fetchDepartments()
+    fetchDepartmentsAndCategories()
     fetchAssets()
   }, [])
 
   useEffect(() => {
-    // 添加防抖，避免频繁请求
     const timer = setTimeout(() => {
-      // 重置页码到第一页
       setPage(1)
       fetchAssets()
     }, 300)
@@ -197,7 +280,7 @@ export default function Index() {
 
   useEffect(() => {
     fetchAssets()
-  }, [page, pageSize, statusFilter, departmentFilter])
+  }, [page, pageSize, statusFilter, departmentFilter, advancedFilters])
 
   // 处理从详情页传来的编辑请求
   useEffect(() => {
@@ -209,8 +292,6 @@ export default function Index() {
       }
     }
   }, [location.state?.editAssetId, assets])
-
-  // 资产数据现在通过数据库查询直接过滤，不再需要前端过滤
 
   const handleSelectAll = (checked: boolean) => {
     if (checked) {
@@ -229,50 +310,6 @@ export default function Index() {
     }
   }
 
-  const generateAssetCode = () => {
-    const date = new Date()
-    const year = date.getFullYear()
-    const month = String(date.getMonth() + 1).padStart(2, '0')
-    const count = String(assets.length + 1).padStart(3, '0')
-    return `PC-${year}-${month}-${count}`
-  }
-
-  // 格式化内存显示
-  const formatMemory = (memory: string) => {
-    try {
-      const num = parseFloat(memory)
-      if (!isNaN(num)) {
-        // 四舍五入到最近的整数
-        const rounded = Math.round(num)
-        return `${rounded}GB`
-      }
-    } catch (error) {
-      console.error('Error formatting memory:', error)
-    }
-    return memory
-  }
-
-  // 格式化存储显示
-  const formatStorage = (storage: string) => {
-    try {
-      const num = parseFloat(storage)
-      if (!isNaN(num)) {
-        // 四舍五入到最近的整数
-        const rounded = Math.round(num)
-        if (rounded >= 1000) {
-          // 大于等于1000GB显示为TB
-          return `${(rounded / 1000).toFixed(1)}TB`
-        } else {
-          // 小于1000GB显示为GB
-          return `${rounded}GB`
-        }
-      }
-    } catch (error) {
-      console.error('Error formatting storage:', error)
-    }
-    return storage
-  }
-
   const resetForm = () => {
     setFormData({
       brand: '',
@@ -282,6 +319,7 @@ export default function Index() {
       storage: '',
       gpu: '',
       os: '',
+      category: '',
       department: '',
       user_name: '',
       location: '',
@@ -297,63 +335,25 @@ export default function Index() {
       const assetData = {
         ...formData,
         monthly_rent: formData.monthly_rent ? parseFloat(formData.monthly_rent) : 0,
-        asset_code: generateAssetCode()
+        asset_code: generateAssetCode(assets.length)
       }
       console.log('Index: Creating asset with data:', assetData)
       const { data, error } = await supabase.from('assets').insert(assetData).select()
       if (error) throw error
       console.log('Index: Asset created successfully:', data)
-      
+
       // 记录操作历史
       if (user && data && data.length > 0) {
-        console.log('Index: Recording operation history for create')
-        try {
-          // 使用资产编码作为唯一标识
-          const historyData = {
-            asset_code: data[0].asset_code,
-            operation_type: 'create',
-            user_email: user.email,
-            created_at: new Date().toISOString()
-          }
-          console.log('Index: Inserting operation history with data:', historyData)
-          
-          // 尝试插入操作历史
-          const { data: historyResult, error: historyError } = await supabase.from('operation_history').insert(historyData)
-          
-          if (historyError) {
-            console.error('Index: Error recording operation history:', historyError)
-          }
-        } catch (historyError) {
-          console.error('Index: Exception recording operation history:', historyError)
-        }
-        
-        // 记录使用历史到 usage_history（独立保存，不受操作历史删除影响）
-        try {
-          const usageHistoryData = {
-            asset_code: data[0].asset_code,
-            operation_type: 'create',
-            user_email: user.email
-          }
-          console.log('Index: Inserting usage history:', usageHistoryData)
-          const { error: usageError } = await supabase.from('usage_history').insert(usageHistoryData)
-          if (usageError) {
-            console.error('Index: Error recording usage history:', usageError)
-            alert(`写入使用历史失败: ${usageError.message}`)
-          } else {
-            console.log('Index: Usage history recorded successfully')
-          }
-        } catch (usageError) {
-          console.error('Index: Exception recording usage history:', usageError)
-        }
+        await recordAllHistory(data[0].asset_code, 'create', user.email)
       }
-      
+
       await fetchAssets()
       setIsAddDialogOpen(false)
       resetForm()
-      alert('资产添加成功')
+      toast.success('资产添加成功')
     } catch (error) {
       console.error('Error adding asset:', error)
-      alert('资产添加失败')
+      toast.error('资产添加失败')
     }
   }
 
@@ -376,7 +376,7 @@ export default function Index() {
           const rentValue = parseFloat(updateData.monthly_rent)
           updateData.monthly_rent = isNaN(rentValue) ? 0 : rentValue
         }
-        
+
         console.log('Index: Updating asset with data:', updateData)
         const { data, error } = await supabase
           .from('assets')
@@ -387,171 +387,79 @@ export default function Index() {
           .eq('asset_code', editingAsset.asset_code)
         if (error) throw error
         console.log('Index: Asset updated successfully')
-        
+
         // 记录操作历史
         if (user) {
-          console.log('Index: Recording operation history for update')
-          try {
-            // 使用资产编码作为唯一标识
-            const historyData = {
-              asset_code: editingAsset.asset_code,
-              operation_type: 'update',
-              user_email: user.email,
-              created_at: new Date().toISOString()
-            }
-            console.log('Index: Inserting operation history with data:', historyData)
-            
-            // 尝试插入操作历史
-            const { data: historyResult, error: historyError } = await supabase.from('operation_history').insert(historyData)
-            
-            if (historyError) {
-              console.error('Index: Error recording operation history:', historyError)
-            }
-          } catch (historyError) {
-            console.error('Index: Exception recording operation history:', historyError)
-          }
-          
-          // 记录使用历史到 usage_history（独立保存，不受操作历史删除影响）
-          try {
-            const usageHistoryData = {
-              asset_code: editingAsset.asset_code,
-              operation_type: 'update',
-              user_email: user.email
-            }
-            console.log('Index: Inserting usage history:', usageHistoryData)
-            const { error: usageError } = await supabase.from('usage_history').insert(usageHistoryData)
-            if (usageError) {
-              console.error('Index: Error recording usage history:', usageError)
-              alert(`写入使用历史失败: ${usageError.message}`)
-            } else {
-              console.log('Index: Usage history recorded successfully')
-            }
-          } catch (usageError) {
-            console.error('Index: Exception recording usage history:', usageError)
-          }
+          await recordAllHistory(editingAsset.asset_code, 'update', user.email)
         }
-        
+
         await fetchAssets()
         setIsEditDialogOpen(false)
         setEditingAsset(null)
         resetForm()
-        alert('资产更新成功')
+        toast.success('资产更新成功')
       } catch (error: any) {
         console.error('Error updating asset:', error)
-        alert(`资产更新失败: ${error?.message || JSON.stringify(error)}`)
+        toast.error(`资产更新失败: ${error?.message || JSON.stringify(error)}`)
       }
     }
   }
 
-  const handleEdit = (asset: any) => {
+  const handleEdit = (asset: Asset) => {
     setEditingAsset(asset)
     // 权限控制：普通用户只能修改使用人、位置、部门等信息
-    if (user && user.role !== 'admin') {
-      setFormData({
-        brand: asset.brand || '',
-        model: asset.model || '',
-        cpu: asset.cpu || '',
-        ram: asset.ram || '',
-        storage: asset.storage || '',
-        gpu: asset.gpu || '',
-        os: asset.os || '',
-        department: asset.department || '',
-        user_name: asset.user_name || '',
-        location: asset.location || '',
-        status: asset.status || 'active',
-        notes: asset.notes || '',
-        monthly_rent: asset.monthly_rent != null ? String(asset.monthly_rent) : ''
-      })
-    } else {
-      setFormData({
-        brand: asset.brand || '',
-        model: asset.model || '',
-        cpu: asset.cpu || '',
-        ram: asset.ram || '',
-        storage: asset.storage || '',
-        gpu: asset.gpu || '',
-        os: asset.os || '',
-        department: asset.department || '',
-        user_name: asset.user_name || '',
-        location: asset.location || '',
-        status: asset.status || 'active',
-        notes: asset.notes || '',
-        monthly_rent: asset.monthly_rent != null ? String(asset.monthly_rent) : ''
-      })
+    const commonFields = {
+      brand: asset.brand || '',
+      model: asset.model || '',
+      cpu: asset.cpu || '',
+      ram: asset.ram || '',
+      storage: asset.storage || '',
+      gpu: asset.gpu || '',
+      os: asset.os || '',
+      category: asset.category || '',
+      department: asset.department || '',
+      user_name: asset.user_name || '',
+      location: asset.location || '',
+      status: asset.status || 'active',
+      notes: asset.notes || '',
+      monthly_rent: asset.monthly_rent != null ? String(asset.monthly_rent) : ''
     }
+    setFormData(commonFields)
     setIsEditDialogOpen(true)
   }
 
   const handleDelete = async (id: string | number) => {
     // 权限控制：只有管理员可以删除资产
     if (user && user.role !== 'admin') {
-      alert('只有管理员可以删除资产')
+      toast.error('只有管理员可以删除资产')
       return
     }
-    
-    if (confirm('确定要删除这个资产吗？')) {
+
+    if (window.confirm('确定要删除这个资产吗？')) {
       try {
         // 获取要删除的资产信息
         const { data: asset, error: getError } = await supabase.from('assets').select('*').eq('id', id).single()
         if (getError) throw getError
-        
+
         // 先删除相关的维护记录
         await supabase.from('maintenance_records').delete().eq('asset_id', id)
-        
+
         // 先删除相关的图片记录
         await supabase.from('asset_images').delete().eq('asset_code', asset.asset_code)
-        
+
         const { data, error } = await supabase.from('assets').delete().eq('asset_code', asset.asset_code)
         if (error) throw error
-        
+
         // 记录操作历史
         if (user) {
-          console.log('Index: Recording operation history for delete')
-          try {
-            // 使用资产编码作为唯一标识
-            const historyData = {
-              asset_code: asset.asset_code,
-              operation_type: 'delete',
-              user_email: user.email,
-              created_at: new Date().toISOString()
-            }
-            console.log('Index: Inserting operation history with data:', historyData)
-            
-            // 尝试插入操作历史
-            const { data: historyResult, error: historyError } = await supabase.from('operation_history').insert(historyData)
-            
-            if (historyError) {
-              console.error('Index: Error recording operation history:', historyError)
-            }
-          } catch (historyError) {
-            console.error('Index: Exception recording operation history:', historyError)
-          }
-          
-          // 记录使用历史到 usage_history（独立保存，不受操作历史删除影响）
-          try {
-            const usageHistoryData = {
-              asset_code: asset.asset_code,
-              operation_type: 'delete',
-              user_email: user.email
-            }
-            console.log('Index: Inserting usage history:', usageHistoryData)
-            const { error: usageError } = await supabase.from('usage_history').insert(usageHistoryData)
-            if (usageError) {
-              console.error('Index: Error recording usage history:', usageError)
-              alert(`写入使用历史失败: ${usageError.message}`)
-            } else {
-              console.log('Index: Usage history recorded successfully')
-            }
-          } catch (usageError) {
-            console.error('Index: Exception recording usage history:', usageError)
-          }
+          await recordAllHistory(asset.asset_code, 'delete', user.email)
         }
-        
+
         await fetchAssets()
-        alert('资产删除成功')
+        toast.success('资产删除成功')
       } catch (error) {
         console.error('Error deleting asset:', error)
-        alert('资产删除失败')
+        toast.error('资产删除失败')
       }
     }
   }
@@ -559,85 +467,54 @@ export default function Index() {
   const handleBatchDelete = async () => {
     // 权限控制：只有管理员可以批量删除资产
     if (user && user.role !== 'admin') {
-      alert('只有管理员可以批量删除资产')
+      toast.error('只有管理员可以批量删除资产')
       return
     }
-    
+
     if (selectedIds.length === 0) {
-      alert('请选择要删除的资产')
+      toast.error('请选择要删除的资产')
       return
     }
-    if (confirm(`确定要删除选中的 ${selectedIds.length} 个资产吗？`)) {
+    if (window.confirm(`确定要删除选中的 ${selectedIds.length} 个资产吗？`)) {
       try {
         for (const id of selectedIds) {
           // 获取要删除的资产信息
           const { data: asset, error: getError } = await supabase.from('assets').select('*').eq('id', id).single()
           if (getError) throw getError
-          
+
           // 先删除相关的维护记录
           await supabase.from('maintenance_records').delete().eq('asset_id', id)
-          
+
           // 先删除相关的图片记录
           await supabase.from('asset_images').delete().eq('asset_code', asset.asset_code)
-          
+
           const { data, error } = await supabase.from('assets').delete().eq('asset_code', asset.asset_code)
           if (error) throw error
-          
+
           // 记录操作历史
           if (user) {
-            try {
-              // 使用资产编码作为唯一标识
-              const historyData = {
-                asset_code: asset.asset_code,
-                operation_type: 'delete',
-                user_email: user.email,
-                created_at: new Date().toISOString()
-              }
-              
-              // 尝试插入操作历史
-              await supabase.from('operation_history').insert(historyData)
-            } catch (historyError) {
-              console.error('Index: Error recording operation history for delete:', historyError)
-            }
-            
-            // 记录使用历史到 usage_history（独立保存，不受操作历史删除影响）
-            try {
-              const usageHistoryData = {
-                asset_code: asset.asset_code,
-                operation_type: 'delete',
-                user_email: user.email
-              }
-              console.log('Index: Inserting usage history:', usageHistoryData)
-              const { error: usageError } = await supabase.from('usage_history').insert(usageHistoryData)
-              if (usageError) {
-                console.error('Index: Error recording usage history:', usageError)
-              } else {
-                console.log('Index: Usage history recorded successfully')
-              }
-            } catch (usageError) {
-              console.error('Index: Exception recording usage history:', usageError)
-            }
+            await recordAllHistory(asset.asset_code, 'delete', user.email)
           }
         }
-        
+
         await fetchAssets()
         setSelectedIds([])
-        alert('资产批量删除成功')
+        toast.success('资产批量删除成功')
       } catch (error) {
         console.error('Error batch deleting assets:', error)
-        alert('资产批量删除失败')
+        toast.error('资产批量删除失败')
       }
     }
   }
 
   const handleBatchExportQR = async () => {
     if (user && user.role !== 'admin') {
-      alert('只有管理员可以批量导出二维码')
+      toast.error('只有管理员可以批量导出二维码')
       return
     }
 
     if (selectedIds.length === 0) {
-      alert('请选择要导出二维码的资产')
+      toast.error('请选择要导出二维码的资产')
       return
     }
     try {
@@ -732,87 +609,127 @@ export default function Index() {
       a.click()
       document.body.removeChild(a)
       URL.revokeObjectURL(url)
-      
-      alert('二维码导出成功')
+
+      toast.success('二维码导出成功')
     } catch (error) {
       console.error('Error exporting QR codes:', error)
-      alert(`二维码导出失败: ${error}`)
+      toast.error(`二维码导出失败: ${error}`)
     }
   }
 
-  // 批量导出设备数据
+  // 批量导出设备数据（Excel）
   const handleBatchExportDevices = async () => {
     // 权限控制：只有管理员可以批量导出设备
     if (user && user.role !== 'admin') {
-      alert('只有管理员可以批量导出设备')
+      toast.error('只有管理员可以批量导出设备')
       return
     }
-    
+
     if (selectedIds.length === 0) {
-      alert('请选择要导出的设备')
+      toast.error('请选择要导出的设备')
       return
     }
-    
+
     try {
       console.log('Index: Starting batch device export for', selectedIds.length, 'assets')
-      
+
       // 筛选出选中的资产
       const selectedAssets = assets.filter(asset => selectedIds.includes(asset.id))
-      
+
       if (selectedAssets.length === 0) {
-        alert('没有找到可导出的设备')
+        toast.error('没有找到可导出的设备')
         return
       }
-      
-      // 生成CSV内容
-      const headers = ['资产编码', '品牌', '型号', 'CPU', '内存', '存储', '显卡', '操作系统', '部门', '使用人', '位置', '状态', '月租费', '备注']
-      const csvContent = [
-        headers.join(','),
-        ...selectedAssets.map(asset => [
-          asset.asset_code,
-          asset.brand,
-          asset.model,
-          asset.cpu,
-          formatMemory(asset.ram),
-          formatStorage(asset.storage),
-          asset.gpu || '-',
-          asset.os,
-          asset.department,
-          asset.user_name,
-          asset.location,
-          asset.status === 'active' ? '使用中' : asset.status === 'idle' ? '闲置' : '维修中',
-          asset.monthly_rent || 0,
-          asset.notes || ''
-        ].map(field => `"${field}"`).join(','))
-      ].join('\n')
-      
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `设备导出_${new Date().toISOString().split('T')[0]}.csv`
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      URL.revokeObjectURL(url)
-      
-      alert('设备导出成功')
+
+      // 使用 xlsx 库生成 Excel 文件
+      const headers = ['资产编码', '分类', '品牌', '型号', 'CPU', '内存', '存储', '显卡', '操作系统', '部门', '使用人', '位置', '状态', '月租费', '备注']
+      const data = selectedAssets.map(asset => [
+        asset.asset_code,
+        asset.category || '-',
+        asset.brand,
+        asset.model,
+        asset.cpu,
+        formatMemory(asset.ram),
+        formatStorage(asset.storage),
+        asset.gpu || '-',
+        asset.os,
+        asset.department,
+        asset.user_name,
+        asset.location,
+        getStatusText(asset.status),
+        asset.monthly_rent || 0,
+        asset.notes || ''
+      ])
+
+      const wb = XLSX.utils.book_new()
+      const ws = XLSX.utils.aoa_to_sheet([headers, ...data])
+      XLSX.utils.book_append_sheet(wb, ws, '设备导出')
+      const fileName = `设备导出_${new Date().toISOString().split('T')[0]}.xlsx`
+      XLSX.writeFile(wb, fileName)
+
+      toast.success('设备导出成功')
       console.log('Index: Batch device export completed successfully')
     } catch (error) {
       console.error('Error exporting devices:', error)
-      alert('设备导出失败')
+      toast.error('设备导出失败')
+    }
+  }
+
+  // 导出全部数据（仅管理员）
+  const handleExportAll = async () => {
+    if (user && user.role !== 'admin') {
+      toast.error('只有管理员可以导出全部数据')
+      return
+    }
+
+    try {
+      const { data: allData } = await supabase.from('assets').select('*')
+      if (!allData || allData.length === 0) {
+        toast.error('没有可导出的数据')
+        return
+      }
+
+      const headers = ['资产编码', '分类', '品牌', '型号', 'CPU', '内存', '存储', '显卡', '操作系统', '部门', '使用人', '位置', '状态', '月租费', '备注']
+      const rows = allData.map(asset => [
+        asset.asset_code,
+        asset.category || '-',
+        asset.brand,
+        asset.model,
+        asset.cpu,
+        formatMemory(asset.ram),
+        formatStorage(asset.storage),
+        asset.gpu || '-',
+        asset.os,
+        asset.department,
+        asset.user_name,
+        asset.location,
+        getStatusText(asset.status),
+        asset.monthly_rent || 0,
+        asset.notes || ''
+      ])
+
+      const wb = XLSX.utils.book_new()
+      const ws = XLSX.utils.aoa_to_sheet([headers, ...rows])
+      XLSX.utils.book_append_sheet(wb, ws, '全部资产')
+      const fileName = `全部资产导出_${new Date().toISOString().split('T')[0]}.xlsx`
+      XLSX.writeFile(wb, fileName)
+
+      toast.success(`成功导出 ${allData.length} 条资产数据`)
+    } catch (error) {
+      console.error('Error exporting all assets:', error)
+      toast.error('导出全部数据失败')
     }
   }
 
   // 批量修改使用状态
   const handleBatchEditStatus = async () => {
     if (selectedIds.length === 0) {
-      alert('请选择要修改状态的资产')
+      toast.error('请选择要修改状态的资产')
       return
     }
 
-    const statusText = batchStatus === 'active' ? '使用中' : batchStatus === 'idle' ? '闲置' : '维修中'
-    if (!confirm(`确定要将选中的 ${selectedIds.length} 个资产状态修改为「${statusText}」吗？`)) {
+    const statusText = getStatusText(batchStatus)
+    if (!window.confirm(`确定要将选中的 ${selectedIds.length} 个资产状态修改为「${statusText}」吗？`)) {
       return
     }
 
@@ -834,38 +751,19 @@ export default function Index() {
 
       // 记录操作历史
       if (user) {
+        const changes = `状态: ${getStatusText(selectedAssets[0]?.status || '')} → ${statusText}`
         for (const asset of selectedAssets) {
-          try {
-            await supabase.from('operation_history').insert({
-              asset_code: asset.asset_code,
-              operation_type: 'update',
-              user_email: user.email,
-              created_at: new Date().toISOString(),
-              changes: `状态: ${asset.status === 'active' ? '使用中' : asset.status === 'idle' ? '闲置' : '维修中'} → ${statusText}`
-            })
-          } catch (e) {
-            console.error('Error recording history:', e)
-          }
-          try {
-            await supabase.from('usage_history').insert({
-              asset_code: asset.asset_code,
-              operation_type: 'update',
-              user_email: user.email,
-              changes: `状态: ${asset.status === 'active' ? '使用中' : asset.status === 'idle' ? '闲置' : '维修中'} → ${statusText}`
-            })
-          } catch (e) {
-            console.error('Error recording usage history:', e)
-          }
+          await recordAllHistory(asset.asset_code, 'update', user.email, changes)
         }
       }
 
       await fetchAssets()
       setSelectedIds([])
       setIsBatchStatusDialogOpen(false)
-      alert(`成功修改 ${selectedAssets.length} 个资产的状态`)
+      toast.success(`成功修改 ${selectedAssets.length} 个资产的状态`)
     } catch (error: any) {
       console.error('Error batch updating status:', error)
-      alert(`批量修改状态失败: ${error?.message || JSON.stringify(error)}`)
+      toast.error(`批量修改状态失败: ${error?.message || JSON.stringify(error)}`)
     }
   }
 
@@ -886,35 +784,14 @@ export default function Index() {
 
       // 记录操作历史
       if (user) {
-        const statusText = newStatus === 'active' ? '使用中' : newStatus === 'idle' ? '闲置' : '维修中'
-        const oldStatusText = asset.status === 'active' ? '使用中' : asset.status === 'idle' ? '闲置' : '维修中'
-        try {
-          await supabase.from('operation_history').insert({
-            asset_code: asset.asset_code,
-            operation_type: 'update',
-            user_email: user.email,
-            created_at: new Date().toISOString(),
-            changes: `状态: ${oldStatusText} → ${statusText}`
-          })
-        } catch (e) {
-          console.error('Error recording history:', e)
-        }
-        try {
-          await supabase.from('usage_history').insert({
-            asset_code: asset.asset_code,
-            operation_type: 'update',
-            user_email: user.email,
-            changes: `状态: ${oldStatusText} → ${statusText}`
-          })
-        } catch (e) {
-          console.error('Error recording usage history:', e)
-        }
+        const changes = `状态: ${getStatusText(asset.status)} → ${getStatusText(newStatus)}`
+        await recordAllHistory(asset.asset_code, 'update', user.email, changes)
       }
 
       await fetchAssets()
     } catch (error: any) {
       console.error('Error quick status change:', error)
-      alert(`状态修改失败: ${error?.message || JSON.stringify(error)}`)
+      toast.error(`状态修改失败: ${error?.message || JSON.stringify(error)}`)
     }
   }
 
@@ -935,6 +812,29 @@ export default function Index() {
 
   return (
     <div className="min-h-screen bg-gray-100">
+      <style>{`
+        .main-content::after {
+          content: '德泽智联IT资产管理系统';
+          position: fixed;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          opacity: 0.15;
+          z-index: -1;
+          pointer-events: none;
+          transform: rotate(-30deg);
+          font-size: 120px;
+          font-weight: bold;
+          color: #059669;
+          text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.1);
+          white-space: nowrap;
+          background: transparent;
+        }
+      `}</style>
       <header className="bg-blue-600 text-white">
         <div className="container mx-auto px-4 py-3 flex items-center justify-between">
           <h1 className="text-2xl font-bold">德泽智联IT资产管理系统</h1>
@@ -947,6 +847,12 @@ export default function Index() {
                   className="bg-white text-blue-600 px-3 py-1 rounded text-sm font-medium hover:bg-blue-50"
                 >
                   批量导入
+                </button>
+                <button
+                  onClick={handleExportAll}
+                  className="bg-white text-blue-600 px-3 py-1 rounded text-sm font-medium hover:bg-blue-50"
+                >
+                  导出全部数据
                 </button>
                 <button
                   onClick={() => setIsAddDialogOpen(true)}
@@ -990,33 +896,7 @@ export default function Index() {
         </div>
       </header>
 
-      <main className="container mx-auto px-4 py-8" style={{ position: 'relative', minHeight: '80vh' }}>
-        {/* 水印 */}
-        <div style={{ 
-          position: 'fixed', 
-          top: '0', 
-          left: '0', 
-          right: '0', 
-          bottom: '0',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          opacity: 0.15, 
-          zIndex: -1,
-          pointerEvents: 'none',
-          background: 'transparent'
-        }}>
-          <div style={{ 
-            transform: 'rotate(-30deg)',
-            whiteSpace: 'nowrap',
-            fontSize: '120px',
-            fontWeight: 'bold',
-            color: '#059669',
-            textShadow: '2px 2px 4px rgba(0, 0, 0, 0.1)'
-          }}>
-            德泽智联IT资产管理系统
-          </div>
-        </div>
+      <main className="container mx-auto px-4 py-8 main-content" style={{ position: 'relative', minHeight: '80vh' }}>
         <div style={{ position: 'relative', zIndex: 1 }}>
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mb-6">
           <div className="bg-white rounded-lg shadow p-4">
@@ -1028,7 +908,7 @@ export default function Index() {
               </div>
               <div>
                 <p className="text-sm text-gray-600">资产总数</p>
-                <p className="text-2xl font-bold">{allAssets.length}</p>
+                <p className="text-2xl font-bold">{allAssets.filter(a => a.status !== 'retired').length}</p>
               </div>
             </div>
           </div>
@@ -1073,6 +953,19 @@ export default function Index() {
           </div>
           <div className="bg-white rounded-lg shadow p-4">
             <div className="flex items-center gap-3">
+              <div className="bg-gray-100 p-2 rounded-full">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+              </div>
+              <div>
+                <p className="text-sm text-gray-600">已报废</p>
+                <p className="text-2xl font-bold">{allAssets.filter(a => a.status === 'retired').length}</p>
+              </div>
+            </div>
+          </div>
+          <div className="bg-white rounded-lg shadow p-4">
+            <div className="flex items-center gap-3">
               <div className="bg-blue-100 p-2 rounded-full">
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -1099,8 +992,6 @@ export default function Index() {
           </div>
         </div>
 
-
-
         <div className="card mb-6">
           <div className="flex flex-col md:flex-row md:items-center gap-4 mb-4">
             <div className="relative flex-grow">
@@ -1112,7 +1003,7 @@ export default function Index() {
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
             </div>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap gap-2 items-center">
               <select
                 className="px-3 py-2 border rounded text-sm"
                 value={departmentFilter}
@@ -1132,7 +1023,14 @@ export default function Index() {
                 <option value="active">使用中</option>
                 <option value="idle">闲置</option>
                 <option value="maintenance">维修中</option>
+                <option value="retired">已报废</option>
               </select>
+              <button
+                onClick={() => setShowAdvancedSearch(!showAdvancedSearch)}
+                className={`px-3 py-2 border rounded text-sm ${showAdvancedSearch ? 'bg-blue-50 border-blue-300 text-blue-700' : 'bg-white text-gray-600'}`}
+              >
+                {showAdvancedSearch ? '收起高级筛选' : '高级筛选'}
+              </button>
               <div className="px-3 py-2 bg-blue-50 border border-blue-200 rounded text-sm">
                 <span className="text-gray-600">筛选月租合计:</span>
                 <span className="font-bold text-blue-600 ml-2">¥{allAssets.reduce((sum, a) => sum + (Number(a.monthly_rent) || 0), 0).toFixed(2)}</span>
@@ -1168,6 +1066,59 @@ export default function Index() {
             </div>
           </div>
 
+          {/* 高级筛选面板 */}
+          {showAdvancedSearch && (
+            <div className="mb-4 p-4 bg-gray-50 border border-gray-200 rounded-lg">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">分类</label>
+                  <select
+                    className="w-full px-3 py-2 border rounded text-sm"
+                    value={advancedFilters.category}
+                    onChange={(e) => setAdvancedFilters({ ...advancedFilters, category: e.target.value })}
+                  >
+                    <option value="">全部</option>
+                    {categoriesFilter.map(cat => (
+                      <option key={cat} value={cat}>{cat}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">品牌</label>
+                  <input
+                    type="text"
+                    className="w-full px-3 py-2 border rounded text-sm"
+                    placeholder="输入品牌"
+                    value={advancedFilters.brand}
+                    onChange={(e) => setAdvancedFilters({ ...advancedFilters, brand: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">内存 &gt;= (GB)</label>
+                  <input
+                    type="number"
+                    className="w-full px-3 py-2 border rounded text-sm"
+                    placeholder="如 16"
+                    value={advancedFilters.minMemory}
+                    onChange={(e) => setAdvancedFilters({ ...advancedFilters, minMemory: e.target.value })}
+                    min="0"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">存储 &gt;= (GB)</label>
+                  <input
+                    type="number"
+                    className="w-full px-3 py-2 border rounded text-sm"
+                    placeholder="如 256"
+                    value={advancedFilters.minStorage}
+                    onChange={(e) => setAdvancedFilters({ ...advancedFilters, minStorage: e.target.value })}
+                    min="0"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="overflow-x-auto" style={{ maxWidth: '80%', margin: '0 auto' }}>
             <table className="min-w-full">
               <thead className="bg-gray-50">
@@ -1181,6 +1132,7 @@ export default function Index() {
                     />
                   </th>
                   <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">资产编码</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">分类</th>
                   <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">CPU</th>
                   <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">内存</th>
                   <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">硬盘</th>
@@ -1197,13 +1149,13 @@ export default function Index() {
               <tbody className="divide-y divide-gray-200">
                 {loading ? (
                   <tr>
-                    <td colSpan={13} className="px-4 py-8 text-center">
+                    <td colSpan={14} className="px-4 py-8 text-center">
                       加载中...
                     </td>
                   </tr>
                 ) : assets.length === 0 ? (
                   <tr>
-                    <td colSpan={13} className="px-4 py-8 text-center">
+                    <td colSpan={14} className="px-4 py-8 text-center">
                       无资产数据
                     </td>
                   </tr>
@@ -1227,6 +1179,9 @@ export default function Index() {
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap">
                         <div className="text-sm font-medium text-blue-600">{asset.asset_code}</div>
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        <div className="text-sm text-gray-900">{asset.category || '-'}</div>
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap">
                         <div className="text-sm text-gray-900">{asset.cpu}</div>
@@ -1256,11 +1211,12 @@ export default function Index() {
                         <select
                           value={asset.status}
                           onChange={(e) => handleQuickStatusChange(asset, e.target.value)}
-                          className={`text-xs font-semibold rounded-full px-2 py-1 border-0 cursor-pointer ${asset.status === 'active' ? 'bg-green-100 text-green-800' : asset.status === 'idle' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'}`}
+                          className={`text-xs font-semibold rounded-full px-2 py-1 border-0 cursor-pointer ${getStatusColor(asset.status)}`}
                         >
                           <option value="active">使用中</option>
                           <option value="idle">闲置</option>
                           <option value="maintenance">维修中</option>
+                          <option value="retired">已报废</option>
                         </select>
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap">
@@ -1371,6 +1327,20 @@ export default function Index() {
                   />
                 </div>
                 <div>
+                  <label className="block text-sm font-medium text-secondary-700 mb-1">分类</label>
+                  <select
+                    className="input"
+                    value={formData.category}
+                    onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                    required
+                  >
+                    <option value="">请选择分类</option>
+                    {categories.map(cat => (
+                      <option key={cat} value={cat}>{cat}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
                   <label className="block text-sm font-medium text-secondary-700 mb-1">CPU</label>
                   <input
                     type="text"
@@ -1430,9 +1400,9 @@ export default function Index() {
                     <option value="active">使用中</option>
                     <option value="idle">闲置</option>
                     <option value="maintenance">维修中</option>
+                    <option value="retired">已报废</option>
                   </select>
                 </div>
-
                 <div>
                   <label className="block text-sm font-medium text-secondary-700 mb-1">部门</label>
                   <input
@@ -1546,6 +1516,20 @@ export default function Index() {
                       />
                     </div>
                     <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">分类</label>
+                      <select
+                        className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        value={formData.category}
+                        onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                        required
+                      >
+                        <option value="">请选择分类</option>
+                        {categories.map(cat => (
+                          <option key={cat} value={cat}>{cat}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">CPU</label>
                       <input
                         type="text"
@@ -1605,9 +1589,9 @@ export default function Index() {
                         <option value="active">使用中</option>
                         <option value="idle">闲置</option>
                         <option value="maintenance">维修中</option>
+                        <option value="retired">已报废</option>
                       </select>
                     </div>
-
                   </>
                 )}
                 <div>
@@ -1714,6 +1698,7 @@ export default function Index() {
                   <option value="active">使用中</option>
                   <option value="idle">闲置</option>
                   <option value="maintenance">维修中</option>
+                  <option value="retired">已报废</option>
                 </select>
               </div>
               <div className="flex justify-end gap-2">

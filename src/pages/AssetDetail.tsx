@@ -1,8 +1,8 @@
 ﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import React, { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '../App'
-import { supabase, type Asset, type MaintenanceRecord, type AssetImage, type UsageHistory } from '../lib/supabase'
-import { formatUserIdentifier } from '../App'
+import toast from 'react-hot-toast'
+import { supabase, type Asset, type MaintenanceRecord, type AssetImage, type UsageHistoryRecord, formatUserIdentifier, formatMemory, formatStorage, getStatusText, getStatusColor, getOperationTypeText, getOperationTypeColor, recordAllHistory, getBeijingTime } from '../lib/supabase'
 
 export default function AssetDetail() {
   const { id } = useParams<{ id: string }>()
@@ -17,7 +17,7 @@ export default function AssetDetail() {
   const [isEditMaintenanceDialogOpen, setIsEditMaintenanceDialogOpen] = useState(false)
   const [editingMaintenanceRecord, setEditingMaintenanceRecord] = useState<MaintenanceRecord | null>(null)
   const [qrCodeUrl, setQrCodeUrl] = useState('')
-  const [assetHistory, setAssetHistory] = useState<UsageHistory[]>([])
+  const [assetHistory, setAssetHistory] = useState<UsageHistoryRecord[]>([])
   const [assetImages, setAssetImages] = useState<AssetImage[]>([])
   const [isImageUploadDialogOpen, setIsImageUploadDialogOpen] = useState(false)
   const [uploading, setUploading] = useState(false)
@@ -45,42 +45,6 @@ export default function AssetDetail() {
     repair_cost: 0,
     status: 'pending'
   })
-
-  // 格式化内存显示
-  const formatMemory = (memory: string) => {
-    try {
-      const num = parseFloat(memory)
-      if (!isNaN(num)) {
-        // 四舍五入到最近的整数
-        const rounded = Math.round(num)
-        return `${rounded}GB`
-      }
-    } catch (error) {
-      console.error('Error formatting memory:', error)
-    }
-    return memory
-  }
-
-  // 格式化存储显示
-  const formatStorage = (storage: string) => {
-    try {
-      const num = parseFloat(storage)
-      if (!isNaN(num)) {
-        // 四舍五入到最近的整数
-        const rounded = Math.round(num)
-        if (rounded >= 1000) {
-          // 大于等于1000GB显示为TB
-          return `${(rounded / 1000).toFixed(1)}TB`
-        } else {
-          // 小于1000GB显示为GB
-          return `${rounded}GB`
-        }
-      }
-    } catch (error) {
-      console.error('Error formatting storage:', error)
-    }
-    return storage
-  }
 
   // 图片压缩函数
   const compressImage = (file: File): Promise<Blob> => {
@@ -124,7 +88,7 @@ export default function AssetDetail() {
     
     if (!id) {
       console.error('AssetDetail: No asset code provided')
-      alert('未提供资产编码')
+      toast.error('未提供资产编码')
       return
     }
     
@@ -146,7 +110,7 @@ export default function AssetDetail() {
       
       if (error) {
         console.error('AssetDetail: Error fetching asset:', error)
-        alert(`无法获取资产数据: ${error.message}`)
+        toast.error(`无法获取资产数据: ${error.message}`)
       } else if (data && data.length > 0) {
         const assetData = data[0]
         console.log('AssetDetail: Asset fetched successfully:', assetData)
@@ -173,11 +137,11 @@ export default function AssetDetail() {
         const { data: allAssets } = await supabase.from('assets').select('asset_code')
         console.log('AssetDetail: All assets in database:', allAssets)
         
-        alert('资产不存在，请检查二维码是否正确')
+        toast.error('资产不存在，请检查二维码是否正确')
       }
     } catch (error) {
       console.error('AssetDetail: Exception fetching asset:', error)
-      alert(`无法获取资产数据: ${error.message}`)
+      toast.error(`无法获取资产数据: ${error.message}`)
     } finally {
       setLoading(false)
     }
@@ -247,7 +211,7 @@ export default function AssetDetail() {
  const handleEditSubmit = async (e: React.FormEvent) => {
   e.preventDefault()
   if (!asset) {
-    alert('资产数据加载中，请稍后重试')
+    toast.error('资产数据加载中，请稍后重试')
     return
   }
   
@@ -286,7 +250,7 @@ export default function AssetDetail() {
     if (updateData.department !== asset.department) changes.push(`部门: ${asset.department || '无'} → ${updateData.department || '无'}`)
     if (updateData.user_name !== asset.user_name) changes.push(`使用人: ${asset.user_name || '无'} → ${updateData.user_name || '无'}`)
     if (updateData.location !== asset.location) changes.push(`位置: ${asset.location || '无'} → ${updateData.location || '无'}`)
-    if (updateData.status && updateData.status !== asset.status) changes.push(`状态: ${asset.status === 'active' ? '使用中' : asset.status === 'idle' ? '闲置' : '维修中'} → ${updateData.status === 'active' ? '使用中' : updateData.status === 'idle' ? '闲置' : '维修中'}`)
+    if (updateData.status && updateData.status !== asset.status) changes.push(`状态: ${getStatusText(asset.status)} → ${getStatusText(updateData.status)}`)
     if (updateData.notes !== asset.notes) changes.push(`备注: ${asset.notes || '无'} → ${updateData.notes || '无'}`)
     
     console.log('AssetDetail: Changes to record:', changes)
@@ -305,58 +269,25 @@ export default function AssetDetail() {
       throw updateError
     }
     
-    // 记录操作历史到 operation_history（用于操作历史页面）
+    // 使用公共函数记录所有历史
     if (user && changes.length > 0) {
-      try {
-        const historyData = {
-          asset_code: assetCodeToUse,
-          operation_type: 'update',
-          user_email: user.email,
-          created_at: new Date().toISOString(),
-          changes: changes.join('\n')
-        }
-        await supabase.from('operation_history').insert(historyData)
-      } catch (historyError) {
-        console.error('AssetDetail: Error recording operation history:', historyError)
-      }
-    }
-    
-    // 记录使用历史到 usage_history（独立保存，不受操作历史删除影响）
-    if (user && changes.length > 0) {
-      try {
-        const usageHistoryData = {
-          asset_code: assetCodeToUse,
-          operation_type: 'update',
-          user_email: user.email,
-          changes: changes.join('\n')
-        }
-        console.log('AssetDetail: Inserting usage history:', usageHistoryData)
-        const { error: usageError } = await supabase.from('usage_history').insert(usageHistoryData)
-        if (usageError) {
-          console.error('AssetDetail: Error recording usage history:', usageError)
-          alert(`写入使用历史失败: ${usageError.message}`)
-        } else {
-          console.log('AssetDetail: Usage history recorded successfully')
-        }
-      } catch (usageError) {
-        console.error('AssetDetail: Exception recording usage history:', usageError)
-      }
+      await recordAllHistory(assetCodeToUse, 'update', user.email, changes.join('\n'))
     }
     
     setIsEditDialogOpen(false)
     await fetchAsset() // 重新获取资产数据
     await fetchAssetHistory() // 刷新使用历史
-    alert('资产更新成功')
+    toast.success('资产更新成功')
   } catch (error: any) {
     console.error('Error updating asset:', error)
-    alert(`资产更新失败: ${error?.message || JSON.stringify(error)}`)
+    toast.error(`资产更新失败: ${error?.message || JSON.stringify(error)}`)
   }
 }
 
   const handleDelete = async () => {
     // 权限控制：只有管理员可以删除资产
     if (user && user.role !== 'admin') {
-      alert('只有管理员可以删除资产')
+      toast.error('只有管理员可以删除资产')
       return
     }
     
@@ -365,47 +296,16 @@ export default function AssetDetail() {
         const { data, error } = await supabase.from('assets').delete().eq('asset_code', asset.asset_code)
         if (error) throw error
         
-        // 记录操作历史到 operation_history（用于操作历史页面）
+        // 使用公共函数记录所有历史
         if (user) {
-          try {
-            const historyData = {
-              asset_code: asset.asset_code,
-              operation_type: 'delete',
-              user_email: user.email,
-              created_at: new Date().toISOString()
-            }
-            await supabase.from('operation_history').insert(historyData)
-          } catch (historyError) {
-            console.error('AssetDetail: Error recording operation history for delete:', historyError)
-          }
-        }
-        
-        // 记录使用历史到 usage_history（独立保存，不受操作历史删除影响）
-        if (user) {
-          try {
-            const usageHistoryData = {
-            asset_code: asset.asset_code,
-            operation_type: 'delete',
-            user_email: user.email
-          }
-            console.log('AssetDetail: Inserting usage history:', usageHistoryData)
-            const { error: usageError } = await supabase.from('usage_history').insert(usageHistoryData)
-            if (usageError) {
-              console.error('AssetDetail: Error recording usage history:', usageError)
-              alert(`写入使用历史失败: ${usageError.message}`)
-            } else {
-              console.log('AssetDetail: Usage history recorded successfully')
-            }
-          } catch (usageError) {
-            console.error('AssetDetail: Exception recording usage history:', usageError)
-          }
+          await recordAllHistory(asset.asset_code, 'delete', user.email)
         }
         
         navigate('/')
-        alert('资产删除成功')
+        toast.success('资产删除成功')
       } catch (error) {
         console.error('Error deleting asset:', error)
-        alert('资产删除失败')
+        toast.error('资产删除失败')
       }
     }
   }
@@ -427,7 +327,7 @@ export default function AssetDetail() {
           .eq('id', editingMaintenanceRecord.id)
         if (error) throw error
         setIsEditMaintenanceDialogOpen(false)
-        alert('维修记录更新成功')
+        toast.success('维修记录更新成功')
       } else {
         // 添加新维修记录
         console.log('AssetDetail: Adding maintenance record for asset:', asset)
@@ -443,12 +343,12 @@ export default function AssetDetail() {
           throw error
         }
         setIsMaintenanceDialogOpen(false)
-        alert('维修记录添加成功')
+        toast.success('维修记录添加成功')
       }
       await fetchMaintenanceRecords()
     } catch (error) {
       console.error('Error saving maintenance record:', error)
-      alert('维修记录保存失败')
+      toast.error('维修记录保存失败')
     }
   }
 
@@ -470,10 +370,10 @@ export default function AssetDetail() {
         const { error } = await supabase.from('maintenance_records').delete().eq('id', id)
         if (error) throw error
         await fetchMaintenanceRecords()
-        alert('维修记录删除成功')
+        toast.success('维修记录删除成功')
       } catch (error) {
         console.error('Error deleting maintenance record:', error)
-        alert('维修记录删除失败')
+        toast.error('维修记录删除失败')
       }
     }
   }
@@ -488,7 +388,7 @@ export default function AssetDetail() {
       setIsQRDialogOpen(true)
     } catch (error) {
       console.error('Error generating QR code:', error)
-      alert('生成二维码失败')
+      toast.error('生成二维码失败')
     }
   }
 
@@ -537,7 +437,7 @@ export default function AssetDetail() {
 
     // 检查图片数量限制
     if (assetImages.length + files.length > 3) {
-      alert('每件资产最多只能上传3张照片')
+      toast.error('每件资产最多只能上传3张照片')
       return
     }
 
@@ -549,7 +449,7 @@ export default function AssetDetail() {
       for (const file of files) {
         // 检查文件类型
         if (!file.type.startsWith('image/')) {
-          alert('请上传图片文件')
+          toast.error('请上传图片文件')
           continue
         }
 
@@ -613,11 +513,11 @@ export default function AssetDetail() {
 
       // 显示上传结果
       if (failCount === 0 && successCount > 0) {
-        alert(`图片上传成功！${successCount}张图片已上传`)
+        toast.success(`图片上传成功！${successCount}张图片已上传`)
       } else if (successCount > 0 && failCount > 0) {
-        alert(`部分图片上传成功！成功${successCount}张，失败${failCount}张`)
+        toast(`部分图片上传成功！成功${successCount}张，失败${failCount}张`, { icon: '⚠️' })
       } else {
-        alert('图片上传失败，请稍后重试')
+        toast.error('图片上传失败，请稍后重试')
       }
 
       if (successCount > 0) {
@@ -625,7 +525,7 @@ export default function AssetDetail() {
       }
     } catch (error) {
       console.error('Error uploading images:', error)
-      alert('图片上传失败，请稍后重试')
+      toast.error('图片上传失败，请稍后重试')
     } finally {
       setUploading(false)
     }
@@ -643,16 +543,16 @@ export default function AssetDetail() {
         
         if (dbError) {
           console.error('Error deleting image from database:', dbError)
-          alert('删除图片失败')
+          toast.error('删除图片失败')
           return
         }
         
         // 重新获取图片列表
         await fetchAssetImages()
-        alert('图片删除成功')
+        toast.success('图片删除成功')
       } catch (error) {
         console.error('Error deleting image:', error)
-        alert('删除图片失败')
+        toast.error('删除图片失败')
       }
     }
   }
@@ -880,8 +780,8 @@ export default function AssetDetail() {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-600">状态</span>
-                  <span className={`font-medium ${asset.status === 'active' ? 'text-green-600' : asset.status === 'idle' ? 'text-yellow-600' : 'text-red-600'}`}>
-                    {asset.status === 'active' ? '使用中' : asset.status === 'idle' ? '闲置' : '维修中'}
+                  <span className={`font-medium ${getStatusColor(asset.status).replace('bg-', 'text-').split(' ')[0]}`}>
+                    {getStatusText(asset.status)}
                   </span>
                 </div>
                 <div className="flex justify-between">
@@ -1029,8 +929,8 @@ export default function AssetDetail() {
                   assetHistory.map((history) => (
                     <tr key={history.id}>
                       <td className="px-4 py-4 whitespace-nowrap">
-                        <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${history.operation_type === 'create' ? 'bg-blue-100 text-blue-800' : history.operation_type === 'update' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                          {history.operation_type === 'create' ? '创建' : history.operation_type === 'update' ? '更新' : '删除'}
+                        <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${getOperationTypeColor(history.operation_type)}`}>
+                          {getOperationTypeText(history.operation_type)}
                         </span>
                       </td>
                       <td className="px-4 py-4 whitespace-nowrap">
@@ -1038,24 +938,14 @@ export default function AssetDetail() {
                       </td>
                       <td className="px-4 py-4 whitespace-nowrap">
                         <div className="text-sm text-gray-900">
-                          {/* 手动调整UTC时间到北京时间（+8小时） */}
-                          {(() => {
-                            const utcDate = new Date(history.created_at);
-                            const beijingDate = new Date(utcDate.getTime() + 8 * 60 * 60 * 1000);
-                            return beijingDate.toLocaleString('zh-CN');
-                          })()}
+                          {getBeijingTime(history.created_at)}
                         </div>
                       </td>
                       <td className="px-4 py-4 whitespace-nowrap text-sm font-medium">
                         <button
                           className="text-blue-600 hover:text-blue-900"
                           onClick={() => {
-                            // 显示更详细的操作历史信息
-                            // 手动调整UTC时间到北京时间（+8小时）
-                            const utcDate = new Date(history.created_at);
-                            const beijingDate = new Date(utcDate.getTime() + 8 * 60 * 60 * 1000);
-                            const beijingTime = beijingDate.toLocaleString('zh-CN');
-                            alert(`操作类型: ${history.operation_type === 'create' ? '创建' : history.operation_type === 'update' ? '更新' : '删除'}\n操作人: ${history.user_email}\n操作时间: ${beijingTime}\n资产编码: ${history.asset_code}\n变更内容: ${history.changes || '无'}`)
+                            toast(`操作类型: ${getOperationTypeText(history.operation_type)}\n操作人: ${history.user_email}\n操作时间: ${getBeijingTime(history.created_at)}\n资产编码: ${history.asset_code}\n变更内容: ${history.changes || '无'}`, { duration: 5000 })
                           }}
                         >
                           查看详情

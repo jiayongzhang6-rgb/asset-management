@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useAuth, formatUserIdentifier } from '../App'
-import { supabase } from '../lib/supabase'
+import { useAuth } from '../App'
+import { supabase, formatUserIdentifier } from '../lib/supabase'
 
 export default function OperationHistory() {
   const navigate = useNavigate()
