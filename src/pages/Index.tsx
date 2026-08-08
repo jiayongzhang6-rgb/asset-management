@@ -390,6 +390,24 @@ export default function Index() {
         // 运行时检测：如果 category 列不可用则自动剥离
         const cleanData = await sanitizeAssetData(updateData)
 
+        // 构建变更明细
+        const asset = editingAsset
+        const changes: string[] = []
+        if (cleanData.brand !== undefined && cleanData.brand !== asset.brand) changes.push(`品牌: ${asset.brand || '无'} → ${cleanData.brand || '无'}`)
+        if (cleanData.model !== undefined && cleanData.model !== asset.model) changes.push(`型号: ${asset.model || '无'} → ${cleanData.model || '无'}`)
+        if (cleanData.cpu !== undefined && cleanData.cpu !== asset.cpu) changes.push(`CPU: ${asset.cpu || '无'} → ${cleanData.cpu || '无'}`)
+        if (cleanData.ram !== undefined && cleanData.ram !== asset.ram) changes.push(`内存: ${asset.ram || '无'} → ${cleanData.ram || '无'}`)
+        if (cleanData.storage !== undefined && cleanData.storage !== asset.storage) changes.push(`存储: ${asset.storage || '无'} → ${cleanData.storage || '无'}`)
+        if (cleanData.gpu !== undefined && cleanData.gpu !== asset.gpu) changes.push(`显卡: ${asset.gpu || '无'} → ${cleanData.gpu || '无'}`)
+        if (cleanData.os !== undefined && cleanData.os !== asset.os) changes.push(`操作系统: ${asset.os || '无'} → ${cleanData.os || '无'}`)
+        if (cleanData.category !== undefined && cleanData.category !== asset.category) changes.push(`分类: ${asset.category || '无'} → ${cleanData.category || '无'}`)
+        if (cleanData.department !== undefined && cleanData.department !== asset.department) changes.push(`部门: ${asset.department || '无'} → ${cleanData.department || '无'}`)
+        if (cleanData.user_name !== undefined && cleanData.user_name !== asset.user_name) changes.push(`使用人: ${asset.user_name || '无'} → ${cleanData.user_name || '无'}`)
+        if (cleanData.location !== undefined && cleanData.location !== asset.location) changes.push(`位置: ${asset.location || '无'} → ${cleanData.location || '无'}`)
+        if (cleanData.status !== undefined && cleanData.status !== asset.status) changes.push(`状态: ${getStatusText(asset.status)} → ${getStatusText(cleanData.status)}`)
+        if (cleanData.monthly_rent !== undefined && Number(cleanData.monthly_rent) !== Number(asset.monthly_rent)) changes.push(`月租费: ¥${asset.monthly_rent || 0} → ¥${cleanData.monthly_rent || 0}`)
+        if (cleanData.notes !== undefined && cleanData.notes !== asset.notes) changes.push(`备注: ${asset.notes || '无'} → ${cleanData.notes || '无'}`)
+
         console.log('Index: Updating asset with data:', cleanData)
         const { data, error } = await supabase
           .from('assets')
@@ -401,8 +419,11 @@ export default function Index() {
         if (error) throw error
         console.log('Index: Asset updated successfully')
 
-        // 记录操作历史
-        if (user) {
+        // 记录操作历史（带变更明细）
+        if (user && changes.length > 0) {
+          await recordAllHistory(editingAsset.asset_code, 'update', user.email, changes.join('\n'))
+        } else if (user) {
+          // 即使没有检测到变更，也记录一条无明细的历史
           await recordAllHistory(editingAsset.asset_code, 'update', user.email)
         }
 
