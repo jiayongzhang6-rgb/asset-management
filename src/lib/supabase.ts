@@ -470,4 +470,43 @@ export const initDatabase = async () => {
 
   localStorage.setItem(DB_VERSION_KEY, String(CURRENT_DB_VERSION))
   console.log('Database initialization completed (version:', CURRENT_DB_VERSION, ')')
+
+  // 启动后异步补填历史变更明细
+  void backfillHistoryChanges()
+}
+
+// ===== 历史数据补填 =====
+const BACKFILL_KEY = 'db_backfill_history_changes_done'
+
+async function backfillHistoryChanges(): Promise<void> {
+  if (localStorage.getItem(BACKFILL_KEY)) return
+  try {
+    // 补填 operation_history 中缺少变更明细的更新记录
+    const { data: opData, error: opError } = await supabase
+      .from('operation_history')
+      .update({ changes: '变更明细（历史版本已升级，后续编辑将自动记录）' })
+      .is('changes', null)
+      .eq('operation_type', 'update')
+    if (opError) {
+      console.warn('Backfill operation_history failed:', opError.message)
+    } else {
+      console.log('Backfill operation_history completed')
+    }
+
+    // 补填 usage_history 中缺少变更明细的更新记录
+    const { data: usageData, error: usageError } = await supabase
+      .from('usage_history')
+      .update({ changes: '变更明细（历史版本已升级，后续编辑将自动记录）' })
+      .is('changes', null)
+      .eq('operation_type', 'update')
+    if (usageError) {
+      console.warn('Backfill usage_history failed:', usageError.message)
+    } else {
+      console.log('Backfill usage_history completed')
+    }
+
+    localStorage.setItem(BACKFILL_KEY, 'true')
+  } catch (e: any) {
+    console.warn('Backfill history changes failed:', e?.message)
+  }
 }
