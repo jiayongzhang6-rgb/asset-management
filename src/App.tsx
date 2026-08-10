@@ -12,6 +12,7 @@ import RentDetail from './pages/RentDetail'
 import RentSettlement from './pages/RentSettlement'
 import Users from './pages/Users'
 import ChangePassword from './pages/ChangePassword'
+import AiValuationSettings from './pages/AiValuationSettings'
 import NotFound from './pages/NotFound'
 
 // 简化的AuthProvider，不使用Supabase
@@ -283,6 +284,7 @@ export default function App() {
             <Route path="/settlement" element={<RentSettlement />} />
             <Route path="/users" element={<Users />} />
             <Route path="/change-password" element={<ChangePassword />} />
+            <Route path="/ai-valuation" element={<AiValuationSettings />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </ErrorBoundary>

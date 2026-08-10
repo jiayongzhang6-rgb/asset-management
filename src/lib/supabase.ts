@@ -1270,6 +1270,311 @@ async function backfillHistoryChanges(): Promise<void> {
   }
 }
 
+// ===== AI 大模型估值 =====
+// 配置数据结构
+export interface AIValuationConfig {
+  apiKey: string
+  baseUrl: string       // 兼容 OpenAI 格式的 API Base URL，如 https://api.openai.com/v1
+  model: string         // 模型名，如 gpt-4o-mini / deepseek-chat / qwen-plus 等
+  enabled: boolean      // 是否启用AI估值（关闭则走本地保底算法）
+  cacheTTL: number      // 缓存有效期（毫秒），默认 24h
+}
+
+const AI_CONFIG_KEY = 'ai_valuation_config_v1'
+const AI_CACHE_KEY = 'ai_valuation_cache_v1'
+
+// 默认配置（空值，需要用户填入）
+const DEFAULT_AI_CONFIG: AIValuationConfig = {
+  apiKey: '',
+  baseUrl: 'https://api.openai.com/v1',
+  model: 'gpt-4o-mini',
+  enabled: false,
+  cacheTTL: 24 * 60 * 60 * 1000
+}
+
+// 读取AI配置（从 localStorage，因为纯前端不存数据库）
+export function getAIValuationConfig(): AIValuationConfig {
+  if (typeof window === 'undefined') return DEFAULT_AI_CONFIG
+  try {
+    const raw = localStorage.getItem(AI_CONFIG_KEY)
+    if (!raw) return DEFAULT_AI_CONFIG
+    const parsed = JSON.parse(raw)
+    return { ...DEFAULT_AI_CONFIG, ...parsed }
+  } catch {
+    return DEFAULT_AI_CONFIG
+  }
+}
+
+// 保存AI配置
+export function saveAIValuationConfig(cfg: Partial<AIValuationConfig>): AIValuationConfig {
+  if (typeof window === 'undefined') return DEFAULT_AI_CONFIG
+  const current = getAIValuationConfig()
+  const next = { ...current, ...cfg }
+  localStorage.setItem(AI_CONFIG_KEY, JSON.stringify(next))
+  return next
+}
+
+// 缓存条目类型
+interface AICacheEntry {
+  key: string
+  fixedValue: number
+  currentValue: number
+  reason?: string
+  createdAt: number
+}
+
+// 读取全部缓存
+function readAICache(): Map<string, AICacheEntry> {
+  if (typeof window === 'undefined') return new Map()
+  try {
+    const raw = localStorage.getItem(AI_CACHE_KEY)
+    if (!raw) return new Map()
+    const arr: AICacheEntry[] = JSON.parse(raw)
+    return new Map(arr.map(e => [e.key, e]))
+  } catch {
+    return new Map()
+  }
+}
+
+// 写入缓存（清理过期 + 最多保留 500 条）
+function writeAICache(map: Map<string, AICacheEntry>, ttl: number) {
+  if (typeof window === 'undefined') return
+  const now = Date.now()
+  const entries: AICacheEntry[] = []
+  for (const e of map.values()) {
+    if (now - e.createdAt <= ttl) entries.push(e)
+  }
+  entries.sort((a, b) => b.createdAt - a.createdAt)
+  const trimmed = entries.slice(0, 500)
+  localStorage.setItem(AI_CACHE_KEY, JSON.stringify(trimmed))
+}
+
+// 生成缓存 key：硬件配置 + 使用年数（四舍五入半年粒度）
+function makeCacheKey(asset: { cpu?: string; ram?: string; storage?: string; gpu?: string; brand?: string; created_at?: string }): string {
+  let ageYears = 1
+  if (asset.created_at) {
+    const age = (Date.now() - new Date(asset.created_at).getTime()) / (365.25 * 24 * 60 * 60 * 1000)
+    ageYears = Math.max(0.5, Math.round(age * 2) / 2) // 0.5 年粒度
+  }
+  const spec = formatHardwareSpec(asset)
+  const brand = (asset.brand || '').toUpperCase().slice(0, 20)
+  return `${brand}|${spec}|age${ageYears}`
+}
+
+// 内部：直接调用兼容 OpenAI Chat Completions 的接口
+async function callAI(messages: { role: string; content: string }[], config: AIValuationConfig): Promise<string> {
+  if (!config.apiKey) throw new Error('未配置 API Key')
+  const url = `${config.baseUrl.replace(/\/$/, '')}/chat/completions`
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${config.apiKey}`
+    },
+    body: JSON.stringify({
+      model: config.model,
+      temperature: 0.2,
+      response_format: { type: 'json_object' },
+      messages
+    })
+  })
+  if (!resp.ok) {
+    const text = await resp.text().catch(() => '')
+    throw new Error(`AI 接口错误 ${resp.status}: ${text.slice(0, 200) || resp.statusText}`)
+  }
+  const data = await resp.json()
+  const content = data?.choices?.[0]?.message?.content
+  if (typeof content !== 'string') throw new Error('AI 返回内容格式异常')
+  return content
+}
+
+// 构建估值 Prompt
+function buildValuationPrompt(
+  asset: { cpu?: string; ram?: string; storage?: string; gpu?: string; brand?: string; model?: string; created_at?: string }
+): string {
+  const today = new Date().toISOString().slice(0, 10)
+  let ageDesc = '使用时长未知，按1年估算'
+  if (asset.created_at) {
+    const ageYears = (Date.now() - new Date(asset.created_at).getTime()) / (365.25 * 24 * 60 * 60 * 1000)
+    ageDesc = `入库时间 ${asset.created_at.slice(0, 10)}，至今约 ${ageYears.toFixed(1)} 年`
+  }
+  return `
+你是专业的二手电脑硬件估值师，参考中国大陆当日（${today}）二手行情（闲鱼、转转、拍拍等主流平台），对以下电脑硬件进行准确估值。
+
+【设备信息】
+- 品牌/型号：${asset.brand || ''} ${asset.model || ''}
+- CPU：${asset.cpu || '未知'}
+- 内存：${asset.ram || '未知'}
+- 存储：${asset.storage || '未知'}
+- 显卡：${asset.gpu || '未知'}
+- ${ageDesc}
+
+【估值要求】
+1. 给出两个人民币估值：
+   - fixedValue：购入时全新市场价估算（元，整数）
+   - currentValue：当前二手合理成交价（元，整数，按成色、折旧、当前硬件行情综合评估）
+2. 若某配件信息缺失，按该档位常见主流配置保守估算；不确定时宁低勿高。
+3. 折旧参考：一般办公电脑约每年降 15%~25%；游戏卡/高端U随代际波动更大。
+4. 请严格返回 JSON 格式，不要附加任何多余字符或说明，结构如下：
+{
+  "fixedValue": 4500,
+  "currentValue": 2200,
+  "reason": "一句话简要说明估值依据（20字内）"
+}
+`.trim()
+}
+
+// 安全解析 JSON（兜底：从任意文本中提取 JSON 块 + 数字）
+function safeParseAIValuation(text: string): { fixedValue: number; currentValue: number; reason?: string } | null {
+  // 1. 优先尝试直接 JSON.parse
+  try {
+    const obj = JSON.parse(text)
+    const fv = Number(obj.fixedValue)
+    const cv = Number(obj.currentValue)
+    if (!isNaN(fv) && !isNaN(cv) && fv > 0 && cv > 0) {
+      return { fixedValue: Math.round(fv), currentValue: Math.round(cv), reason: typeof obj.reason === 'string' ? obj.reason.slice(0, 50) : undefined }
+    }
+  } catch { /* ignore */ }
+
+  // 2. 尝试提取第一个 {} JSON 块
+  const match = text.match(/\{[\s\S]*?\}/)
+  if (match) {
+    try {
+      const obj = JSON.parse(match[0])
+      const fv = Number(obj.fixedValue)
+      const cv = Number(obj.currentValue)
+      if (!isNaN(fv) && !isNaN(cv) && fv > 0 && cv > 0) {
+        return { fixedValue: Math.round(fv), currentValue: Math.round(cv), reason: typeof obj.reason === 'string' ? obj.reason.slice(0, 50) : undefined }
+      }
+    } catch { /* ignore */ }
+  }
+
+  // 3. 终极兜底：从文本里提取前两个数字
+  const nums = text.match(/\d+/g)?.map(Number).filter(n => n >= 100) || []
+  if (nums.length >= 2) {
+    return { fixedValue: nums[0], currentValue: nums[1] }
+  }
+  return null
+}
+
+/**
+ * 使用 AI 大模型进行硬件估值（支持缓存 + 本地保底）。
+ * - 若配置未启用 / API 调用失败 / 解析失败，自动回退到本地 estimateAssetValue 算法。
+ * - 返回值增加字段 source（'ai' | 'local'）和 reason（AI 估值依据）。
+ */
+export async function estimateAssetValueWithAI(asset: {
+  cpu?: string; ram?: string; storage?: string; gpu?: string; brand?: string; model?: string; created_at?: string
+}): Promise<{
+  fixedValue: number
+  currentValue: number
+  source: 'ai' | 'local'
+  reason?: string
+  error?: string
+}> {
+  const config = getAIValuationConfig()
+
+  // 本地保底估值（AI 失败时使用）
+  const fallback = estimateAssetValue(asset)
+
+  if (!config.enabled || !config.apiKey) {
+    return { ...fallback, source: 'local' as const }
+  }
+
+  // 查缓存
+  const cacheKey = makeCacheKey(asset)
+  const cache = readAICache()
+  const cached = cache.get(cacheKey)
+  if (cached && Date.now() - cached.createdAt <= config.cacheTTL) {
+    return {
+      fixedValue: cached.fixedValue,
+      currentValue: cached.currentValue,
+      source: 'ai' as const,
+      reason: cached.reason
+    }
+  }
+
+  // 调用 AI
+  try {
+    const content = await callAI(
+      [
+        { role: 'system', content: '你是专业的二手硬件估值师，只输出 JSON。' },
+        { role: 'user', content: buildValuationPrompt(asset) }
+      ],
+      config
+    )
+    const parsed = safeParseAIValuation(content)
+    if (!parsed) {
+      return { ...fallback, source: 'local' as const, error: 'AI 返回内容无法解析为估值' }
+    }
+
+    // 合理性校验：AI 结果太离谱时兜底（如 currentValue > fixedValue * 1.5 或 < fixedValue * 0.05）
+    const ratio = parsed.currentValue / parsed.fixedValue
+    if (ratio > 1.5 || ratio < 0.05) {
+      return { ...fallback, source: 'local' as const, error: `AI 估值比例异常（折旧比 ${ratio.toFixed(2)}），已使用本地估值` }
+    }
+
+    // 写入缓存
+    const entry: AICacheEntry = {
+      key: cacheKey,
+      fixedValue: parsed.fixedValue,
+      currentValue: parsed.currentValue,
+      reason: parsed.reason,
+      createdAt: Date.now()
+    }
+    cache.set(cacheKey, entry)
+    writeAICache(cache, config.cacheTTL)
+
+    return {
+      fixedValue: parsed.fixedValue,
+      currentValue: parsed.currentValue,
+      source: 'ai' as const,
+      reason: parsed.reason
+    }
+  } catch (e: any) {
+    return {
+      ...fallback,
+      source: 'local' as const,
+      error: e?.message || 'AI 调用失败，已使用本地估值'
+    }
+  }
+}
+
+/**
+ * 批量 AI 估值（并发可控，避免触发 API 限流）。
+ * 返回 Map<cacheKey, 估值结果>，调用方按 makeCacheKey 取对应结果。
+ */
+export async function batchEstimateAssetValueWithAI(
+  assets: Array<{ cpu?: string; ram?: string; storage?: string; gpu?: string; brand?: string; model?: string; created_at?: string }>,
+  concurrency: number = 5
+): Promise<Array<{
+  fixedValue: number
+  currentValue: number
+  source: 'ai' | 'local'
+  reason?: string
+  error?: string
+}>> {
+  const results: any[] = new Array(assets.length)
+  let cursor = 0
+
+  async function worker() {
+    while (cursor < assets.length) {
+      const idx = cursor++
+      results[idx] = await estimateAssetValueWithAI(assets[idx])
+    }
+  }
+
+  const workers = Array.from({ length: Math.min(concurrency, assets.length) }, () => worker())
+  await Promise.all(workers)
+  return results
+}
+
+// 清除 AI 估值缓存
+export function clearAIValuationCache(): void {
+  if (typeof window !== 'undefined') {
+    localStorage.removeItem(AI_CACHE_KEY)
+  }
+}
+
 // 暴露到 window 以便在浏览器控制台调用恢复函数
 // 使用方法: 在浏览器控制台输入: await window.recoverData()
 if (typeof window !== 'undefined') {
