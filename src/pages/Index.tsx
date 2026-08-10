@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../App'
 import toast from 'react-hot-toast'
 import * as XLSX from 'xlsx'
-import { supabase, type Asset, initDatabase, formatUserIdentifier, formatMemory, formatStorage, getStatusText, getStatusColor, recordAllHistory, generateUniqueAssetCode, sanitizeAssetData, isCategorySupportedSync, saveAssetSnapshot } from '../lib/supabase'
+import { supabase, type Asset, initDatabase, formatUserIdentifier, formatMemory, formatStorage, getStatusText, getStatusColor, recordAllHistory, generateUniqueAssetCode, sanitizeAssetData, isCategorySupportedSync, saveAssetSnapshot, getRandomAssetsRent } from '../lib/supabase'
 import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js'
 import { Pie } from 'react-chartjs-2'
 
@@ -65,6 +65,11 @@ export default function Index() {
   const [departments, setDepartments] = useState<string[]>([])
   // 所有分类列表（不受筛选影响）
   const [categoriesFilter, setCategoriesFilter] = useState<string[]>([])
+
+  // 随机抽样相关状态
+  const [randomAssets, setRandomAssets] = useState<{ asset_code: string; brand: string; model: string; department: string; user_name: string; monthly_rent: number; status: string }[]>([])
+  const [randomTotalRent, setRandomTotalRent] = useState(0)
+  const [showRandomPanel, setShowRandomPanel] = useState(false)
 
   // 计算资产状态分布数据
   const getStatusDistribution = () => {
@@ -845,6 +850,18 @@ export default function Index() {
     }
   }
 
+  // 随机抽取资产并计算租金之和
+  const handleRandomPick = async () => {
+    try {
+      const { assets, totalRent } = await getRandomAssetsRent(10)
+      setRandomAssets(assets)
+      setRandomTotalRent(totalRent)
+      setShowRandomPanel(true)
+    } catch (e) {
+      toast.error('随机抽取失败')
+    }
+  }
+
   // 检查认证状态并导航
   useEffect(() => {
     if (!isAuthenticated) {
@@ -905,6 +922,9 @@ export default function Index() {
             </button>
             <button onClick={() => navigate('/rent')} className="btn btn-ghost !text-white/80 hover:!text-white text-sm px-2 py-1.5">
               月租明细
+            </button>
+            <button onClick={() => navigate('/settlement')} className="btn btn-ghost !text-white/80 hover:!text-white text-sm px-2 py-1.5">
+              租赁结算
             </button>
             <button onClick={() => navigate('/change-password')} className="btn btn-ghost !text-white/80 hover:!text-white text-sm px-2 py-1.5">
               修改密码
@@ -1009,6 +1029,63 @@ export default function Index() {
               </div>
             </div>
           </div>
+        </div>
+
+        {/* 随机抽样面板 */}
+        <div className="card mb-6">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 bg-purple-50 rounded-lg flex items-center justify-center">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+              </div>
+              <h2 className="text-lg font-semibold text-gray-800">随机抽样</h2>
+            </div>
+            <div className="flex items-center gap-2">
+              {showRandomPanel && (
+                <span className="text-lg font-bold text-purple-600">租金合计: ¥{randomTotalRent.toFixed(2)}</span>
+              )}
+              <button onClick={handleRandomPick} className="btn btn-primary text-sm">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                {showRandomPanel ? '刷新' : '随机抽取10台'}
+              </button>
+            </div>
+          </div>
+          {showRandomPanel && randomAssets.length > 0 && (
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-sm">
+                <thead>
+                  <tr className="border-b border-gray-200">
+                    <th className="text-left py-2 px-3 font-medium text-gray-500">资产编码</th>
+                    <th className="text-left py-2 px-3 font-medium text-gray-500">品牌型号</th>
+                    <th className="text-left py-2 px-3 font-medium text-gray-500">部门</th>
+                    <th className="text-left py-2 px-3 font-medium text-gray-500">使用人</th>
+                    <th className="text-right py-2 px-3 font-medium text-gray-500">月租费</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {randomAssets.map((a, i) => (
+                    <tr key={i} className="border-b border-gray-100 hover:bg-gray-50">
+                      <td className="py-2 px-3 text-blue-600 font-medium">{a.asset_code}</td>
+                      <td className="py-2 px-3">{a.brand} {a.model}</td>
+                      <td className="py-2 px-3">{a.department || '-'}</td>
+                      <td className="py-2 px-3">{a.user_name || '-'}</td>
+                      <td className="py-2 px-3 text-right font-medium text-blue-600">¥{a.monthly_rent || 0}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="bg-purple-50">
+                    <td colSpan={4} className="py-2 px-3 font-semibold text-gray-700 text-right">租金合计</td>
+                    <td className="py-2 px-3 text-right font-bold text-purple-600 text-lg">¥{randomTotalRent.toFixed(2)}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          )}
         </div>
 
         <div className="card mb-6">

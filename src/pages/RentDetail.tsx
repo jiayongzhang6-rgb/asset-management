@@ -1,6 +1,13 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../App'
-import { supabase, type RentRecord, formatUserIdentifier } from '../lib/supabase'
+import {
+  supabase,
+  type RentRecord,
+  type DepartmentRentStat,
+  formatUserIdentifier,
+  updateAssetRent,
+  getDepartmentRentStats
+} from '../lib/supabase'
 import toast from 'react-hot-toast'
 
 export default function RentDetail() {
@@ -12,10 +19,19 @@ export default function RentDetail() {
   const [departmentFilter, setDepartmentFilter] = useState('all')
   const [departments, setDepartments] = useState<string[]>([])
 
+  // 部门实时统计
+  const [deptStats, setDeptStats] = useState<DepartmentRentStat[]>([])
+  const [deptStatsLoading, setDeptStatsLoading] = useState(false)
+
+  // 内联编辑租金
+  const [editingAsset, setEditingAsset] = useState<RentRecord | null>(null)
+  const [editingRentValue, setEditingRentValue] = useState<string>('')
+  const [savingRent, setSavingRent] = useState(false)
+
   const isAdmin = user?.role === 'admin'
   const years = Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i)
   const months = Array.from({ length: 12 }, (_, i) => i + 1)
-  
+
   const fetchDepartments = async () => {
     try {
       const { data } = await supabase
@@ -82,13 +98,25 @@ export default function RentDetail() {
       setLoading(false)
     }
   }
-  
+
+  const fetchDeptStats = async () => {
+    setDeptStatsLoading(true)
+    try {
+      const stats = await getDepartmentRentStats()
+      setDeptStats(stats)
+    } catch (error) {
+      console.error('Error fetching department rent stats:', error)
+    } finally {
+      setDeptStatsLoading(false)
+    }
+  }
+
   const markAsPaid = async (recordId: number) => {
     if (!isAdmin) return
     try {
       const { error } = await supabase
         .from('rent_records')
-        .update({ 
+        .update({
           status: 'paid',
           paid_date: new Date().toISOString()
         })
@@ -101,13 +129,13 @@ export default function RentDetail() {
       toast.error('操作失败')
     }
   }
-  
+
   const markAsUnpaid = async (recordId: number) => {
     if (!isAdmin) return
     try {
       const { error } = await supabase
         .from('rent_records')
-        .update({ 
+        .update({
           status: 'unpaid',
           paid_date: null
         })
@@ -120,31 +148,31 @@ export default function RentDetail() {
       toast.error('操作失败')
     }
   }
-  
+
   const generateMonthlyRecords = async () => {
     if (!isAdmin) {
       toast.error('只有管理员可以生成月租记录')
       return
     }
-    
+
     if (!window.confirm(`确定要生成 ${selectedYear}年${selectedMonth}月 的月租记录吗？`)) return
-    
+
     try {
       const { data: assets, error: assetsError } = await supabase
         .from('assets')
         .select('id, asset_code, department, user_name, monthly_rent')
         .neq('monthly_rent', 0)
-      
+
       if (assetsError) throw assetsError
-      
+
       const { data: existingRecords, error: existingError } = await supabase
         .from('rent_records')
         .select('asset_code')
         .eq('year', selectedYear)
         .eq('month', selectedMonth)
-      
+
       if (existingError) throw existingError
-      
+
       const existingCodes = new Set((existingRecords || []).map(r => r.asset_code))
       const newRecords = assets
         .filter(a => !existingCodes.has(a.asset_code))
@@ -159,22 +187,23 @@ export default function RentDetail() {
           status: 'unpaid' as const,
           paid_date: null
         }))
-      
+
       if (newRecords.length > 0) {
         const { error: insertError } = await supabase
           .from('rent_records')
           .insert(newRecords)
         if (insertError) throw insertError
       }
-      
+
       toast.success(`成功生成 ${newRecords.length} 条月租记录`)
       fetchRentRecords()
+      fetchDeptStats()
     } catch (error) {
       console.error('Error generating rent records:', error)
       toast.error('生成月租记录失败')
     }
   }
-  
+
   const exportToCSV = () => {
     const headers = ['资产编码', '部门', '使用人', '月租费', '状态', '缴费日期']
     const csvContent = [
@@ -188,25 +217,79 @@ export default function RentDetail() {
         r.paid_date ? new Date(r.paid_date).toLocaleDateString() : ''
       ].map(field => `"${field}"`).join(','))
     ].join('\n')
-    
+
     const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' })
     const link = document.createElement('a')
     link.href = URL.createObjectURL(blob)
     link.download = `月租明细_${selectedYear}年${selectedMonth}月.csv`
     link.click()
   }
-  
+
+  // 打开内联编辑租金框
+  const openRentEditor = (record: RentRecord) => {
+    if (!isAdmin) return
+    setEditingAsset(record)
+    setEditingRentValue(String(record.monthly_rent ?? ''))
+  }
+
+  // 保存租金修改
+  const saveRentEdit = async () => {
+    if (!editingAsset || !user?.email) return
+
+    const newRent = parseFloat(editingRentValue)
+    if (isNaN(newRent) || newRent < 0) {
+      toast.error('请输入有效的月租金额')
+      return
+    }
+
+    const oldRent = Number(editingAsset.monthly_rent) || 0
+    if (newRent === oldRent) {
+      toast('租金未发生变化', { icon: 'ℹ️' })
+      setEditingAsset(null)
+      return
+    }
+
+    setSavingRent(true)
+    try {
+      const result = await updateAssetRent(editingAsset.asset_code, newRent, user.email)
+      if (result.success) {
+        toast.success(result.message)
+        setEditingAsset(null)
+        // 刷新月租记录 & 部门统计
+        fetchRentRecords()
+        fetchDeptStats()
+      } else {
+        toast.error(result.message)
+      }
+    } catch (error) {
+      console.error('Error updating asset rent:', error)
+      toast.error('修改租金失败')
+    } finally {
+      setSavingRent(false)
+    }
+  }
+
+  const cancelRentEdit = () => {
+    setEditingAsset(null)
+    setEditingRentValue('')
+  }
+
   useEffect(() => {
     fetchDepartments()
+    fetchDeptStats()
   }, [])
 
   useEffect(() => {
     fetchRentRecords()
   }, [selectedYear, selectedMonth, departmentFilter])
-  
+
   const totalRent = rentRecords.reduce((sum, r) => sum + Number(r.monthly_rent), 0)
   const paidRent = rentRecords.filter(r => r.status === 'paid').reduce((sum, r) => sum + Number(r.monthly_rent), 0)
   const unpaidRent = totalRent - paidRent
+
+  // 部门统计汇总
+  const totalDeptAssets = deptStats.reduce((sum, d) => sum + d.assetCount, 0)
+  const totalDeptRent = deptStats.reduce((sum, d) => sum + d.totalRent, 0)
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -220,7 +303,7 @@ export default function RentDetail() {
             </div>
             <div>
               <h1 className="text-xl font-bold tracking-tight">德泽智联IT资产管理系统</h1>
-              <p className="text-xs text-white/70">月租费用明细 · 租金统计与管理</p>
+              <p className="text-xs text-white/70">租赁费用明细 · 租金统计与管理</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -309,6 +392,86 @@ export default function RentDetail() {
               </button>
             </div>
           </div>
+        </div>
+
+        {/* 按部门统计面板 */}
+        <div className="card mb-6">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 bg-indigo-50 rounded-lg flex items-center justify-center">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                </svg>
+              </div>
+              <h2 className="text-lg font-semibold text-gray-800">部门租金统计</h2>
+              <span className="text-xs text-gray-400">实时数据</span>
+            </div>
+            <div className="flex items-center gap-4 text-xs text-gray-500">
+              <span>共 <span className="font-semibold text-gray-700">{deptStats.length}</span> 个部门</span>
+              <span>资产 <span className="font-semibold text-gray-700">{totalDeptAssets}</span> 台</span>
+              <span>月租合计 <span className="font-semibold text-indigo-600">¥{totalDeptRent.toFixed(2)}</span></span>
+              <button
+                onClick={fetchDeptStats}
+                className="btn btn-ghost text-xs !px-2 !py-1"
+                title="刷新部门统计"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                刷新
+              </button>
+            </div>
+          </div>
+
+          {deptStatsLoading ? (
+            <div className="flex flex-col items-center gap-3 py-8">
+              <div className="spinner" />
+              <span className="text-gray-500 text-sm">加载部门统计数据...</span>
+            </div>
+          ) : deptStats.length === 0 ? (
+            <div className="flex flex-col items-center gap-2 py-8">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5" />
+              </svg>
+              <span className="text-gray-400 text-sm">暂无部门统计数据</span>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+              {deptStats.map(stat => (
+                <div
+                  key={stat.department}
+                  className="rounded-xl border border-gray-100 bg-gradient-to-br from-white to-gray-50 p-4 hover:shadow-md hover:border-indigo-200 transition-all"
+                >
+                  <div className="flex items-start justify-between mb-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-semibold text-gray-800 truncate" title={stat.department}>
+                        {stat.department}
+                      </p>
+                      <p className="text-xs text-gray-400 mt-0.5">
+                        {stat.assetCount} 台资产
+                      </p>
+                    </div>
+                    <div className="w-8 h-8 bg-indigo-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5" />
+                      </svg>
+                    </div>
+                  </div>
+                  <div className="flex items-baseline justify-between">
+                    <span className="text-xs text-gray-500">月租小计</span>
+                    <span className="text-lg font-bold text-indigo-600">
+                      ¥{Number(stat.totalRent).toFixed(2)}
+                    </span>
+                  </div>
+                  {stat.assetCount > 0 && (
+                    <div className="mt-2 pt-2 border-t border-gray-100 text-xs text-gray-400">
+                      均价 ¥{(Number(stat.totalRent) / stat.assetCount).toFixed(2)}/台
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* 汇总统计卡片 */}
@@ -403,7 +566,20 @@ export default function RentDetail() {
                       <span className="text-sm font-medium">{formatUserIdentifier(record.user_name)}</span>
                     </td>
                     <td className="text-right">
-                      <span className="text-sm font-semibold text-blue-600">¥{record.monthly_rent}</span>
+                      {isAdmin ? (
+                        <button
+                          onClick={() => openRentEditor(record)}
+                          className="group inline-flex items-center gap-1 text-sm font-semibold text-blue-600 hover:text-blue-700 transition-colors"
+                          title="点击修改月租费"
+                        >
+                          <span>¥{record.monthly_rent}</span>
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 opacity-0 group-hover:opacity-100 transition-opacity" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                          </svg>
+                        </button>
+                      ) : (
+                        <span className="text-sm font-semibold text-blue-600">¥{record.monthly_rent}</span>
+                      )}
                     </td>
                     <td>
                       <span className={`badge ${record.status === 'paid' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
@@ -451,9 +627,111 @@ export default function RentDetail() {
         {!loading && rentRecords.length > 0 && (
           <div className="mt-4 text-sm text-gray-400 text-center">
             共 {rentRecords.length} 条记录
+            {isAdmin && <span className="ml-2 text-gray-300">· 点击月租费可快速修改</span>}
           </div>
         )}
       </main>
+
+      {/* 内联编辑租金弹窗 */}
+      {editingAsset && (
+        <div className="modal-overlay" onClick={cancelRentEdit}>
+          <div
+            className="modal-content"
+            style={{ maxWidth: '28rem' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                </svg>
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-gray-800">修改月租费</h3>
+                <p className="text-xs text-gray-500">将同时更新资产台账与当月租赁记录</p>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div className="rounded-lg bg-gray-50 px-3 py-2">
+                  <p className="text-xs text-gray-400 mb-0.5">资产编码</p>
+                  <p className="font-medium text-blue-600 truncate">{editingAsset.asset_code}</p>
+                </div>
+                <div className="rounded-lg bg-gray-50 px-3 py-2">
+                  <p className="text-xs text-gray-400 mb-0.5">部门</p>
+                  <p className="font-medium text-gray-700 truncate">{editingAsset.department || '-'}</p>
+                </div>
+                <div className="rounded-lg bg-gray-50 px-3 py-2">
+                  <p className="text-xs text-gray-400 mb-0.5">使用人</p>
+                  <p className="font-medium text-gray-700 truncate">
+                    {formatUserIdentifier(editingAsset.user_name) || '-'}
+                  </p>
+                </div>
+                <div className="rounded-lg bg-gray-50 px-3 py-2">
+                  <p className="text-xs text-gray-400 mb-0.5">当前月租</p>
+                  <p className="font-semibold text-gray-700">¥{editingAsset.monthly_rent}</p>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                  新月租金额（元）
+                </label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">¥</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    autoFocus
+                    value={editingRentValue}
+                    onChange={(e) => setEditingRentValue(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') saveRentEdit()
+                      if (e.key === 'Escape') cancelRentEdit()
+                    }}
+                    className="w-full pl-7 pr-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all"
+                    placeholder="请输入新月租金额"
+                  />
+                </div>
+                <p className="text-xs text-gray-400 mt-1">
+                  按 Enter 保存 · 按 Esc 取消
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 mt-5 pt-4 border-t border-gray-100">
+              <button
+                onClick={cancelRentEdit}
+                disabled={savingRent}
+                className="btn btn-ghost text-sm"
+              >
+                取消
+              </button>
+              <button
+                onClick={saveRentEdit}
+                disabled={savingRent}
+                className="btn btn-primary text-sm"
+              >
+                {savingRent ? (
+                  <>
+                    <div className="spinner" style={{ width: '1rem', height: '1rem', borderWidth: '2px' }} />
+                    保存中...
+                  </>
+                ) : (
+                  <>
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                    保存修改
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

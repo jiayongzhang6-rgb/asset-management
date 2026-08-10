@@ -100,6 +100,16 @@ export interface RentRecord {
   updated_at: string
 }
 
+// 部门租金统计
+export interface DepartmentRentStat {
+  department: string
+  assetCount: number
+  totalRent: number
+  paidRent: number
+  unpaidRent: number
+  assets: { asset_code: string; user_name: string; monthly_rent: number; status: string; brand: string; model: string }[]
+}
+
 // ===== 公共工具函数 =====
 
 // 格式化用户标识
@@ -219,6 +229,267 @@ export async function saveAssetSnapshot(
     console.log(`Snapshot saved for ${assetCode} (${operationType})`)
   } catch (error) {
     console.error('Error saving asset snapshot:', error)
+  }
+}
+
+// ===== 租赁管理工具函数 =====
+
+// 快速修改单个资产月租费（同时更新 assets 表和当月 rent_records）
+export async function updateAssetRent(
+  assetCode: string,
+  newRent: number,
+  operatorEmail: string
+): Promise<{ success: boolean; message: string }> {
+  try {
+    // 1. 获取旧数据
+    const { data: oldAsset, error: getErr } = await supabase
+      .from('assets')
+      .select('*')
+      .eq('asset_code', assetCode)
+      .single()
+    if (getErr) throw getErr
+
+    // 2. 保存快照
+    await saveAssetSnapshot(assetCode, 'rent_change', operatorEmail, oldAsset)
+
+    // 3. 更新 assets 表
+    const { error: updateErr } = await supabase
+      .from('assets')
+      .update({ monthly_rent: newRent, updated_at: new Date().toISOString() })
+      .eq('asset_code', assetCode)
+    if (updateErr) throw updateErr
+
+    // 4. 同步更新当月 rent_records（如果已生成）
+    const now = new Date()
+    const year = now.getFullYear()
+    const month = now.getMonth() + 1
+    await supabase
+      .from('rent_records')
+      .update({ monthly_rent: newRent, updated_at: new Date().toISOString() })
+      .eq('asset_code', assetCode)
+      .eq('year', year)
+      .eq('month', month)
+
+    // 5. 记录历史
+    await recordAllHistory(assetCode, 'update', operatorEmail,
+      `月租费: ¥${oldAsset.monthly_rent || 0} → ¥${newRent}`)
+
+    return { success: true, message: `租金已更新: ¥${oldAsset.monthly_rent || 0} → ¥${newRent}` }
+  } catch (e: any) {
+    console.error('updateAssetRent error:', e)
+    return { success: false, message: e?.message || '更新失败' }
+  }
+}
+
+// 批量修改部门资产月租费
+export async function batchUpdateRent(
+  updates: { asset_code: string; monthly_rent: number }[],
+  operatorEmail: string
+): Promise<{ success: number; failed: number; errors: string[] }> {
+  let success = 0
+  let failed = 0
+  const errors: string[] = []
+
+  for (const u of updates) {
+    const result = await updateAssetRent(u.asset_code, u.monthly_rent, operatorEmail)
+    if (result.success) {
+      success++
+    } else {
+      failed++
+      errors.push(`${u.asset_code}: ${result.message}`)
+    }
+  }
+
+  return { success, failed, errors }
+}
+
+// 获取按部门统计的租金数据（实时，从 assets 表读取）
+export async function getDepartmentRentStats(): Promise<DepartmentRentStat[]> {
+  try {
+    const { data, error } = await supabase
+      .from('assets')
+      .select('asset_code, department, user_name, monthly_rent, status, brand, model')
+      .neq('status', 'retired')
+      .order('department')
+
+    if (error) throw error
+
+    const deptMap = new Map<string, DepartmentRentStat>()
+
+    for (const a of data || []) {
+      const dept = a.department || '未分配'
+      if (!deptMap.has(dept)) {
+        deptMap.set(dept, {
+          department: dept,
+          assetCount: 0,
+          totalRent: 0,
+          paidRent: 0,
+          unpaidRent: 0,
+          assets: []
+        })
+      }
+      const stat = deptMap.get(dept)!
+      stat.assetCount++
+      const rent = Number(a.monthly_rent) || 0
+      stat.totalRent += rent
+      stat.assets.push({
+        asset_code: a.asset_code,
+        user_name: a.user_name || '',
+        monthly_rent: rent,
+        status: a.status,
+        brand: a.brand || '',
+        model: a.model || ''
+      })
+    }
+
+    return Array.from(deptMap.values())
+  } catch (e: any) {
+    console.error('getDepartmentRentStats error:', e)
+    return []
+  }
+}
+
+// 一键生成月度租赁结算单（按部门分组）
+export async function generateMonthlySettlement(
+  year: number,
+  month: number,
+  operatorEmail: string
+): Promise<{
+  success: boolean
+  message: string
+  details: { departments: number; totalRecords: number; totalRent: number; errors: string[] }
+}> {
+  try {
+    // 1. 检查是否已生成过
+    const { data: existing, error: checkErr } = await supabase
+      .from('rent_records')
+      .select('id')
+      .eq('year', year)
+      .eq('month', month)
+      .limit(1)
+
+    if (checkErr) throw checkErr
+
+    if (existing && existing.length > 0) {
+      // 已有记录，更新租金为最新值
+      const { data: assets, error: assetErr } = await supabase
+        .from('assets')
+        .select('asset_code, monthly_rent, department, user_name')
+        .neq('status', 'retired')
+
+      if (assetErr) throw assetErr
+
+      const assetMap = new Map((assets || []).map(a => [a.asset_code, a]))
+      let updatedCount = 0
+
+      for (const [code, a] of assetMap) {
+        const { error: upErr } = await supabase
+          .from('rent_records')
+          .update({
+            monthly_rent: Number(a.monthly_rent) || 0,
+            department: a.department,
+            user_name: a.user_name,
+            updated_at: new Date().toISOString()
+          })
+          .eq('asset_code', code)
+          .eq('year', year)
+          .eq('month', month)
+
+        if (!upErr) updatedCount++
+      }
+
+      return {
+        success: true,
+        message: `结算单已更新（${updatedCount} 条记录已同步最新租金）`,
+        details: { departments: 0, totalRecords: updatedCount, totalRent: 0, errors: [] }
+      }
+    }
+
+    // 2. 首次生成：获取所有非报废资产
+    const { data: assets, error: assetErr } = await supabase
+      .from('assets')
+      .select('id, asset_code, department, user_name, monthly_rent, status')
+      .neq('status', 'retired')
+
+    if (assetErr) throw assetErr
+
+    const newRecords = (assets || []).map(a => ({
+      asset_code: a.asset_code,
+      asset_id: String(a.id),
+      department: a.department || '未分配',
+      user_name: a.user_name || '',
+      monthly_rent: Number(a.monthly_rent) || 0,
+      year,
+      month,
+      status: 'unpaid' as const,
+      paid_date: null
+    }))
+
+    if (newRecords.length === 0) {
+      return {
+        success: false,
+        message: '没有可生成结算单的资产',
+        details: { departments: 0, totalRecords: 0, totalRent: 0, errors: [] }
+      }
+    }
+
+    const { error: insertErr } = await supabase
+      .from('rent_records')
+      .insert(newRecords)
+
+    if (insertErr) throw insertErr
+
+    // 统计部门数和总租金
+    const deptSet = new Set(newRecords.map(r => r.department))
+    const totalRent = newRecords.reduce((sum, r) => sum + r.monthly_rent, 0)
+
+    // 记录历史
+    await recordAllHistory('SYSTEM', 'create', operatorEmail,
+      `生成 ${year}年${month}月 租赁结算单：${newRecords.length} 条记录，${deptSet.size} 个部门，总计 ¥${totalRent.toFixed(2)}`)
+
+    return {
+      success: true,
+      message: `结算单生成成功：${newRecords.length} 条记录，${deptSet.size} 个部门，总计 ¥${totalRent.toFixed(2)}`,
+      details: {
+        departments: deptSet.size,
+        totalRecords: newRecords.length,
+        totalRent,
+        errors: []
+      }
+    }
+  } catch (e: any) {
+    console.error('generateMonthlySettlement error:', e)
+    return {
+      success: false,
+      message: e?.message || '生成结算单失败',
+      details: { departments: 0, totalRecords: 0, totalRent: 0, errors: [e?.message] }
+    }
+  }
+}
+
+// 获取随机资产及其租金之和（用于首页随机筛选）
+export async function getRandomAssetsRent(count: number = 10): Promise<{
+  assets: { asset_code: string; brand: string; model: string; department: string; user_name: string; monthly_rent: number; status: string }[]
+  totalRent: number
+}> {
+  try {
+    const { data, error } = await supabase
+      .from('assets')
+      .select('asset_code, brand, model, department, user_name, monthly_rent, status')
+      .neq('status', 'retired')
+
+    if (error) throw error
+
+    const all = data || []
+    // 随机打乱
+    const shuffled = [...all].sort(() => Math.random() - 0.5)
+    const selected = shuffled.slice(0, Math.min(count, all.length))
+    const totalRent = selected.reduce((sum, a) => sum + (Number(a.monthly_rent) || 0), 0)
+
+    return { assets: selected, totalRent }
+  } catch (e: any) {
+    console.error('getRandomAssetsRent error:', e)
+    return { assets: [], totalRent: 0 }
   }
 }
 

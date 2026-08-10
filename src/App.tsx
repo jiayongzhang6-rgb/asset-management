@@ -9,6 +9,7 @@ import Login from './pages/Login'
 import Import from './pages/Import'
 import OperationHistory from './pages/OperationHistory'
 import RentDetail from './pages/RentDetail'
+import RentSettlement from './pages/RentSettlement'
 import Users from './pages/Users'
 import ChangePassword from './pages/ChangePassword'
 import NotFound from './pages/NotFound'
@@ -279,6 +280,7 @@ export default function App() {
             <Route path="/import" element={<Import />} />
             <Route path="/history" element={<OperationHistory />} />
             <Route path="/rent" element={<RentDetail />} />
+            <Route path="/settlement" element={<RentSettlement />} />
             <Route path="/users" element={<Users />} />
             <Route path="/change-password" element={<ChangePassword />} />
             <Route path="*" element={<NotFound />} />
