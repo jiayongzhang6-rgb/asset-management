@@ -1,6 +1,6 @@
 -- ============================================================
 -- 为 assets 表增加 AI 估值持久化列
--- 执行后请务必：1) 刷新浏览器  2) 点一次"刷新AI估值"
+-- 执行后请务必：1) 重新部署前端（Vercel） 2) 刷新浏览器  3) 点一次"刷新AI估值"
 -- 估值结果将永久保存在数据库中
 -- ============================================================
 
@@ -8,19 +8,15 @@ DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'assets' AND column_name = 'ai_fixed_value') THEN
     ALTER TABLE assets ADD COLUMN ai_fixed_value INTEGER;
-    RAISE NOTICE 'Added ai_fixed_value column';
   END IF;
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'assets' AND column_name = 'ai_current_value') THEN
     ALTER TABLE assets ADD COLUMN ai_current_value INTEGER;
-    RAISE NOTICE 'Added ai_current_value column';
   END IF;
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'assets' AND column_name = 'ai_reason') THEN
     ALTER TABLE assets ADD COLUMN ai_reason VARCHAR(200);
-    RAISE NOTICE 'Added ai_reason column';
   END IF;
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'assets' AND column_name = 'ai_valuated_at') THEN
     ALTER TABLE assets ADD COLUMN ai_valuated_at TIMESTAMPTZ;
-    RAISE NOTICE 'Added ai_valuated_at column';
   END IF;
 END $$;
 
@@ -30,10 +26,44 @@ COMMENT ON COLUMN assets.ai_reason IS 'AI估值：简要依据(200字内)';
 COMMENT ON COLUMN assets.ai_valuated_at IS 'AI估值：最近一次出值时间';
 
 -- ============================================================
--- 刷新 PostgREST schema cache（关键步骤！）
--- 不加这个，REST API 看不到新列，前端 select/update ai_* 列会报 400
+-- ★★★ 关键：修复 RLS (Row Level Security) 权限 ★★★
+-- 如果 assets 表开启了 RLS，anon 用户可能没权限 UPDATE 新列，
+-- 导致写入失败（返回 204 但数据库没更新）。
+-- 这里确保有一条策略允许已认证用户更新自己的资产。
 -- ============================================================
-NOTIFY pgrst, 'reload schema';
+
+-- 先检查是否已经有允许更新的策略
+DO $$
+DECLARE
+  policy_exists INTEGER;
+BEGIN
+  SELECT count(*) INTO policy_exists
+  FROM pg_policies
+  WHERE tablename = 'assets' AND permissive = 'PERMISSIVE'
+    AND cmd = 'UPDATE'
+    AND roles @> ARRAY['anon', 'authenticated'];
+    
+  IF policy_exists = 0 THEN
+    -- 检查是否有任何 UPDATE 策略
+    SELECT count(*) INTO policy_exists
+    FROM pg_policies
+    WHERE tablename = 'assets' AND cmd = 'UPDATE';
+    
+    IF policy_exists = 0 THEN
+      -- 没有任何 UPDATE 策略 → 创建一个允许所有已认证用户更新的策略
+      CREATE POLICY "Allow all updates on assets" ON assets
+        FOR UPDATE
+        TO anon, authenticated
+        USING (true)
+        WITH CHECK (true);
+      RAISE NOTICE 'Created UPDATE policy for assets (permissive)';
+    ELSE
+      RAISE NOTICE 'UPDATE policy already exists on assets';
+    END IF;
+  ELSE
+    RAISE NOTICE 'UPDATE policy for anon/authenticated already exists on assets';
+  END IF;
+END $$;
 
 -- ============================================================
 -- 创建 execute_sql RPC 函数（如果不存在）
@@ -48,11 +78,9 @@ AS $$
 DECLARE
   result json;
 BEGIN
-  -- 只允许 SELECT、INSERT、UPDATE、DELETE、DDL 语句
   IF sql !~* '^\s*(SELECT|INSERT|UPDATE|DELETE|ALTER|CREATE|DROP|NOTIFY|DO)\b' THEN
     RAISE EXCEPTION 'Only read/write/DDL/NOTIFY statements are allowed';
   END IF;
-  -- 禁止危险操作
   IF sql ~* 'pg_catalog|pg_sleep|pg_read_|pg_write_|COPY|TRUNCATE' THEN
     RAISE EXCEPTION 'Forbidden statement detected';
   END IF;
@@ -60,7 +88,6 @@ BEGIN
   RETURN result;
 EXCEPTION
   WHEN OTHERS THEN
-    -- 返回错误信息而不是抛异常，让前端能处理
     RETURN json_build_object('error', SQLERRM, 'detail', SQLSTATE);
 END;
 $$;
@@ -68,4 +95,9 @@ $$;
 -- 授权给 anon 和 authenticated 角色
 GRANT EXECUTE ON FUNCTION execute_sql(text) TO anon, authenticated;
 
--- 完成！请刷新浏览器，然后点一次"刷新AI估值"按钮，估值将永久保存到数据库。
+-- ============================================================
+-- 最后：刷新 PostgREST schema cache
+-- ============================================================
+NOTIFY pgrst, 'reload schema';
+
+-- 完成！请确认前端部署成功后再操作。
