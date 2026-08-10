@@ -300,7 +300,185 @@ export async function generateUniqueAssetCode(): Promise<string> {
   }
 }
 
-// 获取北京时间
+// ===== 数据恢复：将被覆盖的3台资产恢复原始数据，新增的3台挪到新编号 =====
+export async function recoverOverwrittenAssets(operatorEmail?: string): Promise<{ success: boolean; message: string; details: any }> {
+  const operator = operatorEmail || 'system-recovery'
+
+  // 3条原始资产数据（用户提供）
+  const originalRecords: Record<string, any>[] = [
+    {
+      _id: '111209',
+      user_name: '111209',
+      department: '仓库',
+      location: '仓库',
+      status: 'idle',
+      brand: 'MAXSUN',
+      model: 'MS-TZZ H510M-H',
+      cpu: 'Intel(R) Core(TM) i5-10400F CPU @ 2.90GHz',
+      ram: '31.92',
+      os: 'Microsoft Windows 10 企业版 LTSC',
+      gpu: 'NVIDIA GeForce GTX 1660 SUPER',
+      storage: 'GIGABYTE G325E500G;HIKSEMI USB Device',
+      notes: [
+        '系统UUID: 6B891920-A9E8-11ED-A405-02BF23AE1200',
+        'BIOS: Default string',
+        '主板: Default string',
+        '系统版本: 10.0.17763',
+        '显卡驱动: 495.05',
+        '磁盘序号: 6479_A76E_F0C0_06CB.;FC2147403ECF1',
+        '计算机名: 20230228PC'
+      ].join('; ')
+    },
+    {
+      _id: 'ai技术1',
+      user_name: 'ai技术1',
+      department: '仓库',
+      location: '仓库',
+      status: 'idle',
+      brand: 'ASUS',
+      model: 'System Product Name',
+      cpu: '12th Gen Intel(R) Core(TM) i7-12700KF',
+      ram: '31.79',
+      os: 'Microsoft Windows 11 专业版',
+      gpu: 'OrayIddDriver Device',
+      storage: 'CT2000P3PSSD8;HIKSEMI USB Device',
+      notes: [
+        '系统UUID: 1E6DA984-34F5-D929-849F-BCFCE7533406',
+        'BIOS: System Serial Number',
+        '主板序号: 250149204901162',
+        '系统版本: 10.0.26200',
+        '显卡驱动: 1892.3',
+        '磁盘序号: 0000_0000_0000_0001_00A0_7524_4C86_8CC9.;FC2147403ECF1',
+        'MAC: 00:50:56:C0:00:01;00:50:56:C0:00:08',
+        'IP: 192.168.139.1;fe80::fcd4:d4c8:2220:9eb5;192.168.190.1;fe80::a3a4:f9a7:3f50:a465',
+        '计算机名: XTWY20250317'
+      ].join('; ')
+    },
+    {
+      _id: 'laowubijiben1',
+      user_name: 'laowubijiben1',
+      department: '仓库',
+      location: '仓库',
+      status: 'idle',
+      brand: 'HP',
+      model: 'HP EliteBook 630 13 inch G9 Notebook PC',
+      cpu: '12th Gen Intel(R) Core(TM) i5-1235U',
+      ram: '15.64',
+      os: 'Microsoft Windows 10 专业版',
+      gpu: 'Intel(R) UHD Graphics',
+      storage: 'KBG50ZNV512G KIOXIA;HIKSEMI USB Device',
+      notes: [
+        '系统UUID: 949528A6-4FDF-4B0B-BFF2-620F0A31E8F7',
+        'BIOS: 5CD335GPZ3',
+        '主板序号: PPYED118JII0Z8',
+        '系统版本: 10.0.19045',
+        '显卡驱动: 506.23',
+        '磁盘序号: 0000_0000_0000_0000_8CE3_8E04_0453_DB36.;FC2147403ECF1',
+        '计算机名: DESKTOP-A4RB6BV'
+      ].join('; ')
+    }
+  ]
+
+  // 查找被覆盖的3条资产（按 user_name 匹配）
+  const result: any = { moved: [], restored: [], errors: [] }
+
+  for (const record of originalRecords) {
+    try {
+      // 找到对应用户的资产
+      const { data: assets, error } = await supabase
+        .from('assets')
+        .select('*')
+        .eq('user_name', record._id)
+        .limit(5)
+
+      if (error) {
+        result.errors.push(`查询 ${record._id} 失败: ${error.message}`)
+        continue
+      }
+
+      if (!assets || assets.length === 0) {
+        result.errors.push(`未找到用户 ${record._id} 的资产`)
+        continue
+      }
+
+      // 取第一条匹配的（按更新时间最近的）
+      const targetAsset = assets[0]
+      const oldData = { ...targetAsset }
+
+      // 1. 保存快照
+      await saveAssetSnapshot(targetAsset.asset_code, 'recovery_backup', operator, oldData)
+
+      // 2. 把当前数据挪到新编号（新增一条，不删除旧的，以防万一）
+      const newCode = await generateUniqueAssetCode()
+      const { error: insertErr } = await supabase
+        .from('assets')
+        .insert({
+          ...oldData,
+          id: undefined,
+          asset_code: newCode,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          notes: `[恢复备份] 原编号: ${targetAsset.asset_code}；${oldData.notes || ''}`
+        })
+
+      if (insertErr) {
+        result.errors.push(`备份 ${targetAsset.asset_code} 到新编号失败: ${insertErr.message}`)
+        continue
+      }
+
+      result.moved.push({ from: targetAsset.asset_code, to: newCode, user: record._id })
+
+      // 3. 更新原编号为原始数据
+      const updateData: Record<string, any> = {
+        user_name: record.user_name,
+        department: record.department,
+        location: record.location,
+        status: record.status,
+        brand: record.brand,
+        model: record.model,
+        cpu: record.cpu,
+        ram: record.ram,
+        os: record.os,
+        gpu: record.gpu,
+        storage: record.storage,
+        notes: record.notes,
+        updated_at: new Date().toISOString()
+      }
+
+      // 如果 category 列不可用则剥离
+      const cleanUpdateData = await sanitizeAssetData(updateData)
+
+      const { error: updateErr } = await supabase
+        .from('assets')
+        .update(cleanUpdateData)
+        .eq('asset_code', targetAsset.asset_code)
+
+      if (updateErr) {
+        result.errors.push(`恢复 ${targetAsset.asset_code} 失败: ${updateErr.message}`)
+        continue
+      }
+
+      result.restored.push({ code: targetAsset.asset_code, user: record._id, model: record.model })
+
+      // 记录操作历史
+      await recordAllHistory(targetAsset.asset_code, 'update', operator,
+        `恢复原始数据：品牌=${record.brand}, 型号=${record.model}, CPU=${record.cpu}`)
+      await recordAllHistory(newCode, 'create', operator,
+        `从 ${targetAsset.asset_code} 迁移过来的备份数据`)
+
+    } catch (e: any) {
+      result.errors.push(`处理 ${record._id} 异常: ${e?.message}`)
+    }
+  }
+
+  return {
+    success: result.errors.length === 0,
+    message: result.errors.length === 0 ? '数据恢复完成' : `恢复完成，${result.errors.length} 项出错`,
+    details: result
+  }
+}
+
+// ===== 数据库初始化 =====获取北京时间
 export function getBeijingTime(utcStr: string): string {
   const utcDate = new Date(utcStr)
   const beijingDate = new Date(utcDate.getTime() + 8 * 60 * 60 * 1000)
@@ -589,4 +767,10 @@ async function backfillHistoryChanges(): Promise<void> {
   } catch (e: any) {
     console.warn('Backfill history changes failed:', e?.message)
   }
+}
+
+// 暴露到 window 以便在浏览器控制台调用恢复函数
+// 使用方法: 在浏览器控制台输入: await window.recoverData()
+if (typeof window !== 'undefined') {
+  (window as any).recoverData = recoverOverwrittenAssets
 }
