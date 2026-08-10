@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../App'
 import toast from 'react-hot-toast'
 import * as XLSX from 'xlsx'
-import { supabase, type Asset, initDatabase, formatUserIdentifier, formatMemory, formatStorage, getStatusText, getStatusColor, recordAllHistory, generateUniqueAssetCode, sanitizeAssetData, isCategorySupportedSync, saveAssetSnapshot, formatHardwareSpec, estimateAssetValue, estimateAssetValueWithAI, batchEstimateAssetValueWithAI, getAIValuationConfig, type AIValResult, restoreAIValuationsFromCache, syncResolveAIValuation } from '../lib/supabase'
+import { supabase, type Asset, initDatabase, formatUserIdentifier, formatMemory, formatStorage, getStatusText, getStatusColor, recordAllHistory, generateUniqueAssetCode, sanitizeAssetData, updateAssetRobust, isCategorySupportedSync, saveAssetSnapshot, formatHardwareSpec, estimateAssetValue, estimateAssetValueWithAI, batchEstimateAssetValueWithAI, getAIValuationConfig, type AIValResult, restoreAIValuationsFromCache, syncResolveAIValuation } from '../lib/supabase'
 import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js'
 import { Pie } from 'react-chartjs-2'
 
@@ -458,41 +458,34 @@ export default function Index() {
           updateData.monthly_rent = isNaN(rentValue) ? 0 : rentValue
         }
 
-        // 运行时检测：如果 category 列不可用则自动剥离
-        const cleanData = await sanitizeAssetData(updateData)
-
-        // 构建变更明细
+        // 构建变更明细（基于原始 updateData，category 由 updateAssetRobust 内部处理）
         const asset = editingAsset
         const changes: string[] = []
-        if (cleanData.brand !== undefined && cleanData.brand !== asset.brand) changes.push(`品牌: ${asset.brand || '无'} → ${cleanData.brand || '无'}`)
-        if (cleanData.model !== undefined && cleanData.model !== asset.model) changes.push(`型号: ${asset.model || '无'} → ${cleanData.model || '无'}`)
-        if (cleanData.cpu !== undefined && cleanData.cpu !== asset.cpu) changes.push(`CPU: ${asset.cpu || '无'} → ${cleanData.cpu || '无'}`)
-        if (cleanData.ram !== undefined && cleanData.ram !== asset.ram) changes.push(`内存: ${asset.ram || '无'} → ${cleanData.ram || '无'}`)
-        if (cleanData.storage !== undefined && cleanData.storage !== asset.storage) changes.push(`存储: ${asset.storage || '无'} → ${cleanData.storage || '无'}`)
-        if (cleanData.gpu !== undefined && cleanData.gpu !== asset.gpu) changes.push(`显卡: ${asset.gpu || '无'} → ${cleanData.gpu || '无'}`)
-        if (cleanData.os !== undefined && cleanData.os !== asset.os) changes.push(`操作系统: ${asset.os || '无'} → ${cleanData.os || '无'}`)
-        if (cleanData.category !== undefined && cleanData.category !== asset.category) changes.push(`分类: ${asset.category || '无'} → ${cleanData.category || '无'}`)
-        if (cleanData.department !== undefined && cleanData.department !== asset.department) changes.push(`部门: ${asset.department || '无'} → ${cleanData.department || '无'}`)
-        if (cleanData.user_name !== undefined && cleanData.user_name !== asset.user_name) changes.push(`使用人: ${asset.user_name || '无'} → ${cleanData.user_name || '无'}`)
-        if (cleanData.location !== undefined && cleanData.location !== asset.location) changes.push(`位置: ${asset.location || '无'} → ${cleanData.location || '无'}`)
-        if (cleanData.status !== undefined && cleanData.status !== asset.status) changes.push(`状态: ${getStatusText(asset.status)} → ${getStatusText(cleanData.status)}`)
-        if (cleanData.monthly_rent !== undefined && Number(cleanData.monthly_rent) !== Number(asset.monthly_rent)) changes.push(`月租费: ¥${asset.monthly_rent || 0} → ¥${cleanData.monthly_rent || 0}`)
-        if (cleanData.notes !== undefined && cleanData.notes !== asset.notes) changes.push(`备注: ${asset.notes || '无'} → ${cleanData.notes || '无'}`)
+        if (updateData.brand !== undefined && updateData.brand !== asset.brand) changes.push(`品牌: ${asset.brand || '无'} → ${updateData.brand || '无'}`)
+        if (updateData.model !== undefined && updateData.model !== asset.model) changes.push(`型号: ${asset.model || '无'} → ${updateData.model || '无'}`)
+        if (updateData.cpu !== undefined && updateData.cpu !== asset.cpu) changes.push(`CPU: ${asset.cpu || '无'} → ${updateData.cpu || '无'}`)
+        if (updateData.ram !== undefined && updateData.ram !== asset.ram) changes.push(`内存: ${asset.ram || '无'} → ${updateData.ram || '无'}`)
+        if (updateData.storage !== undefined && updateData.storage !== asset.storage) changes.push(`存储: ${asset.storage || '无'} → ${updateData.storage || '无'}`)
+        if (updateData.gpu !== undefined && updateData.gpu !== asset.gpu) changes.push(`显卡: ${asset.gpu || '无'} → ${updateData.gpu || '无'}`)
+        if (updateData.os !== undefined && updateData.os !== asset.os) changes.push(`操作系统: ${asset.os || '无'} → ${updateData.os || '无'}`)
+        if (updateData.category !== undefined && updateData.category !== asset.category) changes.push(`分类: ${asset.category || '无'} → ${updateData.category || '无'}`)
+        if (updateData.department !== undefined && updateData.department !== asset.department) changes.push(`部门: ${asset.department || '无'} → ${updateData.department || '无'}`)
+        if (updateData.user_name !== undefined && updateData.user_name !== asset.user_name) changes.push(`使用人: ${asset.user_name || '无'} → ${updateData.user_name || '无'}`)
+        if (updateData.location !== undefined && updateData.location !== asset.location) changes.push(`位置: ${asset.location || '无'} → ${updateData.location || '无'}`)
+        if (updateData.status !== undefined && updateData.status !== asset.status) changes.push(`状态: ${getStatusText(asset.status)} → ${getStatusText(updateData.status)}`)
+        if (updateData.monthly_rent !== undefined && Number(updateData.monthly_rent) !== Number(asset.monthly_rent)) changes.push(`月租费: ¥${asset.monthly_rent || 0} → ¥${updateData.monthly_rent || 0}`)
+        if (updateData.notes !== undefined && updateData.notes !== asset.notes) changes.push(`备注: ${asset.notes || '无'} → ${updateData.notes || '无'}`)
 
-        console.log('Index: Updating asset with data:', cleanData)
+        console.log('Index: Updating asset with data:', updateData)
 
         // 更新前保存快照（防止数据丢失，可用于回溯恢复）
         if (user) {
           await saveAssetSnapshot(editingAsset.asset_code, 'update', user.email, editingAsset)
         }
 
-        const { data, error } = await supabase
-          .from('assets')
-          .update({
-            ...cleanData,
-            updated_at: new Date().toISOString()
-          })
-          .eq('asset_code', editingAsset.asset_code)
+        // 健壮更新：自动处理 category 列的 PostgREST schema cache 问题
+        // 若 REST API 因看不到 category 列而失败，会自动剥离 category 重试 + execute_sql 补写
+        const { error } = await updateAssetRobust(editingAsset.asset_code, updateData)
         if (error) throw error
         console.log('Index: Asset updated successfully')
 

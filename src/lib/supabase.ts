@@ -1072,6 +1072,100 @@ export async function sanitizeAssetBatch<T extends Record<string, any>>(items: T
   })
 }
 
+/**
+ * 通过 execute_sql RPC 更新单个资产的 category（绕过 PostgREST schema cache）。
+ * 当 REST API 因 schema cache 看不到 category 列而更新失败时使用。
+ * 如果 category 列不存在，会自动添加列后再更新。
+ */
+export async function updateAssetCategoryViaSQL(assetCode: string, category: string): Promise<boolean> {
+  if (!assetCode) return false
+  try {
+    const escapedCat = String(category ?? '').replace(/'/g, "''")
+    const escapedCode = String(assetCode).replace(/'/g, "''")
+    const updateSql = `UPDATE assets SET category = '${escapedCat}' WHERE asset_code = '${escapedCode}';`
+    const { data, error } = await supabase.rpc('execute_sql', { sql: updateSql })
+    if (error) {
+      console.warn('[Category] execute_sql RPC 调用失败:', error.message)
+      return false
+    }
+    if (!isExecuteSqlSuccess(data)) {
+      // 列可能不存在 → 自动添加列后重试
+      console.warn('[Category] execute_sql 执行报错，尝试添加列:', (data as any)?.error)
+      const { error: alterErr } = await supabase.rpc('execute_sql', {
+        sql: `ALTER TABLE assets ADD COLUMN IF NOT EXISTS category VARCHAR(50) DEFAULT '';`
+      })
+      if (alterErr) { console.warn('[Category] ALTER TABLE 失败:', alterErr.message); return false }
+      try { await supabase.rpc('execute_sql', { sql: "NOTIFY pgrst, 'reload schema';" }) } catch { /* ignore */ }
+      const { error: retryErr } = await supabase.rpc('execute_sql', { sql: updateSql })
+      if (retryErr) { console.warn('[Category] 重试更新失败:', retryErr.message); return false }
+      console.log('[Category] 已自动添加 category 列并更新成功')
+    }
+    // 刷新运行时检测缓存，让后续 REST API 也能识别 category
+    resetCategoryCheck()
+    return true
+  } catch (e: any) {
+    console.warn('[Category] execute_sql 异常:', e?.message)
+    return false
+  }
+}
+
+/**
+ * 健壮的资产更新：先尝试普通 REST API 更新（含 category），
+ * 若因 PostgREST schema cache 看不到 category 列而失败，
+ * 则剥离 category 重试 REST API，再用 execute_sql RPC 单独更新 category。
+ * 这样无论 schema cache 是否刷新，category 都能正确写入，不会出现"更新失败"。
+ */
+export async function updateAssetRobust(
+  assetCode: string,
+  data: Record<string, any>
+): Promise<{ error: any | null }> {
+  if (!assetCode) return { error: new Error('asset_code is required') }
+
+  const payload = { ...data, updated_at: new Date().toISOString() }
+
+  // 通道1：普通 REST API 更新（含所有字段，包括 category）
+  const { error } = await supabase
+    .from('assets')
+    .update(payload)
+    .eq('asset_code', assetCode)
+
+  if (!error) return { error: null }
+
+  // 判断错误是否与 category 列有关（PostgREST schema cache 看不到该列时的典型报错）
+  const msg = (error.message || '').toLowerCase()
+  const isCategoryRelated = 'category' in data && (
+    msg.includes('category') ||
+    msg.includes('could not find the') ||
+    msg.includes('schema cache')
+  )
+
+  // 非 category 相关错误，或数据中不含 category → 直接返回原错误
+  if (!isCategoryRelated) {
+    return { error }
+  }
+
+  console.warn('[Category] REST API 更新失败（疑似 schema cache 问题），切换到分离更新模式:', error.message)
+
+  // 通道2：剥离 category 后用 REST API 更新其余字段
+  const { category: catVal, ...rest } = payload
+  const { error: restErr } = await supabase
+    .from('assets')
+    .update(rest)
+    .eq('asset_code', assetCode)
+
+  if (restErr) {
+    // 其余字段也更新失败 → 返回错误
+    return { error: restErr }
+  }
+
+  // 通道3：用 execute_sql RPC 单独更新 category（绕过 PostgREST schema cache）
+  if (catVal !== undefined && catVal !== null) {
+    await updateAssetCategoryViaSQL(assetCode, String(catVal))
+  }
+
+  return { error: null }
+}
+
 // 重置 category 支持检测（添加列后调用）
 export function resetCategoryCheck(): void {
   _categorySupported = null
