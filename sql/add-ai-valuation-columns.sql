@@ -68,7 +68,4 @@ $$;
 -- 授权给 anon 和 authenticated 角色
 GRANT EXECUTE ON FUNCTION execute_sql(text) TO anon, authenticated;
 
-RAISE NOTICE '========================================';
-RAISE NOTICE 'AI 估值持久化列 + execute_sql RPC 创建完成！';
-RAISE NOTICE '请刷新浏览器，然后点一次"刷新AI估值"按钮';
-RAISE NOTICE '========================================';
+-- 完成！请刷新浏览器，然后点一次"刷新AI估值"按钮，估值将永久保存到数据库。
