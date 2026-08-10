@@ -493,6 +493,236 @@ export async function getRandomAssetsRent(count: number = 10): Promise<{
   }
 }
 
+// ===== 硬件估价与配置格式化 =====
+
+// 将资产硬件信息格式化为紧凑配置字符串，如 "i7-10700F/16G/512+2T/1660S"
+export function formatHardwareSpec(asset: { cpu?: string; ram?: string; storage?: string; gpu?: string }): string {
+  const parts: string[] = []
+
+  // CPU：提取核心型号，如 "Intel(R) Core(TM) i7-10700F CPU @ 2.90GHz" → "i7-10700F"
+  if (asset.cpu) {
+    const cpuMatch = asset.cpu.match(/i[35779]-\d{4,5}[A-Z]*/i)
+                   || asset.cpu.match(/Ryzen\s+\d\s+\d{4}/i)
+                   || asset.cpu.match(/Atom|Celeron|Pentium|Xeon/i)
+    parts.push(cpuMatch ? cpuMatch[0] : asset.cpu.substring(0, 20))
+  }
+
+  // 内存：提取数字 + G
+  if (asset.ram) {
+    const ramNum = parseFloat(asset.ram)
+    if (!isNaN(ramNum)) {
+      parts.push(`${Math.round(ramNum)}G`)
+    } else {
+      const ramMatch = asset.ram.match(/(\d+)\s*GB?/i)
+      parts.push(ramMatch ? `${ramMatch[1]}G` : asset.ram)
+    }
+  }
+
+  // 存储：简化显示，如 "512GB SSD;1TB HDD" → "512+1T"
+  if (asset.storage) {
+    const storageParts = asset.storage.split(/[;，,]/).map(s => s.trim()).filter(Boolean)
+    const simplified = storageParts.map(s => {
+      const match = s.match(/(\d+)\s*(TB|GB|MB)/i)
+      if (match) {
+        const num = parseInt(match[1])
+        const unit = match[2].toUpperCase()
+        if (unit === 'TB') return `${num}T`
+        if (unit === 'GB') return num >= 1024 ? `${(num / 1024).toFixed(1).replace('.0', '')}T` : `${num}G`
+        return `${num}M`
+      }
+      return s.substring(0, 10)
+    })
+    parts.push(simplified.join('+'))
+  }
+
+  // GPU：简化显示
+  if (asset.gpu) {
+    const gpu = asset.gpu
+    if (/1660/i.test(gpu)) parts.push('1660')
+    else if (/1650/i.test(gpu)) parts.push('1650')
+    else if (/2060/i.test(gpu)) parts.push('2060')
+    else if (/3060/i.test(gpu)) parts.push('3060')
+    else if (/3070/i.test(gpu)) parts.push('3070')
+    else if (/3080/i.test(gpu)) parts.push('3080')
+    else if (/4060/i.test(gpu)) parts.push('4060')
+    else if (/4070/i.test(gpu)) parts.push('4070')
+    else if (/4080/i.test(gpu)) parts.push('4080')
+    else if (/4090/i.test(gpu)) parts.push('4090')
+    else if (/1050/i.test(gpu)) parts.push('1050')
+    else if (/1030/i.test(gpu)) parts.push('1030')
+    else if (/UHD/i.test(gpu)) parts.push('UHD')
+    else if (/集成|Integrated|UHD/i.test(gpu)) parts.push('集显')
+    else {
+      // 取关键词
+      const gpuMatch = gpu.match(/(?:RTX|GTX|GT)\s*\d{3,4}/i)
+      parts.push(gpuMatch ? gpuMatch[0] : gpu.substring(0, 10))
+    }
+  }
+
+  return parts.length > 0 ? parts.join('/') : '-'
+}
+
+// 根据硬件配置估算资产价值
+// 返回 { fixedValue: 固定估值（购入价估算）, currentValue: 实时估值（折旧后） }
+export function estimateAssetValue(asset: { cpu?: string; ram?: string; storage?: string; gpu?: string; brand?: string; model?: string; created_at?: string }): {
+  fixedValue: number
+  currentValue: number
+} {
+  let value = 0
+
+  // CPU 估值
+  if (asset.cpu) {
+    const cpu = asset.cpu.toUpperCase()
+    if (/I9-\d{4,5}/.test(cpu)) value += 3000
+    else if (/I7-\d{5}/.test(cpu)) {
+      // 12代+
+      const gen = parseInt(cpu.match(/I7-(\d)/)?.[1] || '0')
+      value += gen >= 12 ? 2200 : 1800
+    }
+    else if (/I7-\d{4}/.test(cpu)) value += 1800
+    else if (/I5-\d{5}/.test(cpu)) {
+      const gen = parseInt(cpu.match(/I5-(\d)/)?.[1] || '0')
+      value += gen >= 12 ? 1500 : 1200
+    }
+    else if (/I5-\d{4}/.test(cpu)) value += 1200
+    else if (/I3-\d{4,5}/.test(cpu)) value += 800
+    else if (/RYZEN\s*[579]/.test(cpu)) value += 1500
+    else if (/RYZEN\s*3/.test(cpu)) value += 800
+    else if (/CELERON|PENTIUM|ATOM/i.test(cpu)) value += 300
+    else if (/XEON/i.test(cpu)) value += 1200
+    else value += 800
+  }
+
+  // 内存估值
+  if (asset.ram) {
+    const ramNum = parseFloat(asset.ram)
+    if (!isNaN(ramNum)) {
+      if (ramNum >= 64) value += 800
+      else if (ramNum >= 32) value += 450
+      else if (ramNum >= 16) value += 250
+      else if (ramNum >= 8) value += 120
+      else value += 60
+    }
+  }
+
+  // 存储估值
+  if (asset.storage) {
+    const storage = asset.storage.toUpperCase()
+    const hasSSD = /SSD|NVME|M\.2/i.test(storage)
+    const hasHDD = /HDD|MECHANICAL/i.test(storage)
+    const tbMatch = storage.match(/(\d+)\s*TB/)
+    const gbMatch = storage.match(/(\d+)\s*GB/)
+
+    let storageVal = 0
+    if (tbMatch) {
+      const tb = parseInt(tbMatch[1])
+      storageVal += tb * (hasSSD ? 500 : 200)
+    }
+    if (gbMatch) {
+      const gb = parseInt(gbMatch[1])
+      if (gb >= 512) storageVal += hasSSD ? 250 : 100
+      else if (gb >= 256) storageVal += hasSSD ? 150 : 60
+      else storageVal += 50
+    }
+    if (storage.includes(';') || storage.includes(',')) storageVal += 100 // 多盘加价
+    value += storageVal || 100
+  }
+
+  // GPU 估值
+  if (asset.gpu) {
+    const gpu = asset.gpu.toUpperCase()
+    if (/4090/.test(gpu)) value += 12000
+    else if (/4080/.test(gpu)) value += 7000
+    else if (/4070/.test(gpu)) value += 4000
+    else if (/4060/.test(gpu)) value += 2500
+    else if (/3090/.test(gpu)) value += 8000
+    else if (/3080/.test(gpu)) value += 5000
+    else if (/3070/.test(gpu)) value += 3500
+    else if (/3060/.test(gpu)) value += 2000
+    else if (/2080/.test(gpu)) value += 2500
+    else if (/2070/.test(gpu)) value += 1800
+    else if (/2060/.test(gpu)) value += 1200
+    else if (/1660/.test(gpu)) value += 900
+    else if (/1650/.test(gpu)) value += 600
+    else if (/1050/.test(gpu)) value += 300
+    else if (/1030/.test(gpu)) value += 150
+    else if (/UHD|INTEGRATED|集成/.test(gpu)) value += 0 // 集成显卡不额外加价
+    else value += 200
+  }
+
+  // 品牌溢价
+  if (asset.brand) {
+    const brand = asset.brand.toUpperCase()
+    if (/APPLE|MAC/.test(brand)) value = Math.round(value * 1.5)
+    else if (/DELL|HP|LENOVO|ASUS/.test(brand)) value = Math.round(value * 1.1)
+  }
+
+  // 最低价值
+  const fixedValue = Math.max(value, 500)
+
+  // 实时估值：按年份折旧
+  // 折旧规则：第1年85%，第2年70%，第3年55%，第4年40%，第5年30%，5年以上20%
+  let ageYears = 1
+  if (asset.created_at) {
+    const created = new Date(asset.created_at)
+    const now = new Date()
+    ageYears = (now.getTime() - created.getTime()) / (365.25 * 24 * 60 * 60 * 1000)
+    ageYears = Math.max(0.5, ageYears)
+  }
+
+  let depreciationRate: number
+  if (ageYears < 1) depreciationRate = 0.85
+  else if (ageYears < 2) depreciationRate = 0.70
+  else if (ageYears < 3) depreciationRate = 0.55
+  else if (ageYears < 4) depreciationRate = 0.40
+  else if (ageYears < 5) depreciationRate = 0.30
+  else depreciationRate = 0.20
+
+  const currentValue = Math.round(fixedValue * depreciationRate / 100) * 100
+
+  return { fixedValue, currentValue }
+}
+
+// 删除指定年月的结算单（取消结算）
+export async function deleteMonthlySettlement(
+  year: number,
+  month: number,
+  operatorEmail: string
+): Promise<{ success: boolean; message: string }> {
+  try {
+    // 先查询要删除的记录数
+    const { count, error: countErr } = await supabase
+      .from('rent_records')
+      .select('*', { count: 'exact', head: true })
+      .eq('year', year)
+      .eq('month', month)
+
+    if (countErr) throw countErr
+
+    if (!count || count === 0) {
+      return { success: false, message: `${year}年${month}月没有结算单记录` }
+    }
+
+    // 删除
+    const { error: deleteErr } = await supabase
+      .from('rent_records')
+      .delete()
+      .eq('year', year)
+      .eq('month', month)
+
+    if (deleteErr) throw deleteErr
+
+    // 记录历史
+    await recordAllHistory('SYSTEM', 'delete', operatorEmail,
+      `删除 ${year}年${month}月 租赁结算单（${count} 条记录）`)
+
+    return { success: true, message: `已删除 ${year}年${month}月 结算单（${count} 条记录）` }
+  } catch (e: any) {
+    console.error('deleteMonthlySettlement error:', e)
+    return { success: false, message: e?.message || '删除失败' }
+  }
+}
+
 // 格式化内存
 export function formatMemory(memory: string): string {
   try {

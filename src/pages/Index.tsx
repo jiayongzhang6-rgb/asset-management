@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../App'
 import toast from 'react-hot-toast'
 import * as XLSX from 'xlsx'
-import { supabase, type Asset, initDatabase, formatUserIdentifier, formatMemory, formatStorage, getStatusText, getStatusColor, recordAllHistory, generateUniqueAssetCode, sanitizeAssetData, isCategorySupportedSync, saveAssetSnapshot, getRandomAssetsRent } from '../lib/supabase'
+import { supabase, type Asset, initDatabase, formatUserIdentifier, formatMemory, formatStorage, getStatusText, getStatusColor, recordAllHistory, generateUniqueAssetCode, sanitizeAssetData, isCategorySupportedSync, saveAssetSnapshot, formatHardwareSpec, estimateAssetValue } from '../lib/supabase'
 import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js'
 import { Pie } from 'react-chartjs-2'
 
@@ -66,10 +66,8 @@ export default function Index() {
   // 所有分类列表（不受筛选影响）
   const [categoriesFilter, setCategoriesFilter] = useState<string[]>([])
 
-  // 随机抽样相关状态
-  const [randomAssets, setRandomAssets] = useState<{ asset_code: string; brand: string; model: string; department: string; user_name: string; monthly_rent: number; status: string }[]>([])
-  const [randomTotalRent, setRandomTotalRent] = useState(0)
-  const [showRandomPanel, setShowRandomPanel] = useState(false)
+  // 筛选汇总面板：显示当前筛选结果和租金合计
+  const [showSummaryPanel, setShowSummaryPanel] = useState(false)
 
   // 计算资产状态分布数据
   const getStatusDistribution = () => {
@@ -850,18 +848,6 @@ export default function Index() {
     }
   }
 
-  // 随机抽取资产并计算租金之和
-  const handleRandomPick = async () => {
-    try {
-      const { assets, totalRent } = await getRandomAssetsRent(10)
-      setRandomAssets(assets)
-      setRandomTotalRent(totalRent)
-      setShowRandomPanel(true)
-    } catch (e) {
-      toast.error('随机抽取失败')
-    }
-  }
-
   // 检查认证状态并导航
   useEffect(() => {
     if (!isAuthenticated) {
@@ -1031,59 +1017,83 @@ export default function Index() {
           </div>
         </div>
 
-        {/* 随机抽样面板 */}
+        {/* 筛选汇总面板：显示当前筛选结果和租金合计 */}
         <div className="card mb-6">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <div className="w-8 h-8 bg-purple-50 rounded-lg flex items-center justify-center">
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                 </svg>
               </div>
-              <h2 className="text-lg font-semibold text-gray-800">随机抽样</h2>
+              <h2 className="text-lg font-semibold text-gray-800">筛选汇总</h2>
+              <span className="text-sm text-gray-400">（基于下方筛选结果自动生成）</span>
             </div>
-            <div className="flex items-center gap-2">
-              {showRandomPanel && (
-                <span className="text-lg font-bold text-purple-600">租金合计: ¥{randomTotalRent.toFixed(2)}</span>
-              )}
-              <button onClick={handleRandomPick} className="btn btn-primary text-sm">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-4 text-sm">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-gray-500">设备数:</span>
+                  <span className="font-bold text-gray-900">{allAssets.length}</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-gray-500">租金合计:</span>
+                  <span className="font-bold text-purple-600 text-lg">¥{allAssets.reduce((sum, a) => sum + (Number(a.monthly_rent) || 0), 0).toFixed(2)}</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-gray-500">设备估值:</span>
+                  <span className="font-bold text-indigo-600">¥{allAssets.reduce((sum, a) => sum + estimateAssetValue(a).currentValue, 0).toLocaleString()}</span>
+                </div>
+              </div>
+              <button onClick={() => setShowSummaryPanel(!showSummaryPanel)} className="btn btn-ghost text-sm">
+                <svg xmlns="http://www.w3.org/2000/svg" className={`h-4 w-4 transition-transform ${showSummaryPanel ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                 </svg>
-                {showRandomPanel ? '刷新' : '随机抽取10台'}
+                {showSummaryPanel ? '收起明细' : '展开明细'}
               </button>
             </div>
           </div>
-          {showRandomPanel && randomAssets.length > 0 && (
-            <div className="overflow-x-auto">
+          {showSummaryPanel && allAssets.length > 0 && (
+            <div className="overflow-x-auto mt-2">
               <table className="min-w-full text-sm">
                 <thead>
                   <tr className="border-b border-gray-200">
                     <th className="text-left py-2 px-3 font-medium text-gray-500">资产编码</th>
-                    <th className="text-left py-2 px-3 font-medium text-gray-500">品牌型号</th>
+                    <th className="text-left py-2 px-3 font-medium text-gray-500">配置</th>
                     <th className="text-left py-2 px-3 font-medium text-gray-500">部门</th>
                     <th className="text-left py-2 px-3 font-medium text-gray-500">使用人</th>
                     <th className="text-right py-2 px-3 font-medium text-gray-500">月租费</th>
+                    <th className="text-right py-2 px-3 font-medium text-gray-500">购入估值</th>
+                    <th className="text-right py-2 px-3 font-medium text-gray-500">当前估值</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {randomAssets.map((a, i) => (
-                    <tr key={i} className="border-b border-gray-100 hover:bg-gray-50">
-                      <td className="py-2 px-3 text-blue-600 font-medium">{a.asset_code}</td>
-                      <td className="py-2 px-3">{a.brand} {a.model}</td>
-                      <td className="py-2 px-3">{a.department || '-'}</td>
-                      <td className="py-2 px-3">{a.user_name || '-'}</td>
-                      <td className="py-2 px-3 text-right font-medium text-blue-600">¥{a.monthly_rent || 0}</td>
-                    </tr>
-                  ))}
+                  {allAssets.slice(0, 50).map((a, i) => {
+                    const valuation = estimateAssetValue(a)
+                    return (
+                      <tr key={i} className="border-b border-gray-100 hover:bg-gray-50">
+                        <td className="py-2 px-3 text-blue-600 font-medium">{a.asset_code}</td>
+                        <td className="py-2 px-3 font-mono text-xs text-gray-600">{formatHardwareSpec(a)}</td>
+                        <td className="py-2 px-3">{a.department || '-'}</td>
+                        <td className="py-2 px-3">{a.user_name || '-'}</td>
+                        <td className="py-2 px-3 text-right font-medium text-blue-600">¥{a.monthly_rent || 0}</td>
+                        <td className="py-2 px-3 text-right text-gray-500">¥{valuation.fixedValue.toLocaleString()}</td>
+                        <td className="py-2 px-3 text-right font-medium text-indigo-600">¥{valuation.currentValue.toLocaleString()}</td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
                 <tfoot>
                   <tr className="bg-purple-50">
-                    <td colSpan={4} className="py-2 px-3 font-semibold text-gray-700 text-right">租金合计</td>
-                    <td className="py-2 px-3 text-right font-bold text-purple-600 text-lg">¥{randomTotalRent.toFixed(2)}</td>
+                    <td colSpan={4} className="py-2 px-3 font-semibold text-gray-700 text-right">合计（{allAssets.length} 台）</td>
+                    <td className="py-2 px-3 text-right font-bold text-purple-600 text-lg">¥{allAssets.reduce((sum, a) => sum + (Number(a.monthly_rent) || 0), 0).toFixed(2)}</td>
+                    <td className="py-2 px-3 text-right font-semibold text-gray-500">¥{allAssets.reduce((sum, a) => sum + estimateAssetValue(a).fixedValue, 0).toLocaleString()}</td>
+                    <td className="py-2 px-3 text-right font-bold text-indigo-600 text-lg">¥{allAssets.reduce((sum, a) => sum + estimateAssetValue(a).currentValue, 0).toLocaleString()}</td>
                   </tr>
                 </tfoot>
               </table>
+              {allAssets.length > 50 && (
+                <p className="text-center text-gray-400 text-xs mt-2">仅显示前 50 条，共 {allAssets.length} 条筛选结果</p>
+              )}
             </div>
           )}
         </div>
