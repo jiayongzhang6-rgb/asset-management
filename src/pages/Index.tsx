@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../App'
 import toast from 'react-hot-toast'
 import * as XLSX from 'xlsx'
-import { supabase, type Asset, initDatabase, formatUserIdentifier, formatMemory, formatStorage, getStatusText, getStatusColor, recordAllHistory, generateUniqueAssetCode, sanitizeAssetData, isCategorySupportedSync, saveAssetSnapshot, formatHardwareSpec, estimateAssetValue, estimateAssetValueWithAI, batchEstimateAssetValueWithAI, getAIValuationConfig } from '../lib/supabase'
+import { supabase, type Asset, initDatabase, formatUserIdentifier, formatMemory, formatStorage, getStatusText, getStatusColor, recordAllHistory, generateUniqueAssetCode, sanitizeAssetData, isCategorySupportedSync, saveAssetSnapshot, formatHardwareSpec, estimateAssetValue, estimateAssetValueWithAI, batchEstimateAssetValueWithAI, getAIValuationConfig, type AIValResult, restoreAIValuationsFromCache, syncResolveAIValuation } from '../lib/supabase'
 import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js'
 import { Pie } from 'react-chartjs-2'
 
@@ -69,7 +69,6 @@ export default function Index() {
   // 筛选汇总面板：显示当前筛选结果和租金合计
   const [showSummaryPanel, setShowSummaryPanel] = useState(false)
   // AI 估值数据：Map<asset_code, {fixedValue, currentValue, source, reason}>
-  type AIValResult = { fixedValue: number; currentValue: number; source: 'ai' | 'local'; reason?: string; error?: string }
   const [aiValuations, setAiValuations] = useState<Map<string, AIValResult>>(new Map())
   const [aiLoading, setAiLoading] = useState(false)
   const [aiEnabled, setAiEnabled] = useState(false)
@@ -278,6 +277,21 @@ export default function Index() {
       setRentStats({ accumulatedPaid })
     } catch (error) {
       console.error('Error fetching rent stats:', error)
+    }
+
+    // ===== 刷新后 AI 估值丢失修复 =====
+    // 资产加载完成后，立刻从 localStorage 缓存恢复 aiValuations state。
+    // 另外在渲染端再通过 syncResolveAIValuation 做三重兜底，
+    // 保证一刷新页面 AI 估值列仍然可见。
+    if (filteredAllData && filteredAllData.length > 0) {
+      try {
+        const restored = restoreAIValuationsFromCache(filteredAllData as any[])
+        if (restored.size > 0) {
+          setAiValuations(restored)
+        }
+      } catch (err) {
+        console.warn('恢复 AI 估值缓存失败:', err)
+      }
     }
   }
 
@@ -1104,16 +1118,19 @@ export default function Index() {
                 </div>
                 {(() => {
                   let aiSumCurrent = 0
+                  let aiSumFixed = 0
                   let hasAI = false
+                  let aiCount = 0
                   for (const a of allAssets) {
-                    const v = aiValuations.get(a.asset_code)
-                    if (v) { hasAI = true; aiSumCurrent += v.currentValue }
-                    else { aiSumCurrent += estimateAssetValue(a).currentValue }
+                    // 三重兜底：state → localStorage 缓存 → 本地
+                    const v = syncResolveAIValuation(aiValuations, a as any)
+                    if (v.source === 'ai') { hasAI = true; aiCount++ }
+                    aiSumCurrent += v.currentValue
+                    aiSumFixed += v.fixedValue
                   }
-                  if (!hasAI && aiEnabled) aiSumCurrent = allAssets.reduce((sum, a) => sum + estimateAssetValue(a).currentValue, 0)
                   return (
                     <div className="flex items-center gap-1.5">
-                      <span className="text-gray-500">{hasAI ? 'AI估值:' : 'AI估值:'}</span>
+                      <span className="text-gray-500">{hasAI ? `AI估值(${aiCount}台):` : 'AI估值:'}</span>
                       <span className={`font-bold text-lg ${hasAI ? 'text-indigo-600' : 'text-gray-400'}`}>
                         ¥{aiSumCurrent.toLocaleString()}
                       </span>
@@ -1174,7 +1191,9 @@ export default function Index() {
                 <tbody>
                   {allAssets.slice(0, 50).map((a, i) => {
                     const localVal = estimateAssetValue(a)
-                    const aiVal = aiValuations.get(a.asset_code)
+                    // 三重兜底：state → localStorage 缓存 → 本地。刷新页面后仍立刻有值
+                    const aiVal = syncResolveAIValuation(aiValuations, a as any)
+                    const hasAiCached = aiVal.source === 'ai'
                     return (
                       <tr key={i} className="border-b border-gray-100 hover:bg-gray-50">
                         <td className="py-2 px-3 text-blue-600 font-medium">{a.asset_code}</td>
@@ -1185,28 +1204,24 @@ export default function Index() {
                         <td className="py-2 px-3 text-right text-gray-500">¥{localVal.fixedValue.toLocaleString()}</td>
                         <td className="py-2 px-3 text-right text-gray-600">¥{localVal.currentValue.toLocaleString()}</td>
                         <td className="py-2 px-3 text-right text-indigo-500 border-l border-indigo-50 bg-indigo-50/30">
-                          {aiVal ? (
+                          {hasAiCached ? (
                             <>
                               ¥{aiVal.fixedValue.toLocaleString()}
                               {aiVal.reason && <span className="block text-[10px] text-indigo-400 truncate max-w-[120px]" title={aiVal.reason}>💡 {aiVal.reason}</span>}
                             </>
                           ) : (
-                            <span className="text-gray-300 text-xs">—</span>
+                            <span className="text-gray-400 text-xs">刷新后已恢复(本地)</span>
                           )}
                         </td>
                         <td className="py-2 px-3 text-right bg-indigo-50/50">
-                          {aiVal ? (
-                            <div className="flex flex-col items-end">
-                              <span className={`font-bold ${aiVal.source === 'ai' ? 'text-indigo-600' : 'text-gray-500'}`}>
-                                ¥{aiVal.currentValue.toLocaleString()}
-                              </span>
-                              <span className={`text-[10px] ${aiVal.source === 'ai' ? 'text-indigo-400' : 'text-amber-500'}`}>
-                                {aiVal.source === 'ai' ? '✨ AI出值' : '⚠️ 本地兜底'}
-                              </span>
-                            </div>
-                          ) : (
-                            <span className="text-gray-400 text-xs">点击上方「刷新AI估值」</span>
-                          )}
+                          <div className="flex flex-col items-end">
+                            <span className={`font-bold ${aiVal.source === 'ai' ? 'text-indigo-600' : 'text-gray-500'}`}>
+                              ¥{aiVal.currentValue.toLocaleString()}
+                            </span>
+                            <span className={`text-[10px] ${aiVal.source === 'ai' ? 'text-indigo-400' : 'text-amber-500'}`}>
+                              {aiVal.source === 'ai' ? '✨ AI出值' : '⚠️ 本地兜底'}
+                            </span>
+                          </div>
                         </td>
                       </tr>
                     )
@@ -1226,14 +1241,14 @@ export default function Index() {
                     </td>
                     <td className="py-2 px-3 text-right font-semibold text-indigo-500 border-l-2 border-indigo-200">
                       ¥{allAssets.reduce((sum, a) => {
-                        const v = aiValuations.get(a.asset_code)
-                        return sum + (v?.fixedValue ?? estimateAssetValue(a).fixedValue)
+                        const v = syncResolveAIValuation(aiValuations, a as any)
+                        return sum + v.fixedValue
                       }, 0).toLocaleString()}
                     </td>
                     <td className="py-2 px-3 text-right font-bold text-indigo-700 text-lg">
                       ¥{allAssets.reduce((sum, a) => {
-                        const v = aiValuations.get(a.asset_code)
-                        return sum + (v?.currentValue ?? estimateAssetValue(a).currentValue)
+                        const v = syncResolveAIValuation(aiValuations, a as any)
+                        return sum + v.currentValue
                       }, 0).toLocaleString()}
                     </td>
                   </tr>

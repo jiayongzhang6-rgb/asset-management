@@ -1590,6 +1590,101 @@ export function clearAIValuationCache(): void {
   }
 }
 
+// ====== 修复：页面刷新后 AI 估值丢失 ======
+// 原因：aiValuations 仅保存在组件 useState（内存）里，刷新即空；
+//       而真实结果其实已写入 localStorage 缓存，但组件没有读回。
+// 解决：
+//  1) 提供 restoreAIValuationsFromCache：把缓存按资产列表恢复成
+//     Map<asset_code, AIValResult>，供页面加载后 setAiValuations()
+//  2) 提供 syncResolveAIValuation：在渲染时兜底（state 没命中时）
+//     直接查缓存，连缓存都没有则返回本地估值。渲染端用它替代
+//     aiValuations.get()，保证刷新后也能立刻显示 AI 历史结果。
+// =========================================
+
+export type AIValResult = {
+  fixedValue: number
+  currentValue: number
+  source: 'ai' | 'local'
+  reason?: string
+  error?: string
+}
+
+/**
+ * 从 localStorage 缓存中批量恢复估值到组件 state 用的 Map。
+ * - assets：资产或结算单记录数组（必须包含 asset_code 和硬件字段）
+ * - 返回：Map<asset_code, AIValResult>（只有命中缓存的条目才会放进 Map）
+ */
+export function restoreAIValuationsFromCache<
+  T extends { asset_code: string; cpu?: string; ram?: string; storage?: string; gpu?: string; brand?: string; created_at?: string }
+>(assets: T[]): Map<string, AIValResult> {
+  const out = new Map<string, AIValResult>()
+  if (!assets || assets.length === 0) return out
+  const cache = readAICache()
+  const cfg = getAIValuationConfig()
+  const ttl = cfg.cacheTTL || DEFAULT_AI_CONFIG.cacheTTL
+  const now = Date.now()
+  for (const a of assets) {
+    if (!a.asset_code) continue
+    const key = makeCacheKey(a)
+    const entry = cache.get(key)
+    if (entry && now - entry.createdAt <= ttl) {
+      out.set(a.asset_code, {
+        fixedValue: entry.fixedValue,
+        currentValue: entry.currentValue,
+        source: 'ai',
+        reason: entry.reason
+      })
+    }
+  }
+  return out
+}
+
+/**
+ * 渲染端同步解析 AI 估值结果：
+ *   state → localStorage 缓存 → 本地保底估值
+ *
+ * - stateMap：组件 useState 里的 aiValuations Map（可能为空）
+ * - asset：    单台资产/结算记录（必须有 asset_code 和硬件字段）
+ * - 返回：一定有值的 AIValResult（永远不会 undefined）
+ *
+ * 这样即使页面刚刷新、state 还没异步恢复，
+ * 渲染也能立刻从 localStorage 同步读到 AI 结果，不会显示空。
+ */
+export function syncResolveAIValuation(
+  stateMap: Map<string, AIValResult> | undefined | null,
+  asset: { asset_code: string; cpu?: string; ram?: string; storage?: string; gpu?: string; brand?: string; created_at?: string }
+): AIValResult {
+  // 1. 优先组件 state（已刷新 AI 或 restore 后命中）
+  if (stateMap && asset.asset_code) {
+    const fromState = stateMap.get(asset.asset_code)
+    if (fromState) return fromState
+  }
+
+  // 2. 再查 localStorage 缓存（解决刷新后空 state 的问题）
+  if (asset.asset_code) {
+    try {
+      const cfg = getAIValuationConfig()
+      const ttl = cfg.cacheTTL || DEFAULT_AI_CONFIG.cacheTTL
+      const cache = readAICache()
+      const entry = cache.get(makeCacheKey(asset))
+      if (entry && Date.now() - entry.createdAt <= ttl) {
+        return {
+          fixedValue: entry.fixedValue,
+          currentValue: entry.currentValue,
+          source: 'ai',
+          reason: entry.reason
+        }
+      }
+    } catch {
+      // ignore, fallback to local
+    }
+  }
+
+  // 3. 兜底本地估值
+  const local = estimateAssetValue(asset)
+  return { ...local, source: 'local' as const }
+}
+
 // 暴露到 window 以便在浏览器控制台调用恢复函数
 // 使用方法: 在浏览器控制台输入: await window.recoverData()
 if (typeof window !== 'undefined') {
