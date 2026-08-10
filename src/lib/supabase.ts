@@ -1095,7 +1095,7 @@ export async function isAIColumnsSupported(): Promise<boolean> {
       return _aiColumnsSupported
     } catch (notifyErr: any) {
       // execute_sql RPC 不存在 → 无法刷新 schema cache
-      console.warn('[AI DB] execute_sql RPC 不存在，无法自动刷新 schema cache。请手动在 Supabase Dashboard 执行 NOTIFY pgrst, ''reload schema''')
+      console.warn("[AI DB] execute_sql RPC 不存在，无法自动刷新 schema cache。请手动在 Supabase Dashboard 执行 NOTIFY pgrst, 'reload schema'")
       _aiColumnsSupported = false
       return false
     }
