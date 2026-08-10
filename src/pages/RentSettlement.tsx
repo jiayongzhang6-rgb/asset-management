@@ -88,7 +88,12 @@ export default function RentSettlement() {
               gpu: a?.gpu,
               brand: a?.brand,
               model: a?.model,
-              created_at: a?.created_at || r.created_at
+              created_at: a?.created_at || r.created_at,
+              // 把 AI 估值持久化列一并带上（渲染端 DB 第一优先级读这些）
+              ai_fixed_value: a?.ai_fixed_value,
+              ai_current_value: a?.ai_current_value,
+              ai_reason: a?.ai_reason,
+              ai_valuated_at: a?.ai_valuated_at
             }
           })
         }
@@ -262,37 +267,33 @@ export default function RentSettlement() {
     lines.push(`生成时间,${new Date().toLocaleString('zh-CN')}`)
     lines.push('')
     lines.push(['资产编码', '配置', '使用人', '月租费',
-      '本地-固定估值', '本地-当前估值',
-      'AI-固定估值', 'AI-当前估值', 'AI来源', '估值说明',
-      '状态'].join(','))
+      'AI-购入价(元)', 'AI-当前价(元)', 'AI估值依据', '估值时间', '状态'].join(','))
 
     let deptRentTotal = 0
-    let deptLocalFixedTotal = 0
-    let deptLocalCurrentTotal = 0
     let deptAiFixedTotal = 0
     let deptAiCurrentTotal = 0
+    let aiCount = 0
     for (const r of records) {
       const rent = Number(r.monthly_rent) || 0
-      const localVal = estimateAssetValue(r)
-      // 三重兜底：state → localStorage 缓存 → 本地。刷新页面后仍立刻有值
+      // 用户要求：不要本地算法，只有 AI 出值才累计
       const aiVal = syncResolveAIValuation(aiValuations, r as any)
+      const isAI = aiVal.source === 'ai'
+      const aiFixed = isAI ? (aiVal.fixedValue ?? aiVal.currentValue ?? 0) : 0
+      const aiCurrent = isAI ? (aiVal.currentValue ?? 0) : 0
+      if (isAI) aiCount++
       deptRentTotal += rent
-      deptLocalFixedTotal += localVal.fixedValue
-      deptLocalCurrentTotal += localVal.currentValue
-      deptAiFixedTotal += aiVal.fixedValue
-      deptAiCurrentTotal += aiVal.currentValue
+      deptAiFixedTotal += aiFixed
+      deptAiCurrentTotal += aiCurrent
       lines.push(
         [
           r.asset_code,
           formatHardwareSpec(r),
           r.user_name || '',
           rent.toFixed(2),
-          localVal.fixedValue.toFixed(2),
-          localVal.currentValue.toFixed(2),
-          aiFixed.toFixed(2),
-          aiCurrent.toFixed(2),
-          aiVal ? (aiVal.source === 'ai' ? 'AI大模型' : '本地兜底') : '未调用AI',
-          aiVal?.reason || '',
+          isAI ? aiFixed.toFixed(0) : '待AI估值',
+          isAI ? aiCurrent.toFixed(0) : '待AI估值',
+          aiVal.reason || '',
+          aiVal.valuatedAt ? new Date(aiVal.valuatedAt).toLocaleString('zh-CN') : '',
           r.status === 'paid' ? '已缴' : '未缴'
         ]
           .map(f => `"${String(f).replace(/"/g, '""')}"`)
@@ -301,14 +302,12 @@ export default function RentSettlement() {
     }
     lines.push(
       [
-        '小计',
+        `小计（${aiCount}/${records.length}台已AI估值）`,
         '',
         '',
         deptRentTotal.toFixed(2),
-        deptLocalFixedTotal.toFixed(2),
-        deptLocalCurrentTotal.toFixed(2),
-        deptAiFixedTotal.toFixed(2),
-        deptAiCurrentTotal.toFixed(2),
+        deptAiFixedTotal.toFixed(0),
+        deptAiCurrentTotal.toFixed(0),
         '',
         '',
         ''
@@ -340,44 +339,39 @@ export default function RentSettlement() {
     lines.push('')
 
     let grandRentTotal = 0
-    let grandLocalFixedTotal = 0
-    let grandLocalCurrentTotal = 0
     let grandAiFixedTotal = 0
     let grandAiCurrentTotal = 0
+    let totalAICount = 0
+    let totalDevices = 0
 
     for (const [dept, records] of groupedRecords) {
       lines.push(`【部门】${dept}`)
       lines.push(['资产编码', '配置', '使用人', '月租费',
-        '本地-固定估值', '本地-当前估值',
-        'AI-固定估值', 'AI-当前估值', 'AI来源', '估值说明',
-        '状态'].join(','))
+        'AI-购入价(元)', 'AI-当前价(元)', 'AI估值依据', '估值时间', '状态'].join(','))
       let deptRentTotal = 0
-      let deptLocalFixedTotal = 0
-      let deptLocalCurrentTotal = 0
       let deptAiFixedTotal = 0
       let deptAiCurrentTotal = 0
+      let deptAICount = 0
       for (const r of records) {
         const rent = Number(r.monthly_rent) || 0
-        const localVal = estimateAssetValue(r)
-        // 三重兜底：state → localStorage 缓存 → 本地。刷新页面后仍立刻有值
         const aiVal = syncResolveAIValuation(aiValuations, r as any)
+        const isAI = aiVal.source === 'ai'
+        const aiFixed = isAI ? (aiVal.fixedValue ?? aiVal.currentValue ?? 0) : 0
+        const aiCurrent = isAI ? (aiVal.currentValue ?? 0) : 0
+        if (isAI) deptAICount++
         deptRentTotal += rent
-        deptLocalFixedTotal += localVal.fixedValue
-        deptLocalCurrentTotal += localVal.currentValue
-        deptAiFixedTotal += aiVal.fixedValue
-        deptAiCurrentTotal += aiVal.currentValue
+        deptAiFixedTotal += aiFixed
+        deptAiCurrentTotal += aiCurrent
         lines.push(
           [
             r.asset_code,
             formatHardwareSpec(r),
             r.user_name || '',
             rent.toFixed(2),
-            localVal.fixedValue.toFixed(2),
-            localVal.currentValue.toFixed(2),
-            aiFixed.toFixed(2),
-            aiCurrent.toFixed(2),
-            aiVal ? (aiVal.source === 'ai' ? 'AI大模型' : '本地兜底') : '未调用AI',
-            aiVal?.reason || '',
+            isAI ? aiFixed.toFixed(0) : '待AI估值',
+            isAI ? aiCurrent.toFixed(0) : '待AI估值',
+            aiVal.reason || '',
+            aiVal.valuatedAt ? new Date(aiVal.valuatedAt).toLocaleString('zh-CN') : '',
             r.status === 'paid' ? '已缴' : '未缴'
           ]
             .map(f => `"${String(f).replace(/"/g, '""')}"`)
@@ -386,14 +380,12 @@ export default function RentSettlement() {
       }
       lines.push(
         [
-          '小计',
+          `小计（${deptAICount}/${records.length}台已AI估值）`,
           '',
           '',
           deptRentTotal.toFixed(2),
-          deptLocalFixedTotal.toFixed(2),
-          deptLocalCurrentTotal.toFixed(2),
-          deptAiFixedTotal.toFixed(2),
-          deptAiCurrentTotal.toFixed(2),
+          deptAiFixedTotal.toFixed(0),
+          deptAiCurrentTotal.toFixed(0),
           '',
           '',
           ''
@@ -403,21 +395,19 @@ export default function RentSettlement() {
       )
       lines.push('')
       grandRentTotal += deptRentTotal
-      grandLocalFixedTotal += deptLocalFixedTotal
-      grandLocalCurrentTotal += deptLocalCurrentTotal
       grandAiFixedTotal += deptAiFixedTotal
       grandAiCurrentTotal += deptAiCurrentTotal
+      totalAICount += deptAICount
+      totalDevices += records.length
     }
     lines.push(
       [
-        '总计',
+        `总计（${totalAICount}/${totalDevices}台已AI估值）`,
         '',
         '',
         grandRentTotal.toFixed(2),
-        grandLocalFixedTotal.toFixed(2),
-        grandLocalCurrentTotal.toFixed(2),
-        grandAiFixedTotal.toFixed(2),
-        grandAiCurrentTotal.toFixed(2),
+        grandAiFixedTotal.toFixed(0),
+        grandAiCurrentTotal.toFixed(0),
         '',
         '',
         ''
@@ -598,8 +588,8 @@ export default function RentSettlement() {
           </div>
         </div>
 
-        {/* 汇总统计卡片 */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
+        {/* 汇总统计卡片（用户要求：去掉本地估值，只保留 AI 估值） */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           <div className="stat-card">
             <div className="flex items-center gap-3">
               <div className="stat-icon bg-indigo-50 text-indigo-600">
@@ -639,19 +629,6 @@ export default function RentSettlement() {
               </div>
             </div>
           </div>
-          <div className="stat-card">
-            <div className="flex items-center gap-3">
-              <div className="stat-icon bg-gray-100 text-gray-600">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-                </svg>
-              </div>
-              <div className="min-w-0">
-                <p className="text-xs text-gray-500 font-medium">本地估值合计</p>
-                <p className="text-xl font-bold text-gray-600">¥{totalAssetValue.toLocaleString()}</p>
-              </div>
-            </div>
-          </div>
           <div className={`stat-card ${aiEnabled ? 'ring-2 ring-indigo-200 bg-gradient-to-br from-indigo-50/70 to-white' : ''}`}>
             <div className="flex items-center gap-3">
               <div className="stat-icon bg-gradient-to-br from-indigo-100 to-purple-100 text-indigo-600">
@@ -660,12 +637,30 @@ export default function RentSettlement() {
                 </svg>
               </div>
               <div className="min-w-0">
-                <p className="text-xs text-gray-500 font-medium">✨ AI估值合计</p>
+                <p className="text-xs text-gray-500 font-medium flex items-center gap-1">
+                  ✨ AI估值合计
+                  {(() => {
+                    let aiCount = 0
+                    let unvalued = 0
+                    for (const r of settlementRecords) {
+                      const v = syncResolveAIValuation(aiValuations, r as any)
+                      if (v.source === 'ai' && typeof v.currentValue === 'number') aiCount++
+                      else unvalued++
+                    }
+                    if (aiCount === settlementRecords.length && settlementRecords.length > 0) {
+                      return <span className="badge !py-0 !px-1.5 bg-green-100 text-green-700 border-0 text-[10px]">✓全部已估值</span>
+                    }
+                    if (unvalued > 0) {
+                      return <span className="badge !py-0 !px-1.5 bg-orange-100 text-orange-700 border-0 text-[10px]">{unvalued}台待估值</span>
+                    }
+                    return null
+                  })()}
+                </p>
                 <p className="text-xl font-bold text-indigo-700">
                   ¥{settlementRecords.reduce((sum, r) => {
-                    // 三重兜底：state → localStorage 缓存 → 本地
+                    // 用户：不要本地兜底。只累加 AI 真实出值
                     const v = syncResolveAIValuation(aiValuations, r as any)
-                    return sum + v.currentValue
+                    return sum + (v.source === 'ai' ? (v.currentValue ?? 0) : 0)
                   }, 0).toLocaleString()}
                 </p>
               </div>
@@ -753,33 +748,29 @@ export default function RentSettlement() {
                     </div>
                   </div>
 
-                  {/* 部门资产明细表格（含本地+AI双估值） */}
+                  {/* 部门资产明细表格（仅 AI 估值，不再本地兜底） */}
                   {!collapsed && (
                     <div className="table-container !rounded-none !border-0 !border-t border-gray-100 overflow-x-auto">
                       <table className="min-w-full">
                         <thead>
                           <tr>
-                            <th rowSpan={2}>资产编码</th>
-                            <th rowSpan={2}>配置</th>
-                            <th rowSpan={2}>使用人</th>
-                            <th rowSpan={2} className="text-right">月租费</th>
-                            <th colSpan={2} className="text-center border-l border-gray-200 bg-gray-50/50">本地估值（保底）</th>
-                            <th colSpan={2} className="text-center bg-indigo-50/70 border-l border-indigo-100">✨ AI估值（实时行情）</th>
-                            <th rowSpan={2}>缴费状态</th>
-                          </tr>
-                          <tr className="text-xs font-medium">
-                            <th className="text-right text-gray-400 border-l border-gray-200 bg-gray-50/50">购入</th>
-                            <th className="text-right text-gray-400 bg-gray-50/50">当前</th>
-                            <th className="text-right text-indigo-400 bg-indigo-50/70 border-l border-indigo-100">购入</th>
-                            <th className="text-right text-indigo-400 bg-indigo-50/70">当前</th>
+                            <th>资产编码</th>
+                            <th>配置</th>
+                            <th>使用人</th>
+                            <th className="text-right">月租费</th>
+                            <th className="text-right bg-indigo-50/60">
+                              ✨ AI购入价
+                            </th>
+                            <th className="text-right bg-indigo-50/80">
+                              ✨ AI当前价
+                            </th>
+                            <th>缴费状态</th>
                           </tr>
                         </thead>
                         <tbody>
                           {records.map(r => {
-                            const localVal = estimateAssetValue(r)
-                            // 三重兜底：state → localStorage 缓存 → 本地。刷新页面后仍立刻有值
                             const aiVal = syncResolveAIValuation(aiValuations, r as any)
-                            const hasAi = aiVal.source === 'ai'
+                            const hasAi = aiVal.source === 'ai' && typeof aiVal.currentValue === 'number'
                             const rent = Number(r.monthly_rent) || 0
                             return (
                               <tr key={r.id}>
@@ -795,29 +786,46 @@ export default function RentSettlement() {
                                 <td className="text-right">
                                   <span className="text-sm font-semibold text-blue-600">¥{rent.toFixed(2)}</span>
                                 </td>
-                                <td className="text-right text-xs text-gray-500 border-l border-gray-100 bg-gray-50/30">
-                                  ¥{localVal.fixedValue.toLocaleString()}
-                                </td>
-                                <td className="text-right text-xs text-gray-600 bg-gray-50/30">
-                                  ¥{localVal.currentValue.toLocaleString()}
-                                </td>
-                                <td className="text-right text-xs text-indigo-500 border-l border-indigo-100 bg-indigo-50/40">
+                                <td className="text-right bg-indigo-50/40">
                                   {hasAi ? (
                                     <>
-                                      ¥{aiVal.fixedValue.toLocaleString()}
-                                      {aiVal.reason && <span className="block text-[10px] text-indigo-400 truncate" title={aiVal.reason}>💡{aiVal.reason}</span>}
+                                      <span className="text-indigo-700 font-medium text-sm">
+                                        ¥{(aiVal.fixedValue ?? aiVal.currentValue!).toLocaleString()}
+                                      </span>
+                                      {aiVal.valuatedAt && (
+                                        <span className="block text-[10px] text-indigo-400">
+                                          {new Date(aiVal.valuatedAt).toLocaleDateString('zh-CN')}
+                                        </span>
+                                      )}
                                     </>
-                                  ) : <span className="text-gray-400 text-[11px]">已恢复(本地)</span>}
+                                  ) : (
+                                    <span className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded bg-orange-50 text-orange-600 border border-orange-100">
+                                      ⚠️ 待估值
+                                    </span>
+                                  )}
                                 </td>
-                                <td className="text-right bg-indigo-50/40">
-                                  <div className="flex flex-col items-end">
-                                    <span className={`text-sm font-bold ${aiVal.source === 'ai' ? 'text-indigo-600' : 'text-gray-500'}`}>
-                                      ¥{aiVal.currentValue.toLocaleString()}
-                                    </span>
-                                    <span className={`text-[10px] ${aiVal.source === 'ai' ? 'text-indigo-400' : 'text-amber-500'}`}>
-                                      {aiVal.source === 'ai' ? '✨AI' : '⚠️兜底'}
-                                    </span>
-                                  </div>
+                                <td className="text-right bg-indigo-50/60">
+                                  {hasAi ? (
+                                    <div className="flex flex-col items-end">
+                                      <span className="text-sm font-bold text-indigo-700">
+                                        ¥{aiVal.currentValue!.toLocaleString()}
+                                      </span>
+                                      {aiVal.reason && (
+                                        <span className="text-[10px] text-indigo-500 truncate max-w-[150px]" title={aiVal.reason}>💡 {aiVal.reason}</span>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={handleRefreshAIValuation}
+                                      className="inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded bg-gradient-to-r from-indigo-500 to-purple-600 text-white hover:from-indigo-600 hover:to-purple-700 shadow-sm"
+                                    >
+                                      <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
+                                        <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" />
+                                      </svg>
+                                      立即估值
+                                    </button>
+                                  )}
                                 </td>
                                 <td>
                                   <span className={`badge ${r.status === 'paid' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
@@ -835,8 +843,12 @@ export default function RentSettlement() {
                             <td className="text-right">
                               <span className="text-sm font-bold text-blue-600">¥{deptTotal.toFixed(2)}</span>
                             </td>
-                            <td colSpan={2}></td>
-                            <td colSpan={2}></td>
+                            <td colSpan={2} className="text-right text-indigo-600">
+                              ✨ {records.reduce((sum, r) => {
+                                const v = syncResolveAIValuation(aiValuations, r as any)
+                                return sum + (v.source === 'ai' ? (v.currentValue ?? 0) : 0)
+                              }, 0).toLocaleString()}
+                            </td>
                             <td></td>
                           </tr>
                         </tfoot>
@@ -868,8 +880,13 @@ export default function RentSettlement() {
                   </div>
                   <div className="w-px h-10 bg-blue-200" />
                   <div className="text-right">
-                    <p className="text-xs text-gray-500">总设备估值</p>
-                    <p className="text-2xl font-bold text-indigo-700">¥{totalAssetValue.toLocaleString()}</p>
+                    <p className="text-xs text-indigo-500">✨ AI总设备估值</p>
+                    <p className="text-2xl font-bold text-indigo-700">
+                      ¥{settlementRecords.reduce((sum, r) => {
+                        const v = syncResolveAIValuation(aiValuations, r as any)
+                        return sum + (v.source === 'ai' ? (v.currentValue ?? 0) : 0)
+                      }, 0).toLocaleString()}
+                    </p>
                   </div>
                 </div>
               </div>

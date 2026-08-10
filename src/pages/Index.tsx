@@ -1096,10 +1096,12 @@ export default function Index() {
               <span className="text-sm text-gray-400">（基于下方筛选结果自动生成）</span>
               {aiEnabled ? (
                 <span className="badge bg-gradient-to-r from-indigo-100 to-purple-100 text-indigo-700 border border-indigo-200 text-[11px]">
-                  ✨ AI 估值已启用
+                  ✨ AI 估值模式
                 </span>
               ) : (
-                <span className="badge bg-gray-100 text-gray-500 text-[11px]" title="本地保底估值">本地估值</span>
+                <span className="badge bg-red-100 text-red-600 border border-red-200 text-[11px]" title="AI 估值未启用，无法估值">
+                  ⚠ AI未启用
+                </span>
               )}
             </div>
             <div className="flex flex-wrap items-center gap-3">
@@ -1109,32 +1111,50 @@ export default function Index() {
                   <span className="font-bold text-gray-900">{allAssets.length}</span>
                 </div>
                 <div className="flex items-center gap-1.5">
-                  <span className="text-gray-500">租金合计:</span>
+                  <span className="text-gray-500">月租合计:</span>
                   <span className="font-bold text-purple-600 text-lg">¥{allAssets.reduce((sum, a) => sum + (Number(a.monthly_rent) || 0), 0).toFixed(2)}</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <span className="text-gray-500">本地估值:</span>
-                  <span className="font-bold text-gray-500">¥{allAssets.reduce((sum, a) => sum + estimateAssetValue(a).currentValue, 0).toLocaleString()}</span>
                 </div>
                 {(() => {
                   let aiSumCurrent = 0
                   let aiSumFixed = 0
-                  let hasAI = false
                   let aiCount = 0
+                  let unvaluedCount = 0
                   for (const a of allAssets) {
-                    // 三重兜底：state → localStorage 缓存 → 本地
+                    // 三级兜底：DB 列 → state → localStorage；用户要求不要本地算法兜底
                     const v = syncResolveAIValuation(aiValuations, a as any)
-                    if (v.source === 'ai') { hasAI = true; aiCount++ }
-                    aiSumCurrent += v.currentValue
-                    aiSumFixed += v.fixedValue
+                    if (v.source === 'ai' && typeof v.currentValue === 'number') {
+                      aiCount++
+                      aiSumCurrent += v.currentValue
+                      aiSumFixed += v.fixedValue ?? v.currentValue
+                    } else {
+                      unvaluedCount++
+                    }
                   }
                   return (
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-gray-500">{hasAI ? `AI估值(${aiCount}台):` : 'AI估值:'}</span>
-                      <span className={`font-bold text-lg ${hasAI ? 'text-indigo-600' : 'text-gray-400'}`}>
-                        ¥{aiSumCurrent.toLocaleString()}
-                      </span>
-                    </div>
+                    <>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-gray-500">AI购入合计:</span>
+                        <span className={`font-bold ${aiCount > 0 ? 'text-gray-700' : 'text-gray-400'}`}>
+                          ¥{aiSumFixed.toLocaleString()}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-gray-500">
+                          AI当前合计
+                          <span className={`ml-1 text-[11px] font-medium ${
+                            aiCount === allAssets.length ? 'text-green-600 bg-green-50 px-1.5 py-0.5 rounded'
+                            : unvaluedCount > 0 ? 'text-orange-600 bg-orange-50 px-1.5 py-0.5 rounded' : 'text-gray-400'
+                          }`}>
+                            {aiCount === allAssets.length ? '✓ 全部已估值'
+                             : unvaluedCount > 0 ? `${unvaluedCount}台待估值` : `${aiCount}台`}
+                          </span>
+                          :
+                        </span>
+                        <span className={`font-bold text-lg ${aiCount > 0 ? 'text-indigo-600' : 'text-gray-400'}`}>
+                          ¥{aiSumCurrent.toLocaleString()}
+                        </span>
+                      </div>
+                    </>
                   )
                 })()}
               </div>
@@ -1175,25 +1195,20 @@ export default function Index() {
                     <th className="text-left py-2 px-3 font-medium text-gray-500">部门</th>
                     <th className="text-left py-2 px-3 font-medium text-gray-500">使用人</th>
                     <th className="text-right py-2 px-3 font-medium text-gray-500">月租费</th>
-                    <th className="text-center py-2 px-3 font-medium text-gray-500 border-l border-gray-100" colSpan={2}>本地估值（保底）</th>
-                    <th className="text-center py-2 px-3 font-medium text-indigo-600 border-l border-indigo-100 bg-indigo-50/50" colSpan={2}>
-                      ✨ AI估值（实时行情）
+                    <th className="text-center py-2 px-3 font-medium text-indigo-600 bg-indigo-50/50" colSpan={2}>
+                      ✨ AI估值（仅此来源，不再本地兜底）
                     </th>
                   </tr>
                   <tr className="border-b border-gray-100 text-xs">
                     <th colSpan={5} />
-                    <th className="text-right py-1.5 px-3 font-medium text-gray-400">购入</th>
-                    <th className="text-right py-1.5 px-3 font-medium text-gray-400">当前</th>
-                    <th className="text-right py-1.5 px-3 font-medium text-indigo-400 border-l border-indigo-100 bg-indigo-50/50">购入</th>
-                    <th className="text-right py-1.5 px-3 font-medium text-indigo-400 bg-indigo-50/50">当前</th>
+                    <th className="text-right py-1.5 px-3 font-medium text-indigo-400 bg-indigo-50/50">购入价</th>
+                    <th className="text-right py-1.5 px-3 font-medium text-indigo-400 bg-indigo-50/50">当前价</th>
                   </tr>
                 </thead>
                 <tbody>
                   {allAssets.slice(0, 50).map((a, i) => {
-                    const localVal = estimateAssetValue(a)
-                    // 三重兜底：state → localStorage 缓存 → 本地。刷新页面后仍立刻有值
                     const aiVal = syncResolveAIValuation(aiValuations, a as any)
-                    const hasAiCached = aiVal.source === 'ai'
+                    const hasAI = aiVal.source === 'ai'
                     return (
                       <tr key={i} className="border-b border-gray-100 hover:bg-gray-50">
                         <td className="py-2 px-3 text-blue-600 font-medium">{a.asset_code}</td>
@@ -1201,27 +1216,51 @@ export default function Index() {
                         <td className="py-2 px-3">{a.department || '-'}</td>
                         <td className="py-2 px-3">{a.user_name || '-'}</td>
                         <td className="py-2 px-3 text-right font-medium text-blue-600">¥{a.monthly_rent || 0}</td>
-                        <td className="py-2 px-3 text-right text-gray-500">¥{localVal.fixedValue.toLocaleString()}</td>
-                        <td className="py-2 px-3 text-right text-gray-600">¥{localVal.currentValue.toLocaleString()}</td>
-                        <td className="py-2 px-3 text-right text-indigo-500 border-l border-indigo-50 bg-indigo-50/30">
-                          {hasAiCached ? (
+                        <td className="py-2 px-3 text-right bg-indigo-50/40">
+                          {hasAI ? (
                             <>
-                              ¥{aiVal.fixedValue.toLocaleString()}
-                              {aiVal.reason && <span className="block text-[10px] text-indigo-400 truncate max-w-[120px]" title={aiVal.reason}>💡 {aiVal.reason}</span>}
+                              <span className="text-indigo-700 font-medium">
+                                ¥{(aiVal.fixedValue ?? aiVal.currentValue!).toLocaleString()}
+                              </span>
+                              {aiVal.valuatedAt && (
+                                <span className="block text-[10px] text-indigo-400">
+                                  {new Date(aiVal.valuatedAt).toLocaleDateString('zh-CN')} 估值
+                                </span>
+                              )}
                             </>
                           ) : (
-                            <span className="text-gray-400 text-xs">刷新后已恢复(本地)</span>
+                            <span className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded bg-orange-50 text-orange-600 border border-orange-100">
+                              <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
+                                <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                              </svg>
+                              待AI估值
+                            </span>
                           )}
                         </td>
-                        <td className="py-2 px-3 text-right bg-indigo-50/50">
-                          <div className="flex flex-col items-end">
-                            <span className={`font-bold ${aiVal.source === 'ai' ? 'text-indigo-600' : 'text-gray-500'}`}>
-                              ¥{aiVal.currentValue.toLocaleString()}
-                            </span>
-                            <span className={`text-[10px] ${aiVal.source === 'ai' ? 'text-indigo-400' : 'text-amber-500'}`}>
-                              {aiVal.source === 'ai' ? '✨ AI出值' : '⚠️ 本地兜底'}
-                            </span>
-                          </div>
+                        <td className="py-2 px-3 text-right bg-indigo-50/60">
+                          {hasAI ? (
+                            <div className="flex flex-col items-end">
+                              <span className="font-bold text-indigo-700 text-base">
+                                ¥{aiVal.currentValue!.toLocaleString()}
+                              </span>
+                              {aiVal.reason && (
+                                <span className="text-[10px] text-indigo-500 truncate max-w-[150px]" title={aiVal.reason}>
+                                  💡 {aiVal.reason}
+                                </span>
+                              )}
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={handleRefreshAIValuation}
+                              className="inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded bg-gradient-to-r from-indigo-500 to-purple-600 text-white hover:from-indigo-600 hover:to-purple-700 shadow-sm"
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
+                                <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" />
+                              </svg>
+                              点我估值
+                            </button>
+                          )}
                         </td>
                       </tr>
                     )
@@ -1233,22 +1272,16 @@ export default function Index() {
                     <td className="py-2 px-3 text-right font-bold text-purple-600 text-lg">
                       ¥{allAssets.reduce((sum, a) => sum + (Number(a.monthly_rent) || 0), 0).toFixed(2)}
                     </td>
-                    <td className="py-2 px-3 text-right font-semibold text-gray-500">
-                      ¥{allAssets.reduce((sum, a) => sum + estimateAssetValue(a).fixedValue, 0).toLocaleString()}
-                    </td>
-                    <td className="py-2 px-3 text-right font-bold text-gray-600">
-                      ¥{allAssets.reduce((sum, a) => sum + estimateAssetValue(a).currentValue, 0).toLocaleString()}
-                    </td>
-                    <td className="py-2 px-3 text-right font-semibold text-indigo-500 border-l-2 border-indigo-200">
+                    <td className="py-2 px-3 text-right font-semibold text-indigo-600 bg-indigo-50/40 border-l-2 border-indigo-200">
                       ¥{allAssets.reduce((sum, a) => {
                         const v = syncResolveAIValuation(aiValuations, a as any)
-                        return sum + v.fixedValue
+                        return sum + (v.source === 'ai' ? (v.fixedValue ?? v.currentValue ?? 0) : 0)
                       }, 0).toLocaleString()}
                     </td>
-                    <td className="py-2 px-3 text-right font-bold text-indigo-700 text-lg">
+                    <td className="py-2 px-3 text-right font-bold text-indigo-700 text-lg bg-indigo-50/50">
                       ¥{allAssets.reduce((sum, a) => {
                         const v = syncResolveAIValuation(aiValuations, a as any)
-                        return sum + v.currentValue
+                        return sum + (v.source === 'ai' ? (v.currentValue ?? 0) : 0)
                       }, 0).toLocaleString()}
                     </td>
                   </tr>

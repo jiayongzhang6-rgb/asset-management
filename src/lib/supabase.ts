@@ -988,7 +988,7 @@ export function getBeijingTime(utcStr: string): string {
 
 // ===== 数据库初始化 =====
 const DB_VERSION_KEY = 'db_schema_version'
-const CURRENT_DB_VERSION = 5
+const CURRENT_DB_VERSION = 6
 
 // 运行时检测 category 列是否可用（PostgREST schema cache 是否已包含）
 // 注意：_categorySupported 取值含义：null=未探测, true=可用, false=不可用
@@ -1051,6 +1051,96 @@ export async function sanitizeAssetBatch<T extends Record<string, any>>(items: T
 // 重置 category 支持检测（添加列后调用）
 export function resetCategoryCheck(): void {
   _categorySupported = null
+}
+
+// ===== AI 估值列 schema 探测（避免 PostgREST schema cache 未刷新时报错） =====
+let _aiColumnsSupported: boolean | null = null
+
+export function isAIColumnsSupportedSync(): boolean {
+  return _aiColumnsSupported === true
+}
+
+export async function isAIColumnsSupported(): Promise<boolean> {
+  if (_aiColumnsSupported !== null) return _aiColumnsSupported
+  try {
+    const { error } = await supabase.from('assets').select('ai_current_value').limit(1)
+    _aiColumnsSupported = !error
+    if (error) {
+      console.warn('AI valuation columns not in schema cache, will skip writing to DB:', error.message)
+    }
+    return _aiColumnsSupported
+  } catch (e: any) {
+    console.warn('AI columns check threw:', e?.message)
+    _aiColumnsSupported = false
+    return false
+  }
+}
+
+export function resetAIColumnsCheck(): void {
+  _aiColumnsSupported = null
+}
+
+/**
+ * 把 AI 估值结果写入 assets 表对应的 ai_* 列（持久化到数据库）。
+ * 刷新/换浏览器/清 localStorage 都不会丢。
+ * 如果 schema cache 还没包含这些列 → 静默跳过，不报错。
+ */
+export async function persistAIValuationToDB(
+  asset_code: string,
+  value: { fixedValue: number; currentValue: number; reason?: string; source?: 'ai' | 'local' }
+): Promise<boolean> {
+  if (!asset_code) return false
+  if (value.source === 'local') return false // 用户说不要本地估值，只持久化 AI 真结果
+  try {
+    const supported = await isAIColumnsSupported()
+    if (!supported) return false
+    const payload: any = {
+      ai_fixed_value: Math.round(value.fixedValue),
+      ai_current_value: Math.round(value.currentValue),
+      ai_valuated_at: new Date().toISOString()
+    }
+    if (value.reason) payload.ai_reason = value.reason.slice(0, 200)
+    const { error } = await supabase
+      .from('assets')
+      .update(payload)
+      .eq('asset_code', asset_code)
+    if (error) {
+      console.warn(`写 AI 估值到 DB 失败(${asset_code}):`, error.message)
+      return false
+    }
+    return true
+  } catch (e: any) {
+    console.warn('persistAIValuationToDB exception:', e?.message)
+    return false
+  }
+}
+
+/**
+ * 批量写 AI 估值结果回 DB。
+ */
+export async function batchPersistAIValuationToDB(
+  items: Array<{ asset_code: string; fixedValue: number; currentValue: number; reason?: string; source?: 'ai' | 'local' }>
+): Promise<number> {
+  if (!items || items.length === 0) return 0
+  const supported = await isAIColumnsSupported()
+  if (!supported) return 0
+  let okCount = 0
+  for (const it of items) {
+    if (it.source === 'local') continue
+    try {
+      const payload: any = {
+        ai_fixed_value: Math.round(it.fixedValue),
+        ai_current_value: Math.round(it.currentValue),
+        ai_valuated_at: new Date().toISOString()
+      }
+      if (it.reason) payload.ai_reason = it.reason.slice(0, 200)
+      const { error } = await supabase.from('assets').update(payload).eq('asset_code', it.asset_code)
+      if (!error) okCount++
+    } catch {
+      // skip one error, continue others
+    }
+  }
+  return okCount
 }
 
 async function ensureColumn(table: string, column: string, definition: string): Promise<boolean> {
@@ -1226,6 +1316,13 @@ export const initDatabase = async () => {
   await ensureColumn('assets', 'category', 'category VARCHAR(50) DEFAULT \'\'')
   // 重置运行时检测，确保后续请求重新检查
   resetCategoryCheck()
+
+  // 迁移 version 6：给 assets 表加 4 个 AI 估值持久化列
+  await ensureColumn('assets', 'ai_fixed_value', 'ai_fixed_value INTEGER')
+  await ensureColumn('assets', 'ai_current_value', 'ai_current_value INTEGER')
+  await ensureColumn('assets', 'ai_reason', 'ai_reason VARCHAR(200)')
+  await ensureColumn('assets', 'ai_valuated_at', 'ai_valuated_at TIMESTAMPTZ')
+  resetAIColumnsCheck()
 
   localStorage.setItem(DB_VERSION_KEY, String(CURRENT_DB_VERSION))
   console.log('Database initialization completed (version:', CURRENT_DB_VERSION, ')')
@@ -1477,25 +1574,30 @@ function safeParseAIValuation(text: string): { fixedValue: number; currentValue:
  * - 若配置未启用 / API 调用失败 / 解析失败，自动回退到本地 estimateAssetValue 算法。
  * - 返回值增加字段 source（'ai' | 'local'）和 reason（AI 估值依据）。
  */
+/**
+ * 对单台硬件做 AI 估值（用户明确：不要本地估值兜底，仅 AI 成功时返回数字，否则返回 error）。
+ * 为了持久化：如果传了 asset_code，AI 出值后会同时写入 assets.ai_* 列和 localStorage 缓存。
+ * - DB 是第一级持久化（刷新/换浏览器/清缓存都不会丢）
+ * - localStorage 是第二级缓存（减少重复调用 AI）
+ */
 export async function estimateAssetValueWithAI(asset: {
+  asset_code?: string;
   cpu?: string; ram?: string; storage?: string; gpu?: string; brand?: string; model?: string; created_at?: string
 }): Promise<{
-  fixedValue: number
-  currentValue: number
-  source: 'ai' | 'local'
+  fixedValue?: number
+  currentValue?: number
+  source: 'ai' | 'none'
   reason?: string
   error?: string
 }> {
   const config = getAIValuationConfig()
 
-  // 本地保底估值（AI 失败时使用）
-  const fallback = estimateAssetValue(asset)
-
+  // ① 用户明确：不要本地估值；未启用 / 未配 Key → 直接返回 none
   if (!config.enabled || !config.apiKey) {
-    return { ...fallback, source: 'local' as const }
+    return { source: 'none' as const, error: 'AI估值未启用或未填写 API Key，请先到 AI估值设置页配置。' }
   }
 
-  // 查缓存
+  // ② 先查 localStorage 缓存（避免重复调用 AI）
   const cacheKey = makeCacheKey(asset)
   const cache = readAICache()
   const cached = cache.get(cacheKey)
@@ -1508,7 +1610,7 @@ export async function estimateAssetValueWithAI(asset: {
     }
   }
 
-  // 调用 AI
+  // ③ 调用 AI
   try {
     const content = await callAI(
       [
@@ -1519,16 +1621,19 @@ export async function estimateAssetValueWithAI(asset: {
     )
     const parsed = safeParseAIValuation(content)
     if (!parsed) {
-      return { ...fallback, source: 'local' as const, error: 'AI 返回内容无法解析为估值' }
+      return { source: 'none' as const, error: 'AI 返回内容无法解析为估值数据' }
+    }
+    if (!parsed.fixedValue || !parsed.currentValue || parsed.currentValue <= 0 || parsed.fixedValue <= 0) {
+      return { source: 'none' as const, error: 'AI 估值结果无效(数值非正)' }
     }
 
-    // 合理性校验：AI 结果太离谱时兜底（如 currentValue > fixedValue * 1.5 或 < fixedValue * 0.05）
+    // 合理性边界：AI 价格太离谱时直接报错，而不是用本地估值兜底
     const ratio = parsed.currentValue / parsed.fixedValue
     if (ratio > 1.5 || ratio < 0.05) {
-      return { ...fallback, source: 'local' as const, error: `AI 估值比例异常（折旧比 ${ratio.toFixed(2)}），已使用本地估值` }
+      return { source: 'none' as const, error: `AI 估值折旧比例异常（${ratio.toFixed(2)}）` }
     }
 
-    // 写入缓存
+    // 写 localStorage 缓存
     const entry: AICacheEntry = {
       key: cacheKey,
       fixedValue: parsed.fixedValue,
@@ -1539,6 +1644,16 @@ export async function estimateAssetValueWithAI(asset: {
     cache.set(cacheKey, entry)
     writeAICache(cache, config.cacheTTL)
 
+    // 写 DB（持久化核心：刷新/换浏览器都不丢），静默不报错
+    if (asset.asset_code) {
+      void persistAIValuationToDB(asset.asset_code, {
+        fixedValue: parsed.fixedValue,
+        currentValue: parsed.currentValue,
+        reason: parsed.reason,
+        source: 'ai'
+      })
+    }
+
     return {
       fixedValue: parsed.fixedValue,
       currentValue: parsed.currentValue,
@@ -1546,40 +1661,51 @@ export async function estimateAssetValueWithAI(asset: {
       reason: parsed.reason
     }
   } catch (e: any) {
-    return {
-      ...fallback,
-      source: 'local' as const,
-      error: e?.message || 'AI 调用失败，已使用本地估值'
-    }
+    return { source: 'none' as const, error: e?.message || 'AI 调用失败' }
   }
 }
 
 /**
  * 批量 AI 估值（并发可控，避免触发 API 限流）。
- * 返回 Map<cacheKey, 估值结果>，调用方按 makeCacheKey 取对应结果。
+ * 注意：入参 assets 最好含 asset_code，跑完后会批量写 DB（ai_* 列持久化）。
  */
 export async function batchEstimateAssetValueWithAI(
-  assets: Array<{ cpu?: string; ram?: string; storage?: string; gpu?: string; brand?: string; model?: string; created_at?: string }>,
-  concurrency: number = 5
+  assets: Array<{ asset_code?: string; cpu?: string; ram?: string; storage?: string; gpu?: string; brand?: string; model?: string; created_at?: string }>,
+  concurrency: number = 5,
+  onProgress?: (done: number, total: number) => void
 ): Promise<Array<{
-  fixedValue: number
-  currentValue: number
-  source: 'ai' | 'local'
+  fixedValue?: number
+  currentValue?: number
+  source: 'ai' | 'none'
   reason?: string
   error?: string
 }>> {
   const results: any[] = new Array(assets.length)
   let cursor = 0
+  let done = 0
 
   async function worker() {
     while (cursor < assets.length) {
       const idx = cursor++
       results[idx] = await estimateAssetValueWithAI(assets[idx])
+      done++
+      onProgress?.(done, assets.length)
     }
   }
 
   const workers = Array.from({ length: Math.min(concurrency, assets.length) }, () => worker())
   await Promise.all(workers)
+
+  // 统一批量写 DB（AI 出值的那些）
+  try {
+    const dbItems = results
+      .map((r, i) => ({ asset_code: assets[i].asset_code, ...r }))
+      .filter(r => r.asset_code && r.source === 'ai' && typeof r.currentValue === 'number') as any[]
+    if (dbItems.length > 0) await batchPersistAIValuationToDB(dbItems)
+  } catch (err) {
+    console.warn('批量持久化 AI 估值到 DB 失败:', err)
+  }
+
   return results
 }
 
@@ -1601,30 +1727,62 @@ export function clearAIValuationCache(): void {
 //     aiValuations.get()，保证刷新后也能立刻显示 AI 历史结果。
 // =========================================
 
+// AI 估值结果类型：
+//  - source='ai'   ：字段 fixedValue/currentValue 一定存在（AI 成功出值或从 DB/缓存恢复）
+//  - source='none' ：用户要求"不要本地估值兜底"，因此这些字段为 undefined；
+//                    渲染端应显示"待AI估值"并给刷新按钮
 export type AIValResult = {
-  fixedValue: number
-  currentValue: number
-  source: 'ai' | 'local'
+  fixedValue?: number
+  currentValue?: number
+  source: 'ai' | 'none'
   reason?: string
   error?: string
+  // 估值时间（从 DB 读出时带），展示用
+  valuatedAt?: string
 }
 
 /**
- * 从 localStorage 缓存中批量恢复估值到组件 state 用的 Map。
- * - assets：资产或结算单记录数组（必须包含 asset_code 和硬件字段）
- * - 返回：Map<asset_code, AIValResult>（只有命中缓存的条目才会放进 Map）
+ * 恢复 AI 估值到组件 state 的 Map（DB 列 + localStorage 缓存两个来源，DB 优先）。
+ * - 刷新页面后首次加载资产/结算数据时调用，把之前 AI 出值立刻回填到 state。
+ * - asset 必须带 asset_code，以及可能的 ai_fixed_value / ai_current_value / ai_reason / ai_valuated_at 列（来自 Supabase select）。
  */
 export function restoreAIValuationsFromCache<
-  T extends { asset_code: string; cpu?: string; ram?: string; storage?: string; gpu?: string; brand?: string; created_at?: string }
+  T extends {
+    asset_code: string;
+    cpu?: string; ram?: string; storage?: string; gpu?: string; brand?: string; created_at?: string
+    ai_fixed_value?: number | null
+    ai_current_value?: number | null
+    ai_reason?: string | null
+    ai_valuated_at?: string | null
+  }
 >(assets: T[]): Map<string, AIValResult> {
   const out = new Map<string, AIValResult>()
   if (!assets || assets.length === 0) return out
+
+  // 预读一次 localStorage 缓存（避免每台资产都 parse JSON）
   const cache = readAICache()
   const cfg = getAIValuationConfig()
   const ttl = cfg.cacheTTL || DEFAULT_AI_CONFIG.cacheTTL
   const now = Date.now()
+
   for (const a of assets) {
     if (!a.asset_code) continue
+
+    // ① 最高优先级：从 assets.ai_* 列读（持久化，刷新/换浏览器都不丢）
+    if (a.ai_current_value != null && typeof a.ai_current_value === 'number' && a.ai_current_value > 0) {
+      const fixed = (a.ai_fixed_value != null && typeof a.ai_fixed_value === 'number' && a.ai_fixed_value > 0)
+        ? a.ai_fixed_value : a.ai_current_value // 极少数历史只有 current 值
+      out.set(a.asset_code, {
+        fixedValue: fixed,
+        currentValue: a.ai_current_value,
+        source: 'ai',
+        reason: a.ai_reason ?? undefined,
+        valuatedAt: a.ai_valuated_at ?? undefined
+      })
+      continue
+    }
+
+    // ② 次优先级：localStorage 缓存（DB 还没写或列不可用时的补充）
     const key = makeCacheKey(a)
     const entry = cache.get(key)
     if (entry && now - entry.createdAt <= ttl) {
@@ -1640,27 +1798,45 @@ export function restoreAIValuationsFromCache<
 }
 
 /**
- * 渲染端同步解析 AI 估值结果：
- *   state → localStorage 缓存 → 本地保底估值
+ * 渲染端同步解析 AI 估值：
+ *   DB（asset.ai_* 列）→ state Map → localStorage 缓存
  *
- * - stateMap：组件 useState 里的 aiValuations Map（可能为空）
- * - asset：    单台资产/结算记录（必须有 asset_code 和硬件字段）
- * - 返回：一定有值的 AIValResult（永远不会 undefined）
- *
- * 这样即使页面刚刷新、state 还没异步恢复，
- * 渲染也能立刻从 localStorage 同步读到 AI 结果，不会显示空。
+ * 用户明确：不再用本地算法兜底。三档都没有时返回 source='none'，
+ * UI 据此显示"待AI估值"引导用户刷新。
  */
 export function syncResolveAIValuation(
   stateMap: Map<string, AIValResult> | undefined | null,
-  asset: { asset_code: string; cpu?: string; ram?: string; storage?: string; gpu?: string; brand?: string; created_at?: string }
+  asset: {
+    asset_code: string;
+    cpu?: string; ram?: string; storage?: string; gpu?: string; brand?: string; created_at?: string
+    ai_fixed_value?: number | null
+    ai_current_value?: number | null
+    ai_reason?: string | null
+    ai_valuated_at?: string | null
+  }
 ): AIValResult {
-  // 1. 优先组件 state（已刷新 AI 或 restore 后命中）
+  // ① 组件 state（用户刚点过刷新，或 restoreAIValuationsFromCache 已回填）
   if (stateMap && asset.asset_code) {
     const fromState = stateMap.get(asset.asset_code)
     if (fromState) return fromState
   }
 
-  // 2. 再查 localStorage 缓存（解决刷新后空 state 的问题）
+  // ② DB 持久化列（ai_*）—— 最高可靠度，不依赖 TTL，只要写过就一直有
+  if (asset.asset_code) {
+    if (asset.ai_current_value != null && typeof asset.ai_current_value === 'number' && asset.ai_current_value > 0) {
+      const fixed = (asset.ai_fixed_value != null && typeof asset.ai_fixed_value === 'number' && asset.ai_fixed_value > 0)
+        ? asset.ai_fixed_value : asset.ai_current_value
+      return {
+        fixedValue: fixed,
+        currentValue: asset.ai_current_value,
+        source: 'ai',
+        reason: asset.ai_reason ?? undefined,
+        valuatedAt: asset.ai_valuated_at ?? undefined
+      }
+    }
+  }
+
+  // ③ localStorage 缓存（DB 列还没写/不存在时的补偿）
   if (asset.asset_code) {
     try {
       const cfg = getAIValuationConfig()
@@ -1676,13 +1852,12 @@ export function syncResolveAIValuation(
         }
       }
     } catch {
-      // ignore, fallback to local
+      // ignore cache error
     }
   }
 
-  // 3. 兜底本地估值
-  const local = estimateAssetValue(asset)
-  return { ...local, source: 'local' as const }
+  // 三档都没有 → 不要本地兜底，返回 source='none' 让 UI 显示待估值
+  return { source: 'none' }
 }
 
 // 暴露到 window 以便在浏览器控制台调用恢复函数
