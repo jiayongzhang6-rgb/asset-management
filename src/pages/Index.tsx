@@ -378,18 +378,22 @@ export default function Index() {
       const results = await batchEstimateAssetValueWithAI(allAssets, 5)
       const nextMap = new Map<string, AIValResult>()
       let aiCount = 0
-      let localCount = 0
+      let failedCount = 0
       let lastError: string | undefined
       allAssets.forEach((a, i) => {
         nextMap.set(a.asset_code, results[i])
         if (results[i].source === 'ai') aiCount++
-        else localCount++
+        else failedCount++
         if (results[i].error && !lastError) lastError = results[i].error
       })
       setAiValuations(nextMap)
-      toast.success(`AI 估值完成：AI 出值 ${aiCount} 台，本地兜底 ${localCount} 台`, { id: toastId })
-      if (lastError && localCount > 0) {
-        console.warn('AI 估值部分失败样例:', lastError)
+      if (failedCount === 0) {
+        toast.success(`AI 估值完成：全部 ${aiCount} 台成功出值`, { id: toastId })
+      } else {
+        toast.success(`AI 估值完成：成功 ${aiCount} 台，失败 ${failedCount} 台（可重新估值）`, { id: toastId })
+      }
+      if (lastError && failedCount > 0) {
+        console.warn('AI 估值部分失败，首个错误:', lastError)
       }
     } catch (e: any) {
       toast.error(`AI 估值异常: ${e?.message || e}`, { id: toastId })

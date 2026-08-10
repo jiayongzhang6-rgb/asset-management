@@ -1868,18 +1868,22 @@ export async function estimateAssetValueWithAI(asset: {
       reason: cached.reason
     }
   }
-  // 兼容旧版 key（brand|spec|age 格式），迁移到新 key
-  const legacyKey = makeLegacyCacheKey(asset)
-  const legacyCached = cache.get(legacyKey)
-  if (legacyCached && Date.now() - legacyCached.createdAt <= config.cacheTTL) {
-    // 用新 key 重新写入，下次直接命中
-    cache.set(cacheKey, { ...legacyCached, key: cacheKey })
-    writeAICache(cache, config.cacheTTL)
-    return {
-      fixedValue: legacyCached.fixedValue,
-      currentValue: legacyCached.currentValue,
-      source: 'ai' as const,
-      reason: legacyCached.reason
+  // 兼容旧版 key：旧 key 用 brand|spec|age 拼接，age 随时间变化可能不匹配。
+  // 改为：用硬件规格前缀在缓存里模糊查找（同配置同品牌的设备估值应该一样）
+  const spec = formatHardwareSpec(asset)
+  const brand = (asset.brand || '').toUpperCase().slice(0, 20)
+  const prefix = `${brand}|${spec}|age`
+  for (const [k, v] of cache.entries()) {
+    if (k.startsWith(prefix) && Date.now() - v.createdAt <= config.cacheTTL) {
+      // 用新 key 重新写入，下次直接命中
+      cache.set(cacheKey, { ...v, key: cacheKey })
+      writeAICache(cache, config.cacheTTL)
+      return {
+        fixedValue: v.fixedValue,
+        currentValue: v.currentValue,
+        source: 'ai' as const,
+        reason: v.reason
+      }
     }
   }
 
@@ -1970,13 +1974,28 @@ export async function batchEstimateAssetValueWithAI(
   await Promise.all(workers)
 
   // 统一批量写 DB（AI 出值的那些）
+  let dbWriteCount = 0
   try {
     const dbItems = results
       .map((r, i) => ({ asset_code: assets[i].asset_code, ...r }))
       .filter(r => r.asset_code && r.source === 'ai' && typeof r.currentValue === 'number') as any[]
-    if (dbItems.length > 0) await batchPersistAIValuationToDB(dbItems)
+    if (dbItems.length > 0) {
+      dbWriteCount = await batchPersistAIValuationToDB(dbItems)
+      console.log(`[AI 估值诊断] AI成功=${dbItems.length}台, DB写入成功=${dbWriteCount}台, REST可用=${_aiColumnsSupported}, SQL可用=${_aiViaSQL}`)
+    }
   } catch (err) {
     console.warn('批量持久化 AI 估值到 DB 失败:', err)
+  }
+
+  // 诊断：打印失败原因
+  const failed = results.filter(r => r.source !== 'ai')
+  if (failed.length > 0) {
+    const errorReasons: Record<string, number> = {}
+    failed.forEach(r => {
+      const reason = r.error || '未知原因'
+      errorReasons[reason] = (errorReasons[reason] || 0) + 1
+    })
+    console.warn(`[AI 估值诊断] ${failed.length}台失败, 原因分布:`, errorReasons)
   }
 
   return results
@@ -2068,17 +2087,24 @@ export function syncRestoreAIValuationsFromCache<
       })
       continue
     }
-    // ②-兼容 旧版 key（brand|spec|age 格式）
-    const legacyKey = makeLegacyCacheKey(a)
-    const legacyEntry = cache.get(legacyKey)
-    if (legacyEntry && now - legacyEntry.createdAt <= ttl) {
-      out.set(a.asset_code, {
-        fixedValue: legacyEntry.fixedValue,
-        currentValue: legacyEntry.currentValue,
-        source: 'ai',
-        reason: legacyEntry.reason
-      })
+    // ②-兼容 旧版 key（brand|spec|age 格式），用前缀模糊匹配（age 会变）
+    const spec = formatHardwareSpec(a)
+    const brand = (a.brand || '').toUpperCase().slice(0, 20)
+    const prefix = `${brand}|${spec}|age`
+    let found = false
+    for (const [k, v] of cache.entries()) {
+      if (k.startsWith(prefix) && now - v.createdAt <= ttl) {
+        out.set(a.asset_code, {
+          fixedValue: v.fixedValue,
+          currentValue: v.currentValue,
+          source: 'ai',
+          reason: v.reason
+        })
+        found = true
+        break
+      }
     }
+    if (found) continue
   }
   return out
 }
@@ -2104,6 +2130,9 @@ export async function restoreAIValuationsFromCache<
   const out = syncRestoreAIValuationsFromCache(assets)
   if (!assets || assets.length === 0) return out
 
+  const syncCount = out.size
+  const total = assets.length
+
   // 统计：有多少台资产在「同步版」里通过 ① DB ai_current_value 列读到了
   let dbColVisibleCount = 0
   const missingCodes: string[] = []
@@ -2116,9 +2145,10 @@ export async function restoreAIValuationsFromCache<
     }
   }
 
+  console.log(`[AI 恢复诊断] 总${total}台, 同步恢复${syncCount}台, DB列可见${dbColVisibleCount}台, 仍缺${missingCodes.length}台`)
+
   // 如果 DB 列基本不可见（少于 20% 资产带列），或者有超过 5 台缺失，
   // 那就启动 SQL 通道兜底读取（异步，不阻塞首屏渲染）。
-  const total = assets.length
   const needSQLFallback =
     (total > 0 && dbColVisibleCount / total < 0.2) ||
     missingCodes.length >= 5
@@ -2131,10 +2161,12 @@ export async function restoreAIValuationsFromCache<
         for (const [code, val] of sqlMap) {
           out.set(code, val)
         }
-        console.log(`[AI DB] execute_sql 通道恢复了 ${sqlMap.size} 台 AI 估值结果`)
+        console.log(`[AI 恢复诊断] execute_sql 通道从DB恢复了 ${sqlMap.size} 台, 恢复后总计 ${out.size} 台`)
+      } else {
+        console.warn(`[AI 恢复诊断] execute_sql 通道未返回数据（可能RPC不存在或DB无ai_*列）`)
       }
     } catch (e: any) {
-      console.warn('[AI DB] SQL 通道兜底读取失败:', e?.message)
+      console.warn('[AI 恢复诊断] SQL 通道兜底读取失败:', e?.message)
     }
   }
 
@@ -2186,6 +2218,7 @@ export function syncResolveAIValuation(
       const cfg = getAIValuationConfig()
       const ttl = Math.max(cfg.cacheTTL || 0, DEFAULT_AI_CONFIG.cacheTTL)
       const cache = readAICache()
+      // 新 key 精确匹配
       const entry = cache.get(makeCacheKey(asset))
       if (entry && Date.now() - entry.createdAt <= ttl) {
         return {
@@ -2195,14 +2228,18 @@ export function syncResolveAIValuation(
           reason: entry.reason
         }
       }
-      // 兼容旧版 key
-      const legacyEntry = cache.get(makeLegacyCacheKey(asset))
-      if (legacyEntry && Date.now() - legacyEntry.createdAt <= ttl) {
-        return {
-          fixedValue: legacyEntry.fixedValue,
-          currentValue: legacyEntry.currentValue,
-          source: 'ai',
-          reason: legacyEntry.reason
+      // 旧版 key 前缀模糊匹配（age 会变，不能精确匹配）
+      const spec = formatHardwareSpec(asset)
+      const brand = (asset.brand || '').toUpperCase().slice(0, 20)
+      const prefix = `${brand}|${spec}|age`
+      for (const [k, v] of cache.entries()) {
+        if (k.startsWith(prefix) && Date.now() - v.createdAt <= ttl) {
+          return {
+            fixedValue: v.fixedValue,
+            currentValue: v.currentValue,
+            source: 'ai',
+            reason: v.reason
+          }
         }
       }
     } catch {
