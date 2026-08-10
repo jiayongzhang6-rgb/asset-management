@@ -1004,15 +1004,39 @@ export async function isCategorySupported(): Promise<boolean> {
   if (_categorySupported !== null) return _categorySupported
   try {
     const { error } = await supabase.from('assets').select('category').limit(1)
-    _categorySupported = !error
-    if (error) {
-      console.warn('Category column not available in schema cache, will strip from requests:', error.message)
-    } else {
-      console.log('Category column is available in schema cache')
+    if (!error) {
+      _categorySupported = true
+      return true
     }
-    return _categorySupported
+    // category 列在 PostgREST 中不可见 → 自动刷新 schema cache 并重试
+    console.warn('[Category] category 列不可见，尝试 NOTIFY pgrst 刷新 schema cache')
+    try {
+      // 尝试用 execute_sql 刷新
+      const { data: sqlData } = await supabase.rpc('execute_sql', { sql: "NOTIFY pgrst, 'reload schema';" })
+      if (sqlData && typeof sqlData === 'object' && 'error' in sqlData) {
+        // execute_sql 存在但执行失败
+        console.warn('[Category] NOTIFY 失败:', (sqlData as any).error)
+        _categorySupported = false
+        return false
+      }
+      // 等待 schema cache 刷新
+      await new Promise(r => setTimeout(r, 1500))
+      const { error: retryErr } = await supabase.from('assets').select('category').limit(1)
+      _categorySupported = !retryErr
+      if (retryErr) {
+        console.warn('[Category] 刷新后仍不可见，将剥离 category 字段')
+      } else {
+        console.log('[Category] schema cache 刷新成功！category 列可用')
+      }
+      return _categorySupported
+    } catch (e: any) {
+      // execute_sql RPC 不存在 → 无法自动刷新
+      console.warn('[Category] 无法自动刷新 schema cache（execute_sql RPC 不可用）')
+      _categorySupported = false
+      return false
+    }
   } catch (e: any) {
-    console.warn('Category check threw error, treating as unsupported:', e?.message)
+    console.warn('Category check threw error:', e?.message)
     _categorySupported = false
     return false
   }
@@ -1427,50 +1451,82 @@ export async function batchPersistAIValuationToDB(
 }
 
 async function ensureColumn(table: string, column: string, definition: string): Promise<boolean> {
-  const { data: cols } = await supabase
-    .from('information_schema.columns')
-    .select('column_name')
-    .eq('table_schema', 'public')
-    .eq('table_name', table)
-    .eq('column_name', column)
+  // 用 pg_catalog 检查列是否存在（anon key 可读 pg_catalog，information_schema 不行）
+  try {
+    const { data, error } = await supabase.rpc('execute_sql', {
+      sql: `SELECT 1 FROM pg_attribute a JOIN pg_class c ON a.attrelid=c.oid JOIN pg_namespace n ON c.relnamespace=n.oid WHERE n.nspname='public' AND c.relname='${table}' AND a.attname='${column}' AND a.attnum > 0 AND NOT a.attisdropped LIMIT 1;`
+    })
+    if (!error && parseExecuteSqlResult(data).length > 0) return true
+  } catch {
+    // execute_sql RPC 不存在，用 information_schema 兜底
+    try {
+      const { data: cols } = await supabase
+        .from('information_schema.columns')
+        .select('column_name')
+        .eq('table_schema', 'public')
+        .eq('table_name', table)
+        .eq('column_name', column)
+      if (cols && cols.length > 0) return true
+    } catch {
+      // information_schema 也不可用
+    }
+  }
 
-  if (cols && cols.length > 0) return true
-
-  // 尝试通过 RPC 添加列
-  const { error } = await supabase.rpc('execute_sql', {
-    sql: `ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS ${definition};`
-  })
-  if (error) {
-    console.warn(`Could not add column ${column} to ${table} via RPC:`, error.message)
+  // 尝试通过 execute_sql RPC 添加列
+  try {
+    const { error } = await supabase.rpc('execute_sql', {
+      sql: `ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS ${definition};`
+    })
+    if (error) {
+      console.warn(`Could not add column ${column} to ${table}:`, error.message)
+      return false
+    }
+    try {
+      await supabase.rpc('execute_sql', { sql: "NOTIFY pgrst, 'reload schema';" })
+    } catch (_) { /* ignore */ }
+    console.log(`Added column ${column} to ${table}`)
+    return true
+  } catch (e: any) {
+    console.warn(`Could not add column ${column} to ${table}:`, e?.message)
     return false
   }
-
-  // 添加列后刷新 PostgREST schema cache，否则 API 仍然看不到新列
-  try {
-    await supabase.rpc('execute_sql', { sql: "NOTIFY pgrst, 'reload schema';" })
-    console.log('PostgREST schema cache reload notified')
-  } catch (e) {
-    console.warn('Could not notify PostgREST schema reload:', e)
-  }
-
-  return true
 }
 
 async function ensureTable(table: string, createSql: string): Promise<boolean> {
-  const { data: tables } = await supabase
-    .from('information_schema.tables')
-    .select('table_name')
-    .eq('table_schema', 'public')
-    .eq('table_name', table)
+  // 用 pg_catalog 检查表是否存在
+  try {
+    const { data, error } = await supabase.rpc('execute_sql', {
+      sql: `SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relname='${table}' LIMIT 1;`
+    })
+    if (!error && parseExecuteSqlResult(data).length > 0) return true
+  } catch {
+    try {
+      const { data: tables } = await supabase
+        .from('information_schema.tables')
+        .select('table_name')
+        .eq('table_schema', 'public')
+        .eq('table_name', table)
+      if (tables && tables.length > 0) return true
+    } catch {
+      // information_schema 也不可用
+    }
+  }
 
-  if (tables && tables.length > 0) return true
-
-  const { error } = await supabase.rpc('execute_sql', { sql: createSql })
-  if (error) {
-    console.error(`Error creating table ${table}:`, error)
+  try {
+    const { error } = await supabase.rpc('execute_sql', { sql: createSql })
+    if (error) {
+      console.warn(`Could not create table ${table}:`, error.message)
+      return false
+    }
+    try {
+      await supabase.rpc('execute_sql', { sql: "NOTIFY pgrst, 'reload schema';" })
+    } catch (_) { /* ignore */ }
+    console.log(`Created table ${table}`)
+    return true
+  } catch (e: any) {
+    console.warn(`Could not create table ${table}:`, e?.message)
     return false
   }
-  return true
 }
 
 export const initDatabase = async () => {
