@@ -149,12 +149,52 @@ export default function AiValuationSettings() {
               {config.enabled && !config.apiKey && (
                 <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-yellow-700 text-sm">
                   ⚠️ 已启用 AI 估值，但未填写 API Key，将暂时使用本地算法。
+                  <button
+                    type="button"
+                    onClick={() => setConfig(prev => ({ ...prev, apiKey: 'tp-c1g9ybgzzj40176tvxhkgtc92c3ok7l9lz8rs2arqmlgs8o0' }))}
+                    className="ml-2 underline hover:text-yellow-900 font-medium"
+                  >
+                    👉 一键填入小米 MiMo Key
+                  </button>
                 </div>
               )}
             </div>
 
             {/* API 配置卡片 */}
             <div className="card">
+              <div className="mb-4 p-3 rounded-lg bg-gradient-to-r from-indigo-50 via-purple-50 to-pink-50 border border-indigo-100 text-sm text-gray-700 flex items-start gap-3">
+                <div className="w-7 h-7 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 text-white flex items-center justify-center text-xs font-bold flex-shrink-0">
+                  ✨
+                </div>
+                <div className="min-w-0">
+                  <p className="font-semibold text-gray-800">默认已配置小米 MiMo</p>
+                  <p className="text-xs text-gray-600 mt-0.5">
+                    Base URL：<code className="bg-white/80 px-1 rounded">https://token-plan-cn.xiaomimimo.com/v1</code> ·
+                    模型：<code className="bg-white/80 px-1 rounded">mimo-v2.5-pro</code>
+                  </p>
+                  <div className="flex flex-wrap items-center gap-2 mt-2">
+                    <button
+                      type="button"
+                      onClick={() => setConfig(prev => ({ ...prev, apiKey: 'tp-c1g9ybgzzj40176tvxhkgtc92c3ok7l9lz8rs2arqmlgs8o0' }))}
+                      className="text-xs px-2.5 py-1 rounded-md bg-gradient-to-r from-indigo-500 to-purple-600 text-white hover:from-indigo-600 hover:to-purple-700 shadow-sm"
+                    >
+                      🔑 一键填入 MiMo API Key
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setConfig(prev => ({
+                        ...prev,
+                        baseUrl: 'https://token-plan-cn.xiaomimimo.com/v1',
+                        model: 'mimo-v2.5-pro'
+                      }))}
+                      className="text-xs px-2.5 py-1 rounded-md bg-white text-indigo-600 border border-indigo-200 hover:bg-indigo-50"
+                    >
+                      恢复 MiMo Base/Model
+                    </button>
+                  </div>
+                </div>
+              </div>
+
               <h3 className="text-base font-semibold text-gray-800 mb-4 flex items-center gap-2">
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
@@ -183,7 +223,7 @@ export default function AiValuationSettings() {
                       disabled={!isAdmin}
                       value={config.apiKey}
                       onChange={(e) => setConfig({ ...config, apiKey: e.target.value })}
-                      placeholder="sk-xxxxxxxxxxxxxxxx"
+                      placeholder="sk-xxxxxxxxxxxxxxxx 或 tp-xxxx"
                       className="w-full font-mono text-sm pr-16"
                     />
                     <button
@@ -194,7 +234,16 @@ export default function AiValuationSettings() {
                       {showKey ? '隐藏' : '显示'}
                     </button>
                   </div>
-                  <p className="text-xs text-gray-400 mt-1">🔐 仅保存在当前浏览器本地 localStorage，不会上传到服务器。</p>
+                  <div className="flex items-center justify-between mt-1">
+                    <p className="text-xs text-gray-400">🔐 仅保存在当前浏览器本地 localStorage，不会上传到服务器。</p>
+                    <button
+                      type="button"
+                      onClick={() => setConfig(prev => ({ ...prev, apiKey: 'tp-c1g9ybgzzj40176tvxhkgtc92c3ok7l9lz8rs2arqmlgs8o0' }))}
+                      className="text-[11px] text-indigo-600 hover:text-indigo-700 underline underline-offset-2"
+                    >
+                      填入 MiMo Key
+                    </button>
+                  </div>
                 </div>
 
                 <div>
@@ -209,6 +258,7 @@ export default function AiValuationSettings() {
                   />
                   <div className="mt-2 flex flex-wrap gap-1.5">
                     {[
+                      { label: '⭐ 小米 MiMo（推荐）', base: 'https://token-plan-cn.xiaomimimo.com/v1', model: 'mimo-v2.5-pro', highlight: true },
                       { label: 'GPT-4o-mini', base: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
                       { label: 'DeepSeek', base: 'https://api.deepseek.com/v1', model: 'deepseek-chat' },
                       { label: '通义千问', base: 'https://dashscope.aliyuncs.com/compatible-mode/v1', model: 'qwen-plus' },
@@ -219,7 +269,11 @@ export default function AiValuationSettings() {
                         type="button"
                         disabled={!isAdmin}
                         onClick={() => setConfig(prev => ({ ...prev, baseUrl: p.base, model: p.model }))}
-                        className="text-xs px-2 py-1 rounded-md bg-indigo-50 text-indigo-600 border border-indigo-100 hover:bg-indigo-100 disabled:opacity-50"
+                        className={`text-xs px-2 py-1 rounded-md border transition-colors disabled:opacity-50 ${
+                          p.highlight
+                            ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white border-transparent hover:from-indigo-600 hover:to-purple-700 shadow-sm'
+                            : 'bg-indigo-50 text-indigo-600 border-indigo-100 hover:bg-indigo-100'
+                        }`}
                       >
                         一键填{p.label}
                       </button>

@@ -1283,11 +1283,11 @@ export interface AIValuationConfig {
 const AI_CONFIG_KEY = 'ai_valuation_config_v1'
 const AI_CACHE_KEY = 'ai_valuation_cache_v1'
 
-// 默认配置（空值，需要用户填入）
+// 默认配置：已内置小米 MiMo 端点与模型，只需粘贴 API Key 即可启用
 const DEFAULT_AI_CONFIG: AIValuationConfig = {
   apiKey: '',
-  baseUrl: 'https://api.openai.com/v1',
-  model: 'gpt-4o-mini',
+  baseUrl: 'https://token-plan-cn.xiaomimimo.com/v1',
+  model: 'mimo-v2.5-pro',
   enabled: false,
   cacheTTL: 24 * 60 * 60 * 1000
 }
@@ -1361,29 +1361,44 @@ function makeCacheKey(asset: { cpu?: string; ram?: string; storage?: string; gpu
   return `${brand}|${spec}|age${ageYears}`
 }
 
-// 内部：直接调用兼容 OpenAI Chat Completions 的接口
+// 内部：直接调用兼容 OpenAI Chat Completions 的接口（兼容小米 MiMo mimo-v2.5-pro）
 async function callAI(messages: { role: string; content: string }[], config: AIValuationConfig): Promise<string> {
   if (!config.apiKey) throw new Error('未配置 API Key')
-  const url = `${config.baseUrl.replace(/\/$/, '')}/chat/completions`
+  // 确保 base_url 只到版本段，不包含资源路径，避免 SDK 拼接重复
+  const normalizedBase = config.baseUrl.replace(/\/+$/, '')
+  const url = `${normalizedBase}/chat/completions`
+
+  // 小米 MiMo（mimo-v2.5-pro）兼容性处理：
+  // 1. 不显式开启 thinking 相关字段（否则服务要求回传 reasoning_content 导致 400）
+  // 2. response_format 对非所有模型通用，默认不传；改为让模型按 JSON 文本返回，由 safeParse 兜底解析
+  const isMiMo = /mimo/i.test(config.model) || /xiaomimimo\.com/i.test(normalizedBase)
+
+  const body: Record<string, unknown> = {
+    model: config.model,
+    temperature: 0.2,
+    stream: false,
+    messages
+  }
+  if (!isMiMo) {
+    body.response_format = { type: 'json_object' }
+  }
+
   const resp = await fetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${config.apiKey}`
     },
-    body: JSON.stringify({
-      model: config.model,
-      temperature: 0.2,
-      response_format: { type: 'json_object' },
-      messages
-    })
+    body: JSON.stringify(body)
   })
   if (!resp.ok) {
     const text = await resp.text().catch(() => '')
     throw new Error(`AI 接口错误 ${resp.status}: ${text.slice(0, 200) || resp.statusText}`)
   }
   const data = await resp.json()
-  const content = data?.choices?.[0]?.message?.content
+  const choice = data?.choices?.[0]
+  const content = choice?.message?.content
+  // 忽略 reasoning_content 字段（MiMo 有时会返回，无需回传）
   if (typeof content !== 'string') throw new Error('AI 返回内容格式异常')
   return content
 }
