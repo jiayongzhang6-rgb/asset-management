@@ -201,6 +201,27 @@ export async function recordAllHistory(
   ])
 }
 
+// 保存资产快照（更新/删除前调用，把旧数据存到 asset_snapshots 表）
+export async function saveAssetSnapshot(
+  assetCode: string,
+  operationType: string,
+  operatorEmail: string,
+  snapshotData: Record<string, any>
+): Promise<void> {
+  try {
+    await supabase.from('asset_snapshots').insert({
+      asset_code: assetCode,
+      operation_type: operationType,
+      operator_email: operatorEmail,
+      snapshot: snapshotData,
+      created_at: new Date().toISOString()
+    })
+    console.log(`Snapshot saved for ${assetCode} (${operationType})`)
+  } catch (error) {
+    console.error('Error saving asset snapshot:', error)
+  }
+}
+
 // 格式化内存
 export function formatMemory(memory: string): string {
   try {
@@ -288,7 +309,7 @@ export function getBeijingTime(utcStr: string): string {
 
 // ===== 数据库初始化 =====
 const DB_VERSION_KEY = 'db_schema_version'
-const CURRENT_DB_VERSION = 4
+const CURRENT_DB_VERSION = 5
 
 // 运行时检测 category 列是否可用（PostgREST schema cache 是否已包含）
 // 注意：_categorySupported 取值含义：null=未探测, true=可用, false=不可用
@@ -497,6 +518,22 @@ export const initDatabase = async () => {
       CREATE POLICY "Allow public insert access" ON rent_records FOR INSERT WITH CHECK (true);
       CREATE POLICY "Allow public update access" ON rent_records FOR UPDATE USING (true);
       CREATE POLICY "Allow public delete access" ON rent_records FOR DELETE USING (true);
+    `,
+    asset_snapshots: `
+      CREATE TABLE IF NOT EXISTS asset_snapshots (
+        id bigint primary key generated always as identity,
+        asset_code VARCHAR(50) NOT NULL,
+        operation_type VARCHAR(20) NOT NULL,
+        operator_email VARCHAR(255),
+        snapshot JSONB NOT NULL,
+        created_at timestamp with time zone default now()
+      );
+      CREATE INDEX IF NOT EXISTS idx_asset_snapshots_asset_code ON asset_snapshots(asset_code);
+      CREATE INDEX IF NOT EXISTS idx_asset_snapshots_created_at ON asset_snapshots(created_at);
+      ALTER TABLE asset_snapshots ENABLE ROW LEVEL SECURITY;
+      CREATE POLICY "Allow public read access" ON asset_snapshots FOR SELECT USING (true);
+      CREATE POLICY "Allow public insert access" ON asset_snapshots FOR INSERT WITH CHECK (true);
+      CREATE POLICY "Allow public delete access" ON asset_snapshots FOR DELETE USING (true);
     `
   }
 

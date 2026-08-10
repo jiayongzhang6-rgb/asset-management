@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../App'
-import { supabase, recordAllHistory, generateUniqueAssetCode, sanitizeAssetData } from '../lib/supabase'
+import { supabase, recordAllHistory, generateUniqueAssetCode, sanitizeAssetData, saveAssetSnapshot } from '../lib/supabase'
 import toast from 'react-hot-toast'
 import * as XLSX from 'xlsx'
 
@@ -99,10 +99,39 @@ export default function Import() {
       toast.error('只有管理员可以导入资产')
       return
     }
-    
+
     if (previewData.length === 0) {
       toast.error('没有可导入的数据')
       return
+    }
+
+    // 预检查：哪些行有明确编号且会覆盖已有数据
+    const conflictAssets: { code: string; brand: string; model: string }[] = []
+    for (const asset of previewData) {
+      const code = asset.asset_code?.trim()
+      if (!code) continue
+      const { data, error } = await supabase
+        .from('assets')
+        .select('brand, model')
+        .eq('asset_code', code)
+        .single()
+      if (!error && data) {
+        conflictAssets.push({ code, brand: data.brand || '', model: data.model || '' })
+      }
+    }
+
+    // 如果有冲突，弹窗确认
+    if (conflictAssets.length > 0) {
+      const list = conflictAssets.slice(0, 10).map(a => `  ${a.code} (${a.brand} ${a.model})`).join('\n')
+      const more = conflictAssets.length > 10 ? `\n  ...等共 ${conflictAssets.length} 条` : ''
+      const confirmed = window.confirm(
+        `检测到以下 ${conflictAssets.length} 个资产编码已存在，导入将覆盖这些资产的原有数据：\n\n${list}${more}\n\n` +
+        `已自动保存快照备份，确认要覆盖吗？`
+      )
+      if (!confirmed) {
+        toast('导入已取消')
+        return
+      }
     }
 
     setIsUploading(true)
@@ -110,7 +139,7 @@ export default function Import() {
     let failCount = 0
     let updateCount = 0
     let insertCount = 0
-    
+
     try {
       for (const asset of previewData) {
         try {
@@ -122,7 +151,7 @@ export default function Import() {
           if (hasExplicitCode) {
             const { data, error: checkError } = await supabase
               .from('assets')
-              .select('id')
+              .select('*')
               .eq('asset_code', asset.asset_code)
               .single()
 
@@ -133,22 +162,25 @@ export default function Import() {
           }
 
           if (existingAsset) {
-            // 用户明确提供了编号且匹配到已有记录 → 更新
+            // 用户明确提供了编号且匹配到已有记录 → 先保存快照再更新
+            if (user) {
+              await saveAssetSnapshot(asset.asset_code, 'import_update', user.email, existingAsset)
+            }
             const cleanAsset = await sanitizeAssetData(asset)
             const { error: updateError } = await supabase
               .from('assets')
               .update(cleanAsset)
               .eq('asset_code', asset.asset_code)
-            
+
             if (updateError) {
               console.error('Error updating asset:', updateError)
               failCount++
               continue
             }
-            
+
             updateCount++
             successCount++
-            
+
             if (user) {
               await recordAllHistory(asset.asset_code, 'update', user.email)
             }
@@ -159,16 +191,16 @@ export default function Import() {
             }
             const cleanAsset = await sanitizeAssetData(asset)
             const { data, error: insertError } = await supabase.from('assets').insert(cleanAsset).select()
-            
+
             if (insertError) {
               console.error('Error inserting asset:', insertError)
               failCount++
               continue
             }
-            
+
             insertCount++
             successCount++
-            
+
             if (user) {
               await recordAllHistory(asset.asset_code, 'create', user.email)
             }

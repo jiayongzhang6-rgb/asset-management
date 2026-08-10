@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../App'
 import toast from 'react-hot-toast'
 import * as XLSX from 'xlsx'
-import { supabase, type Asset, initDatabase, formatUserIdentifier, formatMemory, formatStorage, getStatusText, getStatusColor, recordAllHistory, generateUniqueAssetCode, sanitizeAssetData, isCategorySupportedSync } from '../lib/supabase'
+import { supabase, type Asset, initDatabase, formatUserIdentifier, formatMemory, formatStorage, getStatusText, getStatusColor, recordAllHistory, generateUniqueAssetCode, sanitizeAssetData, isCategorySupportedSync, saveAssetSnapshot } from '../lib/supabase'
 import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js'
 import { Pie } from 'react-chartjs-2'
 
@@ -415,6 +415,12 @@ export default function Index() {
         if (cleanData.notes !== undefined && cleanData.notes !== asset.notes) changes.push(`备注: ${asset.notes || '无'} → ${cleanData.notes || '无'}`)
 
         console.log('Index: Updating asset with data:', cleanData)
+
+        // 更新前保存快照（防止数据丢失，可用于回溯恢复）
+        if (user) {
+          await saveAssetSnapshot(editingAsset.asset_code, 'update', user.email, editingAsset)
+        }
+
         const { data, error } = await supabase
           .from('assets')
           .update({
@@ -480,6 +486,11 @@ export default function Index() {
         // 获取要删除的资产信息
         const { data: asset, error: getError } = await supabase.from('assets').select('*').eq('id', id).single()
         if (getError) throw getError
+
+        // 删除前保存快照（可用于恢复）
+        if (user && asset) {
+          await saveAssetSnapshot(asset.asset_code, 'delete', user.email, asset)
+        }
 
         // 先删除相关的维护记录
         await supabase.from('maintenance_records').delete().eq('asset_id', id)

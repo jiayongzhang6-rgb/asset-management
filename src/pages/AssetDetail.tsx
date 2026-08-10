@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '../App'
 import toast from 'react-hot-toast'
-import { supabase, type Asset, type MaintenanceRecord, type AssetImage, type UsageHistoryRecord, formatUserIdentifier, formatMemory, formatStorage, getStatusText, getStatusColor, getOperationTypeText, getOperationTypeColor, recordAllHistory, getBeijingTime, sanitizeAssetData } from '../lib/supabase'
+import { supabase, type Asset, type MaintenanceRecord, type AssetImage, type UsageHistoryRecord, formatUserIdentifier, formatMemory, formatStorage, getStatusText, getStatusColor, getOperationTypeText, getOperationTypeColor, recordAllHistory, getBeijingTime, sanitizeAssetData, saveAssetSnapshot } from '../lib/supabase'
 
 export default function AssetDetail() {
   const { id } = useParams<{ id: string }>()
@@ -247,7 +247,12 @@ export default function AssetDetail() {
     if (cleanData.notes !== asset.notes) changes.push(`备注: ${asset.notes || '无'} → ${cleanData.notes || '无'}`)
     
     console.log('AssetDetail: Changes to record:', changes)
-    
+
+    // 更新前保存快照（防止数据丢失，可用于回溯恢复）
+    if (user) {
+      await saveAssetSnapshot(assetCodeToUse, 'update', user.email, asset)
+    }
+
     const { error: updateError } = await supabase
       .from('assets')
       .update({
