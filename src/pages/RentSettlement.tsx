@@ -102,12 +102,12 @@ export default function RentSettlement() {
       setSettlementRecords(merged)
 
       // ===== 刷新后 AI 估值丢失修复 =====
-      // 结算数据加载完成后，立刻从 localStorage 缓存恢复到 aiValuations state。
-      // 渲染端再通过 syncResolveAIValuation(aiValuations, record) 三重兜底显示。
+      // 结算数据加载完成后，立刻从「DB ai_* 列 + localStorage 缓存 + execute_sql RPC 兜底」
+      // 三层来源恢复 aiValuations state。刷新页面后 AI 结果仍然可见。
       if (merged && merged.length > 0) {
         try {
-          const restored = restoreAIValuationsFromCache(merged as any[])
-          if (restored.size > 0) setAiValuations(restored)
+          const restored = await restoreAIValuationsFromCache(merged as any[])
+          setAiValuations(restored)
         } catch (err) {
           console.warn('恢复 AI 估值缓存失败:', err)
         }

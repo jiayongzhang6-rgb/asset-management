@@ -280,15 +280,13 @@ export default function Index() {
     }
 
     // ===== 刷新后 AI 估值丢失修复 =====
-    // 资产加载完成后，立刻从 localStorage 缓存恢复 aiValuations state。
-    // 另外在渲染端再通过 syncResolveAIValuation 做三重兜底，
-    // 保证一刷新页面 AI 估值列仍然可见。
+    // 资产加载完成后，立刻从「DB ai_* 列 + localStorage 缓存 + execute_sql RPC 兜底」
+    // 三层来源恢复 aiValuations state。用户明确要求「估值一次后一直保存」——
+    // 这里 async restore 会自动探测 schema cache，不可见时走 execute_sql 直连 DB。
     if (filteredAllData && filteredAllData.length > 0) {
       try {
-        const restored = restoreAIValuationsFromCache(filteredAllData as any[])
-        if (restored.size > 0) {
-          setAiValuations(restored)
-        }
+        const restored = await restoreAIValuationsFromCache(filteredAllData as any[])
+        setAiValuations(restored)
       } catch (err) {
         console.warn('恢复 AI 估值缓存失败:', err)
       }

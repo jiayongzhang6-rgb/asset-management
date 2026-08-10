@@ -1055,6 +1055,8 @@ export function resetCategoryCheck(): void {
 
 // ===== AI 估值列 schema 探测（避免 PostgREST schema cache 未刷新时报错） =====
 let _aiColumnsSupported: boolean | null = null
+// execute_sql RPC 是否可用（绕过 PostgREST schema cache 直接读写 ai_* 列）
+let _aiViaSQL: boolean | null = null
 
 export function isAIColumnsSupportedSync(): boolean {
   return _aiColumnsSupported === true
@@ -1066,7 +1068,7 @@ export async function isAIColumnsSupported(): Promise<boolean> {
     const { error } = await supabase.from('assets').select('ai_current_value').limit(1)
     _aiColumnsSupported = !error
     if (error) {
-      console.warn('AI valuation columns not in schema cache, will skip writing to DB:', error.message)
+      console.warn('[AI DB] REST API 看不到 ai_current_value 列（PostgREST schema cache 可能未刷新），尝试 execute_sql 通道')
     }
     return _aiColumnsSupported
   } catch (e: any) {
@@ -1078,12 +1080,166 @@ export async function isAIColumnsSupported(): Promise<boolean> {
 
 export function resetAIColumnsCheck(): void {
   _aiColumnsSupported = null
+  _aiViaSQL = null
+}
+
+/**
+ * execute_sql RPC 通道是否可用（不需要 PostgREST schema cache 刷新，
+ * 直接在 DB 层执行 SELECT/UPDATE，最可靠的 ai_* 列读写方式）。
+ * 探测：先试 information_schema 再试 LIMIT 1。
+ */
+export async function isAIWriteViaSQLSupported(): Promise<boolean> {
+  if (_aiViaSQL !== null) return _aiViaSQL
+  try {
+    const { data, error } = await supabase.rpc('execute_sql', {
+      sql: `SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name='assets' AND column_name IN ('ai_fixed_value','ai_current_value') LIMIT 2;`
+    })
+    if (error) {
+      console.warn('[AI DB] execute_sql RPC 不可用或无 ai_* 列:', error.message)
+      _aiViaSQL = false
+      return false
+    }
+    // data 可能是数组（表函数）或 null
+    const arr = Array.isArray(data) ? data : []
+    if (arr.length >= 1) {
+      _aiViaSQL = true
+      return true
+    }
+    // 列可能还不存在；尝试添加（静默），再探测
+    try {
+      const { error: addErr } = await supabase.rpc('execute_sql', {
+        sql: `DO $$ BEGIN
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='assets' AND column_name='ai_fixed_value') THEN ALTER TABLE assets ADD COLUMN ai_fixed_value INTEGER; END IF;
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='assets' AND column_name='ai_current_value') THEN ALTER TABLE assets ADD COLUMN ai_current_value INTEGER; END IF;
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='assets' AND column_name='ai_reason') THEN ALTER TABLE assets ADD COLUMN ai_reason VARCHAR(200); END IF;
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='assets' AND column_name='ai_valuated_at') THEN ALTER TABLE assets ADD COLUMN ai_valuated_at TIMESTAMPTZ; END IF;
+        END $$;`
+      })
+      _aiViaSQL = !addErr
+      return _aiViaSQL!
+    } catch (_) {
+      _aiViaSQL = false
+      return false
+    }
+  } catch (e: any) {
+    console.warn('[AI DB] execute_sql RPC 探测失败:', e?.message)
+    _aiViaSQL = false
+    return false
+  }
+}
+
+/**
+ * 通过 execute_sql RPC 单条写入 AI 估值（绕过 PostgREST schema cache）。
+ */
+async function persistAIValuationViaSQL(
+  asset_code: string,
+  value: { fixedValue: number; currentValue: number; reason?: string }
+): Promise<boolean> {
+  if (!asset_code) return false
+  const reasonEscaped = (value.reason || '').replace(/'/g, "''").slice(0, 200)
+  const sql = `UPDATE assets SET
+    ai_fixed_value = ${Math.round(value.fixedValue)},
+    ai_current_value = ${Math.round(value.currentValue)},
+    ai_reason = '${reasonEscaped}',
+    ai_valuated_at = NOW()
+  WHERE asset_code = '${asset_code.replace(/'/g, "''")}';`
+  try {
+    const { error } = await supabase.rpc('execute_sql', { sql })
+    return !error
+  } catch (e: any) {
+    console.warn('[AI DB] SQL 写入失败:', e?.message)
+    return false
+  }
+}
+
+/**
+ * 通过 execute_sql RPC 批量写 AI 估值（一条 CASE WHEN UPDATE，性能远好于逐条）。
+ */
+async function batchPersistAIValuationViaSQL(
+  items: Array<{ asset_code: string; fixedValue: number; currentValue: number; reason?: string }>
+): Promise<number> {
+  if (!items || items.length === 0) return 0
+  const codes: string[] = []
+  const fixedCases: string[] = []
+  const currentCases: string[] = []
+  const reasonCases: string[] = []
+  for (const it of items) {
+    if (!it.asset_code) continue
+    const c = it.asset_code.replace(/'/g, "''")
+    codes.push(`'${c}'`)
+    fixedCases.push(`WHEN '${c}' THEN ${Math.round(it.fixedValue)}`)
+    currentCases.push(`WHEN '${c}' THEN ${Math.round(it.currentValue)}`)
+    const r = (it.reason || '').replace(/'/g, "''").slice(0, 200)
+    reasonCases.push(`WHEN '${c}' THEN '${r}'::varchar(200)`)
+  }
+  if (codes.length === 0) return 0
+  const sql = `UPDATE assets SET
+    ai_fixed_value = CASE asset_code ${fixedCases.join(' ')} ELSE ai_fixed_value END,
+    ai_current_value = CASE asset_code ${currentCases.join(' ')} ELSE ai_current_value END,
+    ai_reason = CASE asset_code ${reasonCases.join(' ')} ELSE ai_reason END,
+    ai_valuated_at = NOW()
+  WHERE asset_code IN (${codes.join(',')});`
+  try {
+    const { error } = await supabase.rpc('execute_sql', { sql })
+    if (error) {
+      console.warn('[AI DB] 批量 SQL 写入失败:', error.message)
+      return 0
+    }
+    return codes.length
+  } catch (e: any) {
+    console.warn('[AI DB] 批量 SQL 写入异常:', e?.message)
+    return 0
+  }
+}
+
+/**
+ * 通过 execute_sql RPC 一次性读取一批资产的 AI 估值结果（绕过 PostgREST schema cache）。
+ * 返回 Map<asset_code, AIValResult>。
+ */
+export async function fetchAIMapFromDBViaSQL(asset_codes: string[]): Promise<Map<string, AIValResult>> {
+  const out = new Map<string, AIValResult>()
+  if (!asset_codes || asset_codes.length === 0) return out
+  try {
+    const supported = await isAIWriteViaSQLSupported()
+    if (!supported) return out
+    const inList = asset_codes
+      .filter(Boolean)
+      .map(c => `'${c.replace(/'/g, "''")}'`)
+      .join(',')
+    if (!inList) return out
+    const sql = `SELECT asset_code, ai_fixed_value, ai_current_value, ai_reason, ai_valuated_at
+FROM assets
+WHERE asset_code IN (${inList})
+  AND ai_current_value IS NOT NULL
+  AND ai_current_value > 0;`
+    const { data, error } = await supabase.rpc('execute_sql', { sql })
+    if (error) return out
+    const rows: any[] = Array.isArray(data) ? data : []
+    for (const r of rows) {
+      if (!r || !r.asset_code) continue
+      const current = Number(r.ai_current_value)
+      if (!current || current <= 0) continue
+      const fixed = Number(r.ai_fixed_value) || current
+      out.set(r.asset_code, {
+        fixedValue: Math.round(fixed),
+        currentValue: Math.round(current),
+        source: 'ai',
+        reason: r.ai_reason ?? undefined,
+        valuatedAt: r.ai_valuated_at ?? undefined
+      })
+    }
+    return out
+  } catch (e: any) {
+    console.warn('[AI DB] SQL 读取 AI 估值失败:', e?.message)
+    return out
+  }
 }
 
 /**
  * 把 AI 估值结果写入 assets 表对应的 ai_* 列（持久化到数据库）。
  * 刷新/换浏览器/清 localStorage 都不会丢。
- * 如果 schema cache 还没包含这些列 → 静默跳过，不报错。
+ * 双通道：优先 REST API（PostgREST schema cache 刷新后）；
+ *         不可用时自动走 execute_sql RPC（不依赖 schema cache）。
  */
 export async function persistAIValuationToDB(
   asset_code: string,
@@ -1092,23 +1248,32 @@ export async function persistAIValuationToDB(
   if (!asset_code) return false
   if (value.source === 'local') return false // 用户说不要本地估值，只持久化 AI 真结果
   try {
+    // 通道 1：REST API（schema cache 已包含列时最快）
     const supported = await isAIColumnsSupported()
-    if (!supported) return false
-    const payload: any = {
-      ai_fixed_value: Math.round(value.fixedValue),
-      ai_current_value: Math.round(value.currentValue),
-      ai_valuated_at: new Date().toISOString()
+    if (supported) {
+      const payload: any = {
+        ai_fixed_value: Math.round(value.fixedValue),
+        ai_current_value: Math.round(value.currentValue),
+        ai_valuated_at: new Date().toISOString()
+      }
+      if (value.reason) payload.ai_reason = value.reason.slice(0, 200)
+      const { error } = await supabase
+        .from('assets')
+        .update(payload)
+        .eq('asset_code', asset_code)
+      if (!error) return true
+      console.warn(`[AI DB] REST 写入失败(${asset_code})，切换 SQL 通道:`, error.message)
     }
-    if (value.reason) payload.ai_reason = value.reason.slice(0, 200)
-    const { error } = await supabase
-      .from('assets')
-      .update(payload)
-      .eq('asset_code', asset_code)
-    if (error) {
-      console.warn(`写 AI 估值到 DB 失败(${asset_code}):`, error.message)
-      return false
+    // 通道 2：execute_sql RPC（绕过 PostgREST schema cache，最可靠）
+    const viaSQL = await isAIWriteViaSQLSupported()
+    if (viaSQL) {
+      return persistAIValuationViaSQL(asset_code, {
+        fixedValue: value.fixedValue,
+        currentValue: value.currentValue,
+        reason: value.reason
+      })
     }
-    return true
+    return false
   } catch (e: any) {
     console.warn('persistAIValuationToDB exception:', e?.message)
     return false
@@ -1116,30 +1281,44 @@ export async function persistAIValuationToDB(
 }
 
 /**
- * 批量写 AI 估值结果回 DB。
+ * 批量写 AI 估值结果回 DB（双通道，REST API 不行就走 execute_sql SQL）。
  */
 export async function batchPersistAIValuationToDB(
   items: Array<{ asset_code: string; fixedValue: number; currentValue: number; reason?: string; source?: 'ai' | 'local' }>
 ): Promise<number> {
   if (!items || items.length === 0) return 0
-  const supported = await isAIColumnsSupported()
-  if (!supported) return 0
+  const filtered = items.filter(it => it.asset_code && it.source !== 'local' && typeof it.currentValue === 'number' && it.currentValue > 0)
+  if (filtered.length === 0) return 0
+
+  // 通道 1：REST API
   let okCount = 0
-  for (const it of items) {
-    if (it.source === 'local') continue
-    try {
-      const payload: any = {
-        ai_fixed_value: Math.round(it.fixedValue),
-        ai_current_value: Math.round(it.currentValue),
-        ai_valuated_at: new Date().toISOString()
+  const supported = await isAIColumnsSupported()
+  if (supported) {
+    for (const it of filtered) {
+      try {
+        const payload: any = {
+          ai_fixed_value: Math.round(it.fixedValue),
+          ai_current_value: Math.round(it.currentValue),
+          ai_valuated_at: new Date().toISOString()
+        }
+        if (it.reason) payload.ai_reason = it.reason.slice(0, 200)
+        const { error } = await supabase.from('assets').update(payload).eq('asset_code', it.asset_code)
+        if (!error) okCount++
+      } catch {
+        // skip
       }
-      if (it.reason) payload.ai_reason = it.reason.slice(0, 200)
-      const { error } = await supabase.from('assets').update(payload).eq('asset_code', it.asset_code)
-      if (!error) okCount++
-    } catch {
-      // skip one error, continue others
     }
+    if (okCount === filtered.length) return okCount
   }
+  // 通道 2：SQL 通道兜底（批量 CASE WHEN 一条语句，高性能）
+  try {
+    const viaSQL = await isAIWriteViaSQLSupported()
+    if (viaSQL) {
+      const rest = (okCount > 0) ? filtered : filtered
+      const sqlCount = await batchPersistAIValuationViaSQL(rest)
+      return Math.max(okCount, sqlCount)
+    }
+  } catch { /* ignore */ }
   return okCount
 }
 
@@ -1386,7 +1565,9 @@ const DEFAULT_AI_CONFIG: AIValuationConfig = {
   baseUrl: 'https://token-plan-cn.xiaomimimo.com/v1',
   model: 'mimo-v2.5-pro',
   enabled: false,
-  cacheTTL: 24 * 60 * 60 * 1000
+  // 用户要求「估值一次后，刷新页面还能一直保存」：
+  // 缓存 TTL 改为 90 天（基本等同「永久」，过期前若已写 DB 就不依赖缓存）
+  cacheTTL: 90 * 24 * 60 * 60 * 1000
 }
 
 // 读取AI配置（从 localStorage，因为纯前端不存数据库）
@@ -1742,11 +1923,12 @@ export type AIValResult = {
 }
 
 /**
- * 恢复 AI 估值到组件 state 的 Map（DB 列 + localStorage 缓存两个来源，DB 优先）。
- * - 刷新页面后首次加载资产/结算数据时调用，把之前 AI 出值立刻回填到 state。
- * - asset 必须带 asset_code，以及可能的 ai_fixed_value / ai_current_value / ai_reason / ai_valuated_at 列（来自 Supabase select）。
+ * 同步恢复 AI 估值到 state 的 Map（两来源：① 每行 asset 自带的 ai_* 列 ② localStorage 缓存）。
+ * - 若 PostgREST schema cache 还没包含 ai_* 列，asset.ai_current_value 将为 undefined，
+ *   此时只靠 localStorage 缓存兜底；需要持久化请调用 async 版 `restoreAIValuationsFromCache`
+ *   它会再用 execute_sql 通道从 DB 真正读出来并合并。
  */
-export function restoreAIValuationsFromCache<
+export function syncRestoreAIValuationsFromCache<
   T extends {
     asset_code: string;
     cpu?: string; ram?: string; storage?: string; gpu?: string; brand?: string; created_at?: string
@@ -1794,6 +1976,64 @@ export function restoreAIValuationsFromCache<
       })
     }
   }
+  return out
+}
+
+/**
+ * 异步恢复 AI 估值：先跑同步版本（DB 列 + localStorage），
+ * 若发现很多资产的 ai_* 列在同步版本不可见 → 再通过 execute_sql RPC
+ * 直接从数据库查出所有 ai_* 估值，合并进结果 Map。
+ *
+ * 用户要求「估值一次后，刷新页面还能一直保存」：
+ * 这条函数是核心保障，不依赖 PostgREST schema cache 是否刷新。
+ */
+export async function restoreAIValuationsFromCache<
+  T extends {
+    asset_code: string;
+    cpu?: string; ram?: string; storage?: string; gpu?: string; brand?: string; created_at?: string
+    ai_fixed_value?: number | null
+    ai_current_value?: number | null
+    ai_reason?: string | null
+    ai_valuated_at?: string | null
+  }
+>(assets: T[]): Promise<Map<string, AIValResult>> {
+  const out = syncRestoreAIValuationsFromCache(assets)
+  if (!assets || assets.length === 0) return out
+
+  // 统计：有多少台资产在「同步版」里通过 ① DB ai_current_value 列读到了
+  let dbColVisibleCount = 0
+  const missingCodes: string[] = []
+  for (const a of assets) {
+    if (!a.asset_code) continue
+    if (a.ai_current_value != null && typeof a.ai_current_value === 'number' && a.ai_current_value > 0) {
+      dbColVisibleCount++
+    } else if (!out.has(a.asset_code)) {
+      missingCodes.push(a.asset_code)
+    }
+  }
+
+  // 如果 DB 列基本不可见（少于 20% 资产带列），或者有超过 5 台缺失，
+  // 那就启动 SQL 通道兜底读取（异步，不阻塞首屏渲染）。
+  const total = assets.length
+  const needSQLFallback =
+    (total > 0 && dbColVisibleCount / total < 0.2) ||
+    missingCodes.length >= 5
+
+  if (needSQLFallback) {
+    try {
+      const allCodes = assets.map(a => a.asset_code).filter(Boolean) as string[]
+      const sqlMap = await fetchAIMapFromDBViaSQL(allCodes)
+      if (sqlMap.size > 0) {
+        for (const [code, val] of sqlMap) {
+          out.set(code, val)
+        }
+        console.log(`[AI DB] execute_sql 通道恢复了 ${sqlMap.size} 台 AI 估值结果`)
+      }
+    } catch (e: any) {
+      console.warn('[AI DB] SQL 通道兜底读取失败:', e?.message)
+    }
+  }
+
   return out
 }
 
