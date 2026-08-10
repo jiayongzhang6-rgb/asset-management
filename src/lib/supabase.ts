@@ -1070,40 +1070,35 @@ export async function isAIColumnsSupported(): Promise<boolean> {
       _aiColumnsSupported = true
       return true
     }
-    // REST API 看不到列 → 可能 PostgREST schema cache 没刷新
-    // 先查 information_schema 确认列在 DB 里确实存在
-    const { data: colInfo } = await supabase
-      .from('information_schema.columns')
-      .select('column_name')
-      .eq('table_schema', 'public')
-      .eq('table_name', 'assets')
-      .eq('column_name', 'ai_current_value')
-    const colExists = colInfo && colInfo.length > 0
-    if (colExists) {
-      // 列在 DB 存在但 PostgREST 看不到 → 尝试刷新 schema cache
-      console.warn('[AI DB] ai_current_value 列在 DB 存在但 PostgREST 不可见，尝试 NOTIFY pgrst 刷新 schema cache')
-      try {
-        await supabase.rpc('execute_sql', { sql: "NOTIFY pgrst, 'reload schema';" })
-        console.log('[AI DB] NOTIFY pgrst sent, 等待 2s 后重试...')
-        await new Promise(r => setTimeout(r, 2000))
-        // 重试 REST API
-        const { error: retryErr } = await supabase.from('assets').select('ai_current_value').limit(1)
-        _aiColumnsSupported = !retryErr
-        if (retryErr) {
-          console.warn('[AI DB] NOTIFY 后 REST API 仍看不到列，将使用 execute_sql 通道兜底')
-        } else {
-          console.log('[AI DB] schema cache 刷新成功，REST API 可正常访问 ai_* 列')
-        }
-        return _aiColumnsSupported
-      } catch (notifyErr: any) {
-        console.warn('[AI DB] NOTIFY pgrst 失败（execute_sql 可能不存在）:', notifyErr?.message)
+    // REST API 看不到列 → 尝试刷新 PostgREST schema cache
+    // 注意：information_schema.columns 通过 anon key 可能也查不到，
+    // 所以我们直接尝试 SELECT ai_current_value FROM assets LIMIT 1 来确认
+    console.warn('[AI DB] ai_current_value 列在 PostgREST 中不可见，尝试 NOTIFY pgrst 刷新 schema cache')
+    try {
+      // 用 execute_sql RPC 刷新（如果存在），否则跳过
+      const { data: sqlOk } = await supabase.rpc('execute_sql', { sql: "NOTIFY pgrst, 'reload schema';" })
+      if (sqlOk && typeof sqlOk === 'object' && 'error' in sqlOk) {
+        // execute_sql 返回了错误 → RPC 存在但执行失败，说明列确实不存在
+        console.warn('[AI DB] NOTIFY 失败（列可能不存在）:', (sqlOk as any).error)
         _aiColumnsSupported = false
         return false
       }
+      console.log('[AI DB] NOTIFY pgrst sent, 等待 2s 后重试...')
+      await new Promise(r => setTimeout(r, 2000))
+      const { error: retryErr } = await supabase.from('assets').select('ai_current_value').limit(1)
+      _aiColumnsSupported = !retryErr
+      if (retryErr) {
+        console.warn('[AI DB] NOTIFY 后 REST API 仍看不到列，将使用 execute_sql 通道兜底')
+      } else {
+        console.log('[AI DB] schema cache 刷新成功，REST API 可正常访问 ai_* 列')
+      }
+      return _aiColumnsSupported
+    } catch (notifyErr: any) {
+      // execute_sql RPC 不存在 → 无法刷新 schema cache
+      console.warn('[AI DB] execute_sql RPC 不存在，无法自动刷新 schema cache。请手动在 Supabase Dashboard 执行 NOTIFY pgrst, ''reload schema''')
+      _aiColumnsSupported = false
+      return false
     }
-    // 列在 DB 也不存在
-    _aiColumnsSupported = false
-    return false
   } catch (e: any) {
     console.warn('AI columns check threw:', e?.message)
     _aiColumnsSupported = false
@@ -1122,10 +1117,15 @@ export function resetAIColumnsCheck(): void {
  *  - 数组：[{col1: v1, col2: v2}, ...]
  *  - 字符串：'[{"col1":v1}]' 或 '{"col1":v1}'（需要 JSON.parse）
  *  - 对象：{rows: [...]} 或 {data: ...} 或直接就是行对象
- *  - null/undefined：无返回行
+ *  - null/undefined：无返回行（DDL/UPDATE/NOTIFY 语句执行成功）
+ *  - {error: "xxx"}：execute_sql 异常捕获的错误
  */
 function parseExecuteSqlResult(data: any): any[] {
-  if (!data) return []
+  if (data == null) return []
+  if (typeof data === 'object' && !Array.isArray(data) && 'error' in data) {
+    // execute_sql 异常捕获的错误对象 → 不是行数据
+    return []
+  }
   if (Array.isArray(data)) return data
   if (typeof data === 'string') {
     try {
@@ -1138,10 +1138,20 @@ function parseExecuteSqlResult(data: any): any[] {
   if (typeof data === 'object') {
     if (Array.isArray(data.rows)) return data.rows
     if (Array.isArray(data.data)) return data.data
-    // 可能直接就是一行数据
     return [data]
   }
   return []
+}
+
+/**
+ * 判断 execute_sql RPC 的返回值是否表示"执行成功"。
+ * 返回 json 类型的函数，成功时可能返回 null（DDL/UPDATE/NOTIFY）或行数组（SELECT）
+ * 只有 {error: "..."} 对象才表示失败。
+ */
+function isExecuteSqlSuccess(data: any): boolean {
+  if (data == null) return true  // DDL/UPDATE/NOTIFY 成功
+  if (typeof data === 'object' && !Array.isArray(data) && 'error' in data) return false
+  return true  // 行数据数组或其他格式
 }
 
 /**
@@ -1152,35 +1162,60 @@ function parseExecuteSqlResult(data: any): any[] {
 export async function isAIWriteViaSQLSupported(): Promise<boolean> {
   if (_aiViaSQL !== null) return _aiViaSQL
   try {
+    // 先探测 execute_sql RPC 是否存在（用 pg_catalog，不需要 information_schema 权限）
     const { data, error } = await supabase.rpc('execute_sql', {
-      sql: `SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name='assets' AND column_name IN ('ai_fixed_value','ai_current_value') LIMIT 2;`
+      sql: `SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relname='assets' LIMIT 1;`
     })
     if (error) {
-      console.warn('[AI DB] execute_sql RPC 不可用或无 ai_* 列:', error.message)
+      console.warn('[AI DB] execute_sql RPC 不可用:', error.message)
       _aiViaSQL = false
       return false
     }
     const arr = parseExecuteSqlResult(data)
     if (arr.length >= 1) {
-      _aiViaSQL = true
-      return true
-    }
-    // 列可能还不存在；尝试添加（静默），再探测
-    try {
-      const { error: addErr } = await supabase.rpc('execute_sql', {
-        sql: `DO $$ BEGIN
-          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='assets' AND column_name='ai_fixed_value') THEN ALTER TABLE assets ADD COLUMN ai_fixed_value INTEGER; END IF;
-          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='assets' AND column_name='ai_current_value') THEN ALTER TABLE assets ADD COLUMN ai_current_value INTEGER; END IF;
-          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='assets' AND column_name='ai_reason') THEN ALTER TABLE assets ADD COLUMN ai_reason VARCHAR(200); END IF;
-          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='assets' AND column_name='ai_valuated_at') THEN ALTER TABLE assets ADD COLUMN ai_valuated_at TIMESTAMPTZ; END IF;
-        END $$;`
+      // 确认列是否存在
+      const { data: colData, error: colErr } = await supabase.rpc('execute_sql', {
+        sql: `SELECT a.attname FROM pg_attribute a JOIN pg_class c ON a.attrelid=c.oid JOIN pg_namespace n ON c.relnamespace=n.oid WHERE n.nspname='public' AND c.relname='assets' AND a.attname IN ('ai_fixed_value','ai_current_value') AND a.attnum > 0 AND NOT a.attisdropped;`
       })
-      _aiViaSQL = !addErr
-      return _aiViaSQL!
-    } catch (_) {
-      _aiViaSQL = false
-      return false
+      if (!colErr) {
+        const cols = parseExecuteSqlResult(colData)
+        if (cols.length >= 1) {
+          _aiViaSQL = true
+          return true
+        }
+      }
+      // 列不存在但 RPC 可用 → 尝试添加（自动迁移）
+      try {
+        const { error: addErr } = await supabase.rpc('execute_sql', {
+          sql: `DO $$ BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_attribute a JOIN pg_class c ON a.attrelid=c.oid JOIN pg_namespace n ON c.relnamespace=n.oid WHERE n.nspname='public' AND c.relname='assets' AND a.attname='ai_fixed_value' AND a.attnum > 0) THEN
+              ALTER TABLE assets ADD COLUMN ai_fixed_value INTEGER;
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM pg_attribute a JOIN pg_class c ON a.attrelid=c.oid JOIN pg_namespace n ON c.relnamespace=n.oid WHERE n.nspname='public' AND c.relname='assets' AND a.attname='ai_current_value' AND a.attnum > 0) THEN
+              ALTER TABLE assets ADD COLUMN ai_current_value INTEGER;
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM pg_attribute a JOIN pg_class c ON a.attrelid=c.oid JOIN pg_namespace n ON c.relnamespace=n.oid WHERE n.nspname='public' AND c.relname='assets' AND a.attname='ai_reason' AND a.attnum > 0) THEN
+              ALTER TABLE assets ADD COLUMN ai_reason VARCHAR(200);
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM pg_attribute a JOIN pg_class c ON a.attrelid=c.oid JOIN pg_namespace n ON c.relnamespace=n.oid WHERE n.nspname='public' AND c.relname='assets' AND a.attname='ai_valuated_at' AND a.attnum > 0) THEN
+              ALTER TABLE assets ADD COLUMN ai_valuated_at TIMESTAMPTZ;
+            END IF;
+          END $$;`
+        })
+        if (!addErr) {
+          // 加列成功后刷新 schema cache
+          await supabase.rpc('execute_sql', { sql: "NOTIFY pgrst, 'reload schema';" })
+          console.log('[AI DB] execute_sql 通道自动添加了 4 列并刷新 schema cache')
+        }
+        _aiViaSQL = !addErr
+        return _aiViaSQL!
+      } catch (_) {
+        _aiViaSQL = false
+        return false
+      }
     }
+    _aiViaSQL = false
+    return false
   } catch (e: any) {
     console.warn('[AI DB] execute_sql RPC 探测失败:', e?.message)
     _aiViaSQL = false
@@ -1204,8 +1239,9 @@ async function persistAIValuationViaSQL(
     ai_valuated_at = NOW()
   WHERE asset_code = '${asset_code.replace(/'/g, "''")}';`
   try {
-    const { error } = await supabase.rpc('execute_sql', { sql })
-    return !error
+    const { data, error } = await supabase.rpc('execute_sql', { sql })
+    if (error) return false
+    return isExecuteSqlSuccess(data)
   } catch (e: any) {
     console.warn('[AI DB] SQL 写入失败:', e?.message)
     return false
@@ -1240,9 +1276,13 @@ async function batchPersistAIValuationViaSQL(
     ai_valuated_at = NOW()
   WHERE asset_code IN (${codes.join(',')});`
   try {
-    const { error } = await supabase.rpc('execute_sql', { sql })
+    const { data, error } = await supabase.rpc('execute_sql', { sql })
     if (error) {
       console.warn('[AI DB] 批量 SQL 写入失败:', error.message)
+      return 0
+    }
+    if (!isExecuteSqlSuccess(data)) {
+      console.warn('[AI DB] 批量 SQL 写入返回错误:', (data as any)?.error)
       return 0
     }
     return codes.length
@@ -1274,6 +1314,10 @@ WHERE asset_code IN (${inList})
   AND ai_current_value > 0;`
     const { data, error } = await supabase.rpc('execute_sql', { sql })
     if (error) return out
+    if (!isExecuteSqlSuccess(data)) {
+      console.warn('[AI DB] fetchAIMapFromDBViaSQL 返回错误:', (data as any)?.error)
+      return out
+    }
     const rows: any[] = parseExecuteSqlResult(data)
     for (const r of rows) {
       if (!r || !r.asset_code) continue
