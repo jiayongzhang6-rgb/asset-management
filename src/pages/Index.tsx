@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../App'
 import toast from 'react-hot-toast'
 import * as XLSX from 'xlsx'
-import { supabase, type Asset, initDatabase, formatUserIdentifier, formatMemory, formatStorage, getStatusText, getStatusColor, recordAllHistory, generateAssetCode, sanitizeAssetData, isCategorySupportedSync } from '../lib/supabase'
+import { supabase, type Asset, initDatabase, formatUserIdentifier, formatMemory, formatStorage, getStatusText, getStatusColor, recordAllHistory, generateUniqueAssetCode, sanitizeAssetData, isCategorySupportedSync } from '../lib/supabase'
 import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js'
 import { Pie } from 'react-chartjs-2'
 
@@ -340,14 +340,20 @@ export default function Index() {
   const handleAddSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     try {
+      // 异步生成唯一资产编码：查询数据库当月最大序号 +1
+      const assetCode = await generateUniqueAssetCode()
       const assetData: Record<string, any> = {
         ...formData,
         monthly_rent: formData.monthly_rent ? parseFloat(formData.monthly_rent) : 0,
-        asset_code: generateAssetCode(assets.length)
+        asset_code: assetCode
+      }
+      // 如果 category 为空字符串则不发送该字段
+      if (!assetData.category) {
+        delete assetData.category
       }
       // 运行时检测：如果 category 列不可用则自动剥离
       const cleanData = await sanitizeAssetData(assetData)
-      console.log('Index: Creating asset with data:', cleanData)
+      console.log('Index: Creating asset with data:', cleanData, 'generated code:', assetCode)
       const { data, error } = await supabase.from('assets').insert(cleanData).select()
       if (error) throw error
       console.log('Index: Asset created successfully:', data)

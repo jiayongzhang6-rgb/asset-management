@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../App'
-import { supabase, recordAllHistory, generateAssetCode, sanitizeAssetData } from '../lib/supabase'
+import { supabase, recordAllHistory, generateUniqueAssetCode, sanitizeAssetData } from '../lib/supabase'
 import toast from 'react-hot-toast'
 import * as XLSX from 'xlsx'
 
@@ -64,7 +64,7 @@ export default function Import() {
           const validStatuses = ['active', 'idle', 'maintenance', 'retired']
           
           return {
-            asset_code: item['资产编码'] || item['asset_code'] || item['AssetCode'] || generateAssetCode(index),
+            asset_code: item['资产编码'] || item['asset_code'] || item['AssetCode'] || '', // 留空，导入时自动生成
             brand: item['品牌'] || item['Brand'] || item['brand'] || '',
             model: item['型号'] || item['Model'] || item['model'] || item['计算机名'] || '',
             cpu: item['CPU'] || item['cpu'] || '',
@@ -114,17 +114,26 @@ export default function Import() {
     try {
       for (const asset of previewData) {
         try {
-          const { data: existingAsset, error: checkError } = await supabase
-            .from('assets')
-            .select('id')
-            .eq('asset_code', asset.asset_code)
-            .single()
-          
-          if (checkError && checkError.code !== 'PGRST116') {
-            throw checkError
+          // 只有用户在 Excel 中明确填写了资产编码时，才检查是否已存在（走更新）
+          // 没填编码的一律走新增，自动生成唯一编号
+          const hasExplicitCode = !!(asset.asset_code && asset.asset_code.trim())
+          let existingAsset = null
+
+          if (hasExplicitCode) {
+            const { data, error: checkError } = await supabase
+              .from('assets')
+              .select('id')
+              .eq('asset_code', asset.asset_code)
+              .single()
+
+            if (checkError && checkError.code !== 'PGRST116') {
+              throw checkError
+            }
+            existingAsset = data
           }
-          
+
           if (existingAsset) {
+            // 用户明确提供了编号且匹配到已有记录 → 更新
             const cleanAsset = await sanitizeAssetData(asset)
             const { error: updateError } = await supabase
               .from('assets')
@@ -144,6 +153,10 @@ export default function Import() {
               await recordAllHistory(asset.asset_code, 'update', user.email)
             }
           } else {
+            // 新增：没填编号时自动生成唯一编号
+            if (!hasExplicitCode) {
+              asset.asset_code = await generateUniqueAssetCode()
+            }
             const cleanAsset = await sanitizeAssetData(asset)
             const { data, error: insertError } = await supabase.from('assets').insert(cleanAsset).select()
             
@@ -324,7 +337,7 @@ export default function Import() {
               <li>2. 支持的字段：资产编码、品牌、型号、CPU、内存、存储、显卡、操作系统、部门、用户、位置、状态、月租费、备注</li>
               <li>3. 状态字段可选值：active（使用中）、idle（闲置）、maintenance（维修中）、retired（已报废）</li>
               <li>4. 必填字段：品牌、型号、CPU、内存、存储、操作系统、部门、用户、位置</li>
-              <li>5. 如果资产编码已存在，系统会更新该资产信息；如果不存在，系统会新建资产</li>
+              <li>5. 如果填写了资产编码且已存在，系统会更新该资产信息；如果不填资产编码，系统会自动生成唯一编号并新建资产</li>
               <li>6. 上传文件后会显示预览，确认无误后点击开始导入</li>
             </ul>
           </div>

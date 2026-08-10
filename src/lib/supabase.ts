@@ -227,13 +227,56 @@ export function formatStorage(storage: string): string {
   return storage
 }
 
-// 生成资产编码
+// 生成资产编码（同步版本，仅用于已知总数时的快速生成，不推荐）
 export function generateAssetCode(count: number): string {
   const date = new Date()
   const year = date.getFullYear()
   const month = String(date.getMonth() + 1).padStart(2, '0')
   const seq = String(count + 1).padStart(3, '0')
   return `PC-${year}-${month}-${seq}`
+}
+
+// 异步生成资产编码：查询数据库当月最大序号 +1，避免编号冲突
+export async function generateUniqueAssetCode(): Promise<string> {
+  const date = new Date()
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const prefix = `PC-${year}-${month}-`
+
+  try {
+    // 查询当月所有以该前缀开头的资产编码
+    const { data, error } = await supabase
+      .from('assets')
+      .select('asset_code')
+      .like('asset_code', `${prefix}%`)
+
+    if (error) {
+      console.warn('Failed to query max asset code, falling back to count:', error.message)
+      // 降级：用总数+1
+      const { count } = await supabase.from('assets').select('*', { count: 'exact', head: true })
+      return `${prefix}${String((count || 0) + 1).padStart(3, '0')}`
+    }
+
+    // 找出最大序号
+    let maxSeq = 0
+    if (data && data.length > 0) {
+      for (const row of data) {
+        const code = row.asset_code as string
+        if (code && code.startsWith(prefix)) {
+          const seqStr = code.substring(prefix.length)
+          const seqNum = parseInt(seqStr, 10)
+          if (!isNaN(seqNum) && seqNum > maxSeq) {
+            maxSeq = seqNum
+          }
+        }
+      }
+    }
+
+    return `${prefix}${String(maxSeq + 1).padStart(3, '0')}`
+  } catch (e: any) {
+    console.warn('generateUniqueAssetCode error, using fallback:', e?.message)
+    return `${prefix}001`
+  }
 }
 
 // 获取北京时间
