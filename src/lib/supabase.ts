@@ -1066,11 +1066,44 @@ export async function isAIColumnsSupported(): Promise<boolean> {
   if (_aiColumnsSupported !== null) return _aiColumnsSupported
   try {
     const { error } = await supabase.from('assets').select('ai_current_value').limit(1)
-    _aiColumnsSupported = !error
-    if (error) {
-      console.warn('[AI DB] REST API 看不到 ai_current_value 列（PostgREST schema cache 可能未刷新），尝试 execute_sql 通道')
+    if (!error) {
+      _aiColumnsSupported = true
+      return true
     }
-    return _aiColumnsSupported
+    // REST API 看不到列 → 可能 PostgREST schema cache 没刷新
+    // 先查 information_schema 确认列在 DB 里确实存在
+    const { data: colInfo } = await supabase
+      .from('information_schema.columns')
+      .select('column_name')
+      .eq('table_schema', 'public')
+      .eq('table_name', 'assets')
+      .eq('column_name', 'ai_current_value')
+    const colExists = colInfo && colInfo.length > 0
+    if (colExists) {
+      // 列在 DB 存在但 PostgREST 看不到 → 尝试刷新 schema cache
+      console.warn('[AI DB] ai_current_value 列在 DB 存在但 PostgREST 不可见，尝试 NOTIFY pgrst 刷新 schema cache')
+      try {
+        await supabase.rpc('execute_sql', { sql: "NOTIFY pgrst, 'reload schema';" })
+        console.log('[AI DB] NOTIFY pgrst sent, 等待 2s 后重试...')
+        await new Promise(r => setTimeout(r, 2000))
+        // 重试 REST API
+        const { error: retryErr } = await supabase.from('assets').select('ai_current_value').limit(1)
+        _aiColumnsSupported = !retryErr
+        if (retryErr) {
+          console.warn('[AI DB] NOTIFY 后 REST API 仍看不到列，将使用 execute_sql 通道兜底')
+        } else {
+          console.log('[AI DB] schema cache 刷新成功，REST API 可正常访问 ai_* 列')
+        }
+        return _aiColumnsSupported
+      } catch (notifyErr: any) {
+        console.warn('[AI DB] NOTIFY pgrst 失败（execute_sql 可能不存在）:', notifyErr?.message)
+        _aiColumnsSupported = false
+        return false
+      }
+    }
+    // 列在 DB 也不存在
+    _aiColumnsSupported = false
+    return false
   } catch (e: any) {
     console.warn('AI columns check threw:', e?.message)
     _aiColumnsSupported = false
@@ -1081,6 +1114,34 @@ export async function isAIColumnsSupported(): Promise<boolean> {
 export function resetAIColumnsCheck(): void {
   _aiColumnsSupported = null
   _aiViaSQL = null
+}
+
+/**
+ * execute_sql RPC 返回值统一解析器。
+ * Supabase 的 execute_sql 函数返回格式因实现而异：
+ *  - 数组：[{col1: v1, col2: v2}, ...]
+ *  - 字符串：'[{"col1":v1}]' 或 '{"col1":v1}'（需要 JSON.parse）
+ *  - 对象：{rows: [...]} 或 {data: ...} 或直接就是行对象
+ *  - null/undefined：无返回行
+ */
+function parseExecuteSqlResult(data: any): any[] {
+  if (!data) return []
+  if (Array.isArray(data)) return data
+  if (typeof data === 'string') {
+    try {
+      const parsed = JSON.parse(data)
+      if (Array.isArray(parsed)) return parsed
+      if (parsed && typeof parsed === 'object') return [parsed]
+    } catch { return [] }
+    return []
+  }
+  if (typeof data === 'object') {
+    if (Array.isArray(data.rows)) return data.rows
+    if (Array.isArray(data.data)) return data.data
+    // 可能直接就是一行数据
+    return [data]
+  }
+  return []
 }
 
 /**
@@ -1099,8 +1160,7 @@ export async function isAIWriteViaSQLSupported(): Promise<boolean> {
       _aiViaSQL = false
       return false
     }
-    // data 可能是数组（表函数）或 null
-    const arr = Array.isArray(data) ? data : []
+    const arr = parseExecuteSqlResult(data)
     if (arr.length >= 1) {
       _aiViaSQL = true
       return true
@@ -1214,7 +1274,7 @@ WHERE asset_code IN (${inList})
   AND ai_current_value > 0;`
     const { data, error } = await supabase.rpc('execute_sql', { sql })
     if (error) return out
-    const rows: any[] = Array.isArray(data) ? data : []
+    const rows: any[] = parseExecuteSqlResult(data)
     for (const r of rows) {
       if (!r || !r.asset_code) continue
       const current = Number(r.ai_current_value)
@@ -1577,7 +1637,12 @@ export function getAIValuationConfig(): AIValuationConfig {
     const raw = localStorage.getItem(AI_CONFIG_KEY)
     if (!raw) return DEFAULT_AI_CONFIG
     const parsed = JSON.parse(raw)
-    return { ...DEFAULT_AI_CONFIG, ...parsed }
+    const merged = { ...DEFAULT_AI_CONFIG, ...parsed }
+    // ★ 用户要求「估值一次后，刷新页面还能一直保存」
+    // 旧版保存的 config 里 cacheTTL=86400000(24h)，合并后会覆盖新的 90 天默认值
+    // 这里强制取 Math.max，确保 TTL 至少为 90 天
+    merged.cacheTTL = Math.max(merged.cacheTTL || 0, DEFAULT_AI_CONFIG.cacheTTL)
+    return merged
   } catch {
     return DEFAULT_AI_CONFIG
   }
@@ -1627,12 +1692,25 @@ function writeAICache(map: Map<string, AICacheEntry>, ttl: number) {
   localStorage.setItem(AI_CACHE_KEY, JSON.stringify(trimmed))
 }
 
-// 生成缓存 key：硬件配置 + 使用年数（四舍五入半年粒度）
-function makeCacheKey(asset: { cpu?: string; ram?: string; storage?: string; gpu?: string; brand?: string; created_at?: string }): string {
+// 生成缓存 key：
+// ★ 用户要求「估值一次后，刷新页面还能一直保存」
+// 旧 key 用 brand|spec|age 拼接，age 随时间变化 → 刷新后 key 不匹配 → 缓存丢失
+// 现在改用 asset_code 做唯一 key（稳定不变），同时兼容旧 key 格式读取
+function makeCacheKey(asset: { asset_code?: string; cpu?: string; ram?: string; storage?: string; gpu?: string; brand?: string; created_at?: string }): string {
+  // 优先用 asset_code（唯一、稳定、不随时间变）
+  if (asset.asset_code) return `code:${asset.asset_code}`
+  // 兜底：无 asset_code 时用硬件规格（极少数场景）
+  const spec = formatHardwareSpec(asset)
+  const brand = (asset.brand || '').toUpperCase().slice(0, 20)
+  return `${brand}|${spec}`
+}
+
+// 旧版缓存 key（基于硬件+age），仅用于读取兼容
+function makeLegacyCacheKey(asset: { cpu?: string; ram?: string; storage?: string; gpu?: string; brand?: string; created_at?: string }): string {
   let ageYears = 1
   if (asset.created_at) {
     const age = (Date.now() - new Date(asset.created_at).getTime()) / (365.25 * 24 * 60 * 60 * 1000)
-    ageYears = Math.max(0.5, Math.round(age * 2) / 2) // 0.5 年粒度
+    ageYears = Math.max(0.5, Math.round(age * 2) / 2)
   }
   const spec = formatHardwareSpec(asset)
   const brand = (asset.brand || '').toUpperCase().slice(0, 20)
@@ -1788,6 +1866,20 @@ export async function estimateAssetValueWithAI(asset: {
       currentValue: cached.currentValue,
       source: 'ai' as const,
       reason: cached.reason
+    }
+  }
+  // 兼容旧版 key（brand|spec|age 格式），迁移到新 key
+  const legacyKey = makeLegacyCacheKey(asset)
+  const legacyCached = cache.get(legacyKey)
+  if (legacyCached && Date.now() - legacyCached.createdAt <= config.cacheTTL) {
+    // 用新 key 重新写入，下次直接命中
+    cache.set(cacheKey, { ...legacyCached, key: cacheKey })
+    writeAICache(cache, config.cacheTTL)
+    return {
+      fixedValue: legacyCached.fixedValue,
+      currentValue: legacyCached.currentValue,
+      source: 'ai' as const,
+      reason: legacyCached.reason
     }
   }
 
@@ -1964,7 +2056,7 @@ export function syncRestoreAIValuationsFromCache<
       continue
     }
 
-    // ② 次优先级：localStorage 缓存（DB 还没写或列不可用时的补充）
+    // ② 次优先级：localStorage 缓存（新 key: code:asset_code）
     const key = makeCacheKey(a)
     const entry = cache.get(key)
     if (entry && now - entry.createdAt <= ttl) {
@@ -1973,6 +2065,18 @@ export function syncRestoreAIValuationsFromCache<
         currentValue: entry.currentValue,
         source: 'ai',
         reason: entry.reason
+      })
+      continue
+    }
+    // ②-兼容 旧版 key（brand|spec|age 格式）
+    const legacyKey = makeLegacyCacheKey(a)
+    const legacyEntry = cache.get(legacyKey)
+    if (legacyEntry && now - legacyEntry.createdAt <= ttl) {
+      out.set(a.asset_code, {
+        fixedValue: legacyEntry.fixedValue,
+        currentValue: legacyEntry.currentValue,
+        source: 'ai',
+        reason: legacyEntry.reason
       })
     }
   }
@@ -2076,11 +2180,11 @@ export function syncResolveAIValuation(
     }
   }
 
-  // ③ localStorage 缓存（DB 列还没写/不存在时的补偿）
+  // ③ localStorage 缓存（DB 列还没写/不存在时的补偿）—— 兼容新旧 key
   if (asset.asset_code) {
     try {
       const cfg = getAIValuationConfig()
-      const ttl = cfg.cacheTTL || DEFAULT_AI_CONFIG.cacheTTL
+      const ttl = Math.max(cfg.cacheTTL || 0, DEFAULT_AI_CONFIG.cacheTTL)
       const cache = readAICache()
       const entry = cache.get(makeCacheKey(asset))
       if (entry && Date.now() - entry.createdAt <= ttl) {
@@ -2089,6 +2193,16 @@ export function syncResolveAIValuation(
           currentValue: entry.currentValue,
           source: 'ai',
           reason: entry.reason
+        }
+      }
+      // 兼容旧版 key
+      const legacyEntry = cache.get(makeLegacyCacheKey(asset))
+      if (legacyEntry && Date.now() - legacyEntry.createdAt <= ttl) {
+        return {
+          fixedValue: legacyEntry.fixedValue,
+          currentValue: legacyEntry.currentValue,
+          source: 'ai',
+          reason: legacyEntry.reason
         }
       }
     } catch {
