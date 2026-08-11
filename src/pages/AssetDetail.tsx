@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '../App'
 import toast from 'react-hot-toast'
-import { supabase, type Asset, type MaintenanceRecord, type AssetImage, type UsageHistoryRecord, formatUserIdentifier, formatMemory, formatStorage, getStatusText, getStatusColor, getOperationTypeText, getOperationTypeColor, recordAllHistory, getBeijingTime, updateAssetRobust, saveAssetSnapshot } from '../lib/supabase'
+import { supabase, type Asset, type MaintenanceRecord, type AssetImage, type UsageHistoryRecord, formatUserIdentifier, formatMemory, formatStorage, getStatusText, getStatusColor, getOperationTypeText, getOperationTypeColor, recordAllHistory, getBeijingTime, updateAssetRobust, saveAssetSnapshot, fetchCategoriesViaSQL } from '../lib/supabase'
 
 const categories = ['笔记本', '台式机', '显示器', '外设', '服务器', '网络设备', '其他']
 
@@ -111,7 +111,14 @@ export default function AssetDetail() {
         console.error('AssetDetail: Error fetching asset:', error)
         toast.error(`无法获取资产数据: ${error.message}`)
       } else if (data && data.length > 0) {
-        const assetData = data[0]
+        let assetData = data[0]
+        // 补读 category（PostgREST schema cache 可能不返回该字段）
+        try {
+          const catMap = await fetchCategoriesViaSQL([assetData.asset_code])
+          if (catMap.has(assetData.asset_code)) {
+            assetData = { ...assetData, category: catMap.get(assetData.asset_code) ?? '' }
+          }
+        } catch { /* ignore */ }
         console.log('AssetDetail: Asset fetched successfully:', assetData)
         setAsset(assetData)
         setFormData({

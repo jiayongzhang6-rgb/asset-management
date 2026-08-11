@@ -1110,6 +1110,43 @@ export async function updateAssetCategoryViaSQL(assetCode: string, category: str
 }
 
 /**
+ * 通过 execute_sql RPC 批量读取资产的 category（绕过 PostgREST schema cache）。
+ * 当 REST API 的 .select('*') 因 schema cache 看不到 category 列而不返回该字段时使用。
+ * 返回 Map<asset_code, category>。execute_sql 不存在或列不存在时返回空 Map。
+ */
+export async function fetchCategoriesViaSQL(assetCodes: string[]): Promise<Map<string, string>> {
+  const out = new Map<string, string>()
+  if (!assetCodes || assetCodes.length === 0) return out
+  try {
+    const inList = assetCodes
+      .filter(Boolean)
+      .map(c => `'${c.replace(/'/g, "''")}'`)
+      .join(',')
+    if (!inList) return out
+    const sql = `SELECT asset_code, category FROM assets WHERE asset_code IN (${inList});`
+    const { data, error } = await supabase.rpc('execute_sql', { sql })
+    if (error) {
+      console.warn('[Category] fetchCategoriesViaSQL 失败（execute_sql RPC 可能不存在）:', error.message)
+      return out
+    }
+    if (!isExecuteSqlSuccess(data)) {
+      console.warn('[Category] fetchCategoriesViaSQL 返回错误:', (data as any)?.error)
+      return out
+    }
+    const rows: any[] = parseExecuteSqlResult(data)
+    for (const r of rows) {
+      if (r && r.asset_code) {
+        out.set(r.asset_code, r.category ?? '')
+      }
+    }
+    return out
+  } catch (e: any) {
+    console.warn('[Category] fetchCategoriesViaSQL 异常:', e?.message)
+    return out
+  }
+}
+
+/**
  * 健壮的资产更新：完全规避 PostgREST schema cache 看不到 category 列的问题。
  *
  * 策略（双通道，完全不依赖错误信息关键字匹配）：

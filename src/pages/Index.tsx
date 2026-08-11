@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../App'
 import toast from 'react-hot-toast'
 import * as XLSX from 'xlsx'
-import { supabase, type Asset, initDatabase, formatUserIdentifier, formatMemory, formatStorage, getStatusText, getStatusColor, recordAllHistory, generateUniqueAssetCode, updateAssetRobust, insertAssetRobust, isCategorySupportedSync, saveAssetSnapshot, formatHardwareSpec, estimateAssetValue, estimateAssetValueWithAI, batchEstimateAssetValueWithAI, getAIValuationConfig, type AIValResult, restoreAIValuationsFromCache, syncResolveAIValuation } from '../lib/supabase'
+import { supabase, type Asset, initDatabase, formatUserIdentifier, formatMemory, formatStorage, getStatusText, getStatusColor, recordAllHistory, generateUniqueAssetCode, sanitizeAssetData, isCategorySupportedSync, saveAssetSnapshot, formatHardwareSpec, estimateAssetValue, estimateAssetValueWithAI, batchEstimateAssetValueWithAI, getAIValuationConfig, type AIValResult, restoreAIValuationsFromCache, syncResolveAIValuation, fetchCategoriesViaSQL } from '../lib/supabase'
 import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js'
 import { Pie } from 'react-chartjs-2'
 
@@ -263,6 +263,31 @@ export default function Index() {
       console.error('Error fetching assets:', error)
     } finally {
       setLoading(false)
+    }
+
+    // ===== category 补读 =====
+    // PostgREST schema cache 可能看不到 category 列，导致 .select('*') 不返回该字段。
+    // 这里通过 execute_sql RPC 直接从 DB 读取 category，覆盖到前端数据中。
+    // 这样即使 schema cache 未刷新，分类的读写都能正常工作。
+    if (filteredAllData.length > 0) {
+      try {
+        const allCodes = filteredAllData.map(a => a.asset_code).filter(Boolean)
+        const catMap = await fetchCategoriesViaSQL(allCodes)
+        if (catMap.size > 0) {
+          const mergedAll = filteredAllData.map(a => ({
+            ...a,
+            category: catMap.has(a.asset_code) ? (catMap.get(a.asset_code) ?? '') : a.category
+          }))
+          setAllAssets(mergedAll)
+          setAssets(prev => prev.map(a => ({
+            ...a,
+            category: catMap.has(a.asset_code) ? (catMap.get(a.asset_code) ?? '') : a.category
+          })))
+          filteredAllData = mergedAll
+        }
+      } catch (e) {
+        // 忽略，execute_sql 可能不存在
+      }
     }
 
     // 单独获取累计已缴租金（不随筛选变化）
