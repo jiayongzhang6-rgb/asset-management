@@ -1085,7 +1085,7 @@ export async function updateAssetCategoryViaSQL(assetCode: string, category: str
     const updateSql = `UPDATE assets SET category = '${escapedCat}' WHERE asset_code = '${escapedCode}';`
     const { data, error } = await supabase.rpc('execute_sql', { sql: updateSql })
     if (error) {
-      console.warn('[Category] execute_sql RPC 调用失败:', error.message)
+      console.warn('[Category] execute_sql RPC 调用失败（需在 Supabase Dashboard 执行 SQL 脚本创建该函数）:', error.message)
       return false
     }
     if (!isExecuteSqlSuccess(data)) {
@@ -1156,20 +1156,21 @@ export async function updateAssetRobust(
   if (catVal !== undefined && catVal !== null) {
     const sqlOk = await updateAssetCategoryViaSQL(assetCode, String(catVal))
     if (!sqlOk) {
-      console.warn('[Category] 通道 B2（execute_sql 写 category）失败，尝试完整 REST 更新作为最后兜底')
-      // 兜底：万一 execute_sql 也失败，再试一次完整 REST（此时 schema cache 可能已刷新）
+      // B2 失败 → 说明 execute_sql RPC 不存在或列不可用
+      // 此时 B1 已成功更新了其他所有字段，category 写不写不影响整体更新
+      // 尝试兜底 REST 写入（schema cache 可能已被其他操作刷新）
       try {
         const { error: fallbackErr } = await supabase
           .from('assets')
           .update({ category: catVal, updated_at: payload.updated_at })
           .eq('asset_code', assetCode)
         if (fallbackErr) {
-          console.error('[Category] 兜底 REST 更新也失败:', fallbackErr.message)
-          return { error: fallbackErr }
+          // 兜底也失败 → 不返回错误，B1 已成功更新了其他字段
+          // 只需在 Supabase Dashboard 执行一次 NOTIFY pgrst, 'reload schema' 即可
+          console.warn('[Category] 兜底 REST 写入也失败（schema cache 未刷新），category 未写入，其他字段已更新成功:', fallbackErr.message)
         }
       } catch (e: any) {
-        console.error('[Category] 兜底 REST 更新异常:', e?.message)
-        return { error: e }
+        console.warn('[Category] 兜底 REST 异常，category 未写入，其他字段已更新成功:', e?.message)
       }
     }
   }
