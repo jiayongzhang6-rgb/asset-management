@@ -1144,17 +1144,28 @@ export async function updateAssetCategoryViaSQL(assetCode: string, category: str
     const escapedCode = String(assetCode).replace(/'/g, "''")
     const updateSql = `UPDATE assets SET category = '${escapedCat}' WHERE asset_code = '${escapedCode}';`
     const { data, error } = await supabase.rpc('execute_sql', { sql: updateSql })
-    if (error) {
-      console.warn('[Category] execute_sql RPC 调用失败（需在 Supabase Dashboard 执行 SQL 脚本创建该函数）:', error.message)
+
+    // 如果 RPC 本身报错（PostgreSQL 错误，如列不存在），检查是否是列缺失问题
+    const missingCol = error && /column|does not exist|category/i.test(error.message || '')
+    if (error && !missingCol) {
+      console.warn('[Category] execute_sql RPC 调用失败:', error.message)
       return false
     }
-    if (!isExecuteSqlSuccess(data)) {
-      // 列可能不存在 → 自动添加列后重试
-      console.warn('[Category] execute_sql 执行报错，尝试添加列:', (data as any)?.error)
+
+    // 列不存在 或 execute_sql 返回了错误对象 → 尝试自动添加列后重试
+    const needAddColumn = missingCol || !isExecuteSqlSuccess(data)
+    if (needAddColumn) {
+      const reason = error?.message || (data as any)?.error || '未知'
+      console.warn('[Category] category 列不可用，尝试自动添加:', reason)
       const { error: alterErr } = await supabase.rpc('execute_sql', {
         sql: `ALTER TABLE assets ADD COLUMN IF NOT EXISTS category VARCHAR(50) DEFAULT '';`
       })
-      if (alterErr) { console.warn('[Category] ALTER TABLE 失败:', alterErr.message); return false }
+      if (alterErr) {
+        console.warn('[Category] ALTER TABLE 失败:', alterErr.message)
+        // ALTER TABLE 本身也可能因为 execute_sql 函数不存在而失败
+        // 这种情况只能返回 false
+        return false
+      }
       try { await supabase.rpc('execute_sql', { sql: "NOTIFY pgrst, 'reload schema';" }) } catch { /* ignore */ }
       const { error: retryErr } = await supabase.rpc('execute_sql', { sql: updateSql })
       if (retryErr) { console.warn('[Category] 重试更新失败:', retryErr.message); return false }
@@ -1185,6 +1196,28 @@ export async function fetchCategoriesViaSQL(assetCodes: string[]): Promise<Map<s
     if (!inList) return out
     const sql = `SELECT asset_code, category FROM assets WHERE asset_code IN (${inList});`
     const { data, error } = await supabase.rpc('execute_sql', { sql })
+
+    // 如果列不存在，自动添加后再读
+    const missingCol = error && /column|does not exist|category/i.test(error.message || '')
+    if (error && missingCol) {
+      console.warn('[Category] fetchCategoriesViaSQL 检测到列不存在，尝试自动添加')
+      const { error: alterErr } = await supabase.rpc('execute_sql', {
+        sql: `ALTER TABLE assets ADD COLUMN IF NOT EXISTS category VARCHAR(50) DEFAULT '';`
+      })
+      if (!alterErr) {
+        try { await supabase.rpc('execute_sql', { sql: "NOTIFY pgrst, 'reload schema';" }) } catch { /* ignore */ }
+        const { data: retryData, error: retryErr } = await supabase.rpc('execute_sql', { sql })
+        if (!retryErr) {
+          const rows: any[] = parseExecuteSqlResult(retryData)
+          for (const r of rows) {
+            if (r && r.asset_code) out.set(r.asset_code, r.category ?? '')
+          }
+          return out
+        }
+      }
+      return out
+    }
+
     if (error) {
       console.warn('[Category] fetchCategoriesViaSQL 失败（execute_sql RPC 可能不存在）:', error.message)
       return out
