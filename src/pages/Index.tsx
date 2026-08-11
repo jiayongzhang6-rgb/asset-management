@@ -163,6 +163,7 @@ export default function Index() {
   const fetchAssets = async () => {
     console.log('Index: Fetching assets')
     setLoading(true)
+    let filteredAllData: Asset[] = []
     try {
       // 1. 获取全部资产数据（用于汇总统计）
       let allQuery = supabase.from('assets').select('*')
@@ -184,7 +185,7 @@ export default function Index() {
         allQuery = allQuery.ilike('brand', `%${advancedFilters.brand}%`)
       }
       const { data: allData } = await allQuery
-      let filteredAllData = allData || []
+      filteredAllData = allData || []
 
       // 前端过滤：内存、存储 + （后端不支持 category 时在此补上）
       if (advancedFilters.category && !catSupported) {
