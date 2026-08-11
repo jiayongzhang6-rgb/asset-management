@@ -2272,6 +2272,32 @@ export async function estimateAssetValueWithAI(asset: {
       reason: cached.reason
     }
   }
+
+  // ②-bis 查 DB 缓存（ai_* 列）—— 即使 localStorage 被清/换浏览器，DB 有数据就不调 AI
+  if (asset.asset_code) {
+    try {
+      const dbVal = await fetchSingleAIValuationFromDB(asset.asset_code)
+      if (dbVal && dbVal.currentValue && dbVal.currentValue > 0) {
+        // 回填 localStorage 缓存，下次直接命中
+        const entry: AICacheEntry = {
+          key: cacheKey,
+          fixedValue: dbVal.fixedValue,
+          currentValue: dbVal.currentValue,
+          reason: dbVal.reason,
+          createdAt: Date.now()
+        }
+        cache.set(cacheKey, entry)
+        writeAICache(cache, config.cacheTTL)
+        return {
+          fixedValue: dbVal.fixedValue,
+          currentValue: dbVal.currentValue,
+          source: 'ai' as const,
+          reason: dbVal.reason
+        }
+      }
+    } catch { /* DB 查询失败则继续调 AI */ }
+  }
+
   // 兼容旧版 key：旧 key 用 brand|spec|age 拼接，age 随时间变化可能不匹配。
   // 改为：用硬件规格前缀在缓存里模糊查找（同配置同品牌的设备估值应该一样）
   const spec = formatHardwareSpec(asset)
