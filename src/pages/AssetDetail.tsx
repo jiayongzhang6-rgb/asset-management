@@ -265,7 +265,7 @@ export default function AssetDetail() {
     }
 
     // 健壮更新：自动双通道，category 不会因为 schema cache 看不到而失败
-    const { error: updateError } = await updateAssetRobust(assetCodeToUse, updateData)
+    const { error: updateError, categoryError } = await updateAssetRobust(assetCodeToUse, updateData)
     if (updateError) {
       console.error('AssetDetail: Update error:', updateError)
       throw updateError
@@ -278,7 +278,12 @@ export default function AssetDetail() {
     setIsEditDialogOpen(false)
     await fetchAsset()
     await fetchAssetHistory()
-    toast.success('资产更新成功')
+    // category 单独失败时，其他字段已更新成功，给明确提示
+    if (categoryError) {
+      toast.error(`其他字段已更新，但分类未保存。\n原因：${categoryError}`, { duration: 8000 })
+    } else {
+      toast.success('资产更新成功')
+    }
   } catch (error: any) {
     console.error('Error updating asset:', error)
     toast.error(`资产更新失败: ${error?.message || JSON.stringify(error)}`)

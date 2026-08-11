@@ -510,7 +510,7 @@ export default function Index() {
 
         // 健壮更新：自动处理 category 列的 PostgREST schema cache 问题
         // 若 REST API 因看不到 category 列而失败，会自动剥离 category 重试 + execute_sql 补写
-        const { error } = await updateAssetRobust(editingAsset.asset_code, updateData)
+        const { error, categoryError } = await updateAssetRobust(editingAsset.asset_code, updateData)
         if (error) throw error
         console.log('Index: Asset updated successfully')
 
@@ -526,7 +526,12 @@ export default function Index() {
         setIsEditDialogOpen(false)
         setEditingAsset(null)
         resetForm()
-        toast.success('资产更新成功')
+        // category 单独失败时，其他字段已更新成功，给明确提示
+        if (categoryError) {
+          toast.error(`其他字段已更新，但分类未保存。\n原因：${categoryError}`, { duration: 8000 })
+        } else {
+          toast.success('资产更新成功')
+        }
       } catch (error: any) {
         console.error('Error updating asset:', error)
         toast.error(`资产更新失败: ${error?.message || JSON.stringify(error)}`)

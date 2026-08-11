@@ -1215,13 +1215,15 @@ export async function fetchCategoriesViaSQL(assetCodes: string[]): Promise<Map<s
  *       1) 先剥离 category，用 REST API 更新其余所有字段（100% 不依赖 schema cache）
  *       2) 再用 execute_sql RPC 单独写 category（直接在 DB 层执行 UPDATE，绕过 PostgREST）
  *
- * 这样无论 schema cache 是否刷新、列是否被 API 感知，category 都能正确写入，
- * 从根本上杜绝「快速编辑分类更新失败」问题。
+ * 返回值：
+ *   - error: 主流程错误（非 category 字段更新失败时返回）。null 表示其他字段已成功更新。
+ *   - categoryError: category 单独写入失败的错误信息。非空时说明分类没保存，
+ *     通常是因为 execute_sql RPC 函数未创建，需要在 Supabase Dashboard 执行 SQL 脚本。
  */
 export async function updateAssetRobust(
   assetCode: string,
   data: Record<string, any>
-): Promise<{ error: any | null }> {
+): Promise<{ error: any | null; categoryError?: string | null }> {
   if (!assetCode) return { error: new Error('asset_code is required') }
 
   const payload = { ...data, updated_at: new Date().toISOString() }
@@ -1253,21 +1255,27 @@ export async function updateAssetRobust(
   if (catVal !== undefined && catVal !== null) {
     const sqlOk = await updateAssetCategoryViaSQL(assetCode, String(catVal))
     if (!sqlOk) {
-      // B2 失败 → 说明 execute_sql RPC 不存在或列不可用
-      // 此时 B1 已成功更新了其他所有字段，category 写不写不影响整体更新
-      // 尝试兜底 REST 写入（schema cache 可能已被其他操作刷新）
+      // B2 失败 → 尝试兜底 REST 写入（schema cache 可能已被其他操作刷新）
+      let fallbackOk = false
       try {
         const { error: fallbackErr } = await supabase
           .from('assets')
           .update({ category: catVal, updated_at: payload.updated_at })
           .eq('asset_code', assetCode)
-        if (fallbackErr) {
-          // 兜底也失败 → 不返回错误，B1 已成功更新了其他字段
-          // 只需在 Supabase Dashboard 执行一次 NOTIFY pgrst, 'reload schema' 即可
-          console.warn('[Category] 兜底 REST 写入也失败（schema cache 未刷新），category 未写入，其他字段已更新成功:', fallbackErr.message)
+        if (!fallbackErr) {
+          fallbackOk = true
+        } else {
+          console.warn('[Category] 兜底 REST 写入也失败:', fallbackErr.message)
         }
       } catch (e: any) {
-        console.warn('[Category] 兜底 REST 异常，category 未写入，其他字段已更新成功:', e?.message)
+        console.warn('[Category] 兜底 REST 异常:', e?.message)
+      }
+      if (!fallbackOk) {
+        // B2 和兜底都失败 → category 未保存。返回明确的错误信息让前端提示用户。
+        return {
+          error: null, // 其他字段已成功更新，主流程不报错
+          categoryError: '分类未保存：数据库缺少 execute_sql 函数或 category 列不可用。请在 Supabase Dashboard 的 SQL Editor 中执行 sql/create-execute-sql-rpc.sql 脚本。'
+        }
       }
     }
   }
