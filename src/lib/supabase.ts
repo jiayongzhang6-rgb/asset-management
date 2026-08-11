@@ -1110,10 +1110,16 @@ export async function updateAssetCategoryViaSQL(assetCode: string, category: str
 }
 
 /**
- * 健壮的资产更新：先尝试普通 REST API 更新（含 category），
- * 若因 PostgREST schema cache 看不到 category 列而失败，
- * 则剥离 category 重试 REST API，再用 execute_sql RPC 单独更新 category。
- * 这样无论 schema cache 是否刷新，category 都能正确写入，不会出现"更新失败"。
+ * 健壮的资产更新：完全规避 PostgREST schema cache 看不到 category 列的问题。
+ *
+ * 策略（双通道，完全不依赖错误信息关键字匹配）：
+ *   A. 数据中不带 category → 直接走普通 REST API 更新
+ *   B. 数据中带 category →
+ *       1) 先剥离 category，用 REST API 更新其余所有字段（100% 不依赖 schema cache）
+ *       2) 再用 execute_sql RPC 单独写 category（直接在 DB 层执行 UPDATE，绕过 PostgREST）
+ *
+ * 这样无论 schema cache 是否刷新、列是否被 API 感知，category 都能正确写入，
+ * 从根本上杜绝「快速编辑分类更新失败」问题。
  */
 export async function updateAssetRobust(
   assetCode: string,
@@ -1122,45 +1128,50 @@ export async function updateAssetRobust(
   if (!assetCode) return { error: new Error('asset_code is required') }
 
   const payload = { ...data, updated_at: new Date().toISOString() }
+  const hasCategory = 'category' in payload
 
-  // 通道1：普通 REST API 更新（含所有字段，包括 category）
-  const { error } = await supabase
-    .from('assets')
-    .update(payload)
-    .eq('asset_code', assetCode)
-
-  if (!error) return { error: null }
-
-  // 判断错误是否与 category 列有关（PostgREST schema cache 看不到该列时的典型报错）
-  const msg = (error.message || '').toLowerCase()
-  const isCategoryRelated = 'category' in data && (
-    msg.includes('category') ||
-    msg.includes('could not find the') ||
-    msg.includes('schema cache')
-  )
-
-  // 非 category 相关错误，或数据中不含 category → 直接返回原错误
-  if (!isCategoryRelated) {
+  // ===== 路径 A：数据里没有 category → 直接走 REST API =====
+  if (!hasCategory) {
+    const { error } = await supabase
+      .from('assets')
+      .update(payload)
+      .eq('asset_code', assetCode)
     return { error }
   }
 
-  console.warn('[Category] REST API 更新失败（疑似 schema cache 问题），切换到分离更新模式:', error.message)
-
-  // 通道2：剥离 category 后用 REST API 更新其余字段
+  // ===== 路径 B：数据里有 category → 用分离更新模式 =====
   const { category: catVal, ...rest } = payload
+
+  // B1：先用 REST API 更新除 category 外的所有字段
   const { error: restErr } = await supabase
     .from('assets')
     .update(rest)
     .eq('asset_code', assetCode)
-
   if (restErr) {
-    // 其余字段也更新失败 → 返回错误
+    console.error('[Category] 通道 B1（REST 更新非 category 字段）失败:', restErr.message)
     return { error: restErr }
   }
 
-  // 通道3：用 execute_sql RPC 单独更新 category（绕过 PostgREST schema cache）
+  // B2：用 execute_sql RPC 单独写 category（绕过 PostgREST schema cache）
   if (catVal !== undefined && catVal !== null) {
-    await updateAssetCategoryViaSQL(assetCode, String(catVal))
+    const sqlOk = await updateAssetCategoryViaSQL(assetCode, String(catVal))
+    if (!sqlOk) {
+      console.warn('[Category] 通道 B2（execute_sql 写 category）失败，尝试完整 REST 更新作为最后兜底')
+      // 兜底：万一 execute_sql 也失败，再试一次完整 REST（此时 schema cache 可能已刷新）
+      try {
+        const { error: fallbackErr } = await supabase
+          .from('assets')
+          .update({ category: catVal, updated_at: payload.updated_at })
+          .eq('asset_code', assetCode)
+        if (fallbackErr) {
+          console.error('[Category] 兜底 REST 更新也失败:', fallbackErr.message)
+          return { error: fallbackErr }
+        }
+      } catch (e: any) {
+        console.error('[Category] 兜底 REST 更新异常:', e?.message)
+        return { error: e }
+      }
+    }
   }
 
   return { error: null }

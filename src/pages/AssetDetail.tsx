@@ -2,7 +2,9 @@ import React, { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '../App'
 import toast from 'react-hot-toast'
-import { supabase, type Asset, type MaintenanceRecord, type AssetImage, type UsageHistoryRecord, formatUserIdentifier, formatMemory, formatStorage, getStatusText, getStatusColor, getOperationTypeText, getOperationTypeColor, recordAllHistory, getBeijingTime, sanitizeAssetData, saveAssetSnapshot } from '../lib/supabase'
+import { supabase, type Asset, type MaintenanceRecord, type AssetImage, type UsageHistoryRecord, formatUserIdentifier, formatMemory, formatStorage, getStatusText, getStatusColor, getOperationTypeText, getOperationTypeColor, recordAllHistory, getBeijingTime, updateAssetRobust, saveAssetSnapshot } from '../lib/supabase'
+
+const categories = ['笔记本', '台式机', '显示器', '外设', '服务器', '网络设备', '其他']
 
 export default function AssetDetail() {
   const { id } = useParams<{ id: string }>()
@@ -31,6 +33,7 @@ export default function AssetDetail() {
     storage: '',
     gpu: '',
     os: '',
+    category: '',
     department: '',
     user_name: '',
     location: '',
@@ -119,6 +122,7 @@ export default function AssetDetail() {
           storage: assetData.storage || '',
           gpu: assetData.gpu || '',
           os: assetData.os || '',
+          category: assetData.category || '',
           department: assetData.department || '',
           user_name: assetData.user_name || '',
           location: assetData.location || '',
@@ -229,22 +233,22 @@ export default function AssetDetail() {
       updateData.monthly_rent = isNaN(rentValue) ? 0 : rentValue
     }
 
-    // 运行时检测：如果 category 列不可用则自动剥离
-    const cleanData = await sanitizeAssetData(updateData)
-    
-    const changes = []
-    if (cleanData.brand && cleanData.brand !== asset.brand) changes.push(`品牌: ${asset.brand || '无'} → ${cleanData.brand || '无'}`)
-    if (cleanData.model && cleanData.model !== asset.model) changes.push(`型号: ${asset.model || '无'} → ${cleanData.model || '无'}`)
-    if (cleanData.cpu && cleanData.cpu !== asset.cpu) changes.push(`CPU: ${asset.cpu || '无'} → ${cleanData.cpu || '无'}`)
-    if (cleanData.ram && cleanData.ram !== asset.ram) changes.push(`内存: ${asset.ram || '无'} → ${cleanData.ram || '无'}`)
-    if (cleanData.storage && cleanData.storage !== asset.storage) changes.push(`存储: ${asset.storage || '无'} → ${cleanData.storage || '无'}`)
-    if (cleanData.gpu && cleanData.gpu !== asset.gpu) changes.push(`GPU: ${asset.gpu || '无'} → ${cleanData.gpu || '无'}`)
-    if (cleanData.os && cleanData.os !== asset.os) changes.push(`操作系统: ${asset.os || '无'} → ${cleanData.os || '无'}`)
-    if (cleanData.department !== asset.department) changes.push(`部门: ${asset.department || '无'} → ${cleanData.department || '无'}`)
-    if (cleanData.user_name !== asset.user_name) changes.push(`使用人: ${asset.user_name || '无'} → ${cleanData.user_name || '无'}`)
-    if (cleanData.location !== asset.location) changes.push(`位置: ${asset.location || '无'} → ${cleanData.location || '无'}`)
-    if (cleanData.status && cleanData.status !== asset.status) changes.push(`状态: ${getStatusText(asset.status)} → ${getStatusText(cleanData.status)}`)
-    if (cleanData.notes !== asset.notes) changes.push(`备注: ${asset.notes || '无'} → ${cleanData.notes || '无'}`)
+    // 构建变更明细（category 由 updateAssetRobust 内部双通道处理）
+    const changes: string[] = []
+    if (updateData.brand !== undefined && updateData.brand !== asset.brand) changes.push(`品牌: ${asset.brand || '无'} → ${updateData.brand || '无'}`)
+    if (updateData.model !== undefined && updateData.model !== asset.model) changes.push(`型号: ${asset.model || '无'} → ${updateData.model || '无'}`)
+    if (updateData.cpu !== undefined && updateData.cpu !== asset.cpu) changes.push(`CPU: ${asset.cpu || '无'} → ${updateData.cpu || '无'}`)
+    if (updateData.ram !== undefined && updateData.ram !== asset.ram) changes.push(`内存: ${asset.ram || '无'} → ${updateData.ram || '无'}`)
+    if (updateData.storage !== undefined && updateData.storage !== asset.storage) changes.push(`存储: ${asset.storage || '无'} → ${updateData.storage || '无'}`)
+    if (updateData.gpu !== undefined && updateData.gpu !== asset.gpu) changes.push(`GPU: ${asset.gpu || '无'} → ${updateData.gpu || '无'}`)
+    if (updateData.os !== undefined && updateData.os !== asset.os) changes.push(`操作系统: ${asset.os || '无'} → ${updateData.os || '无'}`)
+    if (updateData.category !== undefined && updateData.category !== asset.category) changes.push(`分类: ${asset.category || '无'} → ${updateData.category || '无'}`)
+    if (updateData.department !== asset.department) changes.push(`部门: ${asset.department || '无'} → ${updateData.department || '无'}`)
+    if (updateData.user_name !== asset.user_name) changes.push(`使用人: ${asset.user_name || '无'} → ${updateData.user_name || '无'}`)
+    if (updateData.location !== asset.location) changes.push(`位置: ${asset.location || '无'} → ${updateData.location || '无'}`)
+    if (updateData.status && updateData.status !== asset.status) changes.push(`状态: ${getStatusText(asset.status)} → ${getStatusText(updateData.status)}`)
+    if (updateData.monthly_rent !== undefined && Number(updateData.monthly_rent) !== Number(asset.monthly_rent)) changes.push(`月租费: ¥${asset.monthly_rent || 0} → ¥${updateData.monthly_rent || 0}`)
+    if (updateData.notes !== asset.notes) changes.push(`备注: ${asset.notes || '无'} → ${updateData.notes || '无'}`)
     
     console.log('AssetDetail: Changes to record:', changes)
 
@@ -253,14 +257,8 @@ export default function AssetDetail() {
       await saveAssetSnapshot(assetCodeToUse, 'update', user.email, asset)
     }
 
-    const { error: updateError } = await supabase
-      .from('assets')
-      .update({
-        ...cleanData,
-        updated_at: new Date().toISOString()
-      })
-      .eq('asset_code', asset.asset_code)
-    
+    // 健壮更新：自动双通道，category 不会因为 schema cache 看不到而失败
+    const { error: updateError } = await updateAssetRobust(assetCodeToUse, updateData)
     if (updateError) {
       console.error('AssetDetail: Update error:', updateError)
       throw updateError
@@ -1083,6 +1081,19 @@ export default function AssetDetail() {
                       />
                     </div>
                     <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1.5">分类</label>
+                      <select
+                        className="input"
+                        value={formData.category}
+                        onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                      >
+                        <option value="">请选择分类</option>
+                        {categories.map(cat => (
+                          <option key={cat} value={cat}>{cat}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1.5">状态</label>
                       <select
                         className="input"
@@ -1092,6 +1103,7 @@ export default function AssetDetail() {
                         <option value="active">使用中</option>
                         <option value="idle">闲置</option>
                         <option value="maintenance">维修中</option>
+                        <option value="retired">已报废</option>
                       </select>
                     </div>
                   </>
