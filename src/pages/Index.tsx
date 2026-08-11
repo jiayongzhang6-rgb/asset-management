@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../App'
 import toast from 'react-hot-toast'
 import * as XLSX from 'xlsx'
-import { supabase, type Asset, initDatabase, formatUserIdentifier, formatMemory, formatStorage, getStatusText, getStatusColor, recordAllHistory, generateUniqueAssetCode, sanitizeAssetData, isCategorySupportedSync, saveAssetSnapshot, formatHardwareSpec, estimateAssetValue, estimateAssetValueWithAI, batchEstimateAssetValueWithAI, getAIValuationConfig, type AIValResult, restoreAIValuationsFromCache, syncResolveAIValuation, fetchCategoriesViaSQL } from '../lib/supabase'
+import { supabase, type Asset, initDatabase, formatUserIdentifier, formatMemory, formatStorage, getStatusText, getStatusColor, recordAllHistory, generateUniqueAssetCode, sanitizeAssetData, isCategorySupportedSync, saveAssetSnapshot, formatHardwareSpec, estimateAssetValue, estimateAssetValueWithAI, batchEstimateAssetValueWithAI, getAIValuationConfig, type AIValResult, restoreAIValuationsFromCache, syncResolveAIValuation, fetchCategoriesViaSQL, updateAssetRobust, insertAssetRobust } from '../lib/supabase'
 import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js'
 import { Pie } from 'react-chartjs-2'
 

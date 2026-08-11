@@ -41,6 +41,8 @@ export default function RentSettlement() {
   const [generating, setGenerating] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [collapsedDepts, setCollapsedDepts] = useState<Record<string, boolean>>({})
+  // 是否在结算中包含闲置设备（默认不包含）
+  const [includeIdle, setIncludeIdle] = useState(false)
   // AI 估值缓存（按 asset_code 索引）
   const [aiValuations, setAiValuations] = useState<Map<string, AIValResult>>(new Map())
   const [aiLoading, setAiLoading] = useState(false)
@@ -131,11 +133,11 @@ export default function RentSettlement() {
       toast.error('无法获取用户信息')
       return
     }
-    if (!window.confirm(`确定要生成 ${selectedYear}年${selectedMonth}月 的租赁结算单吗？`)) return
+    if (!window.confirm(`确定要生成 ${selectedYear}年${selectedMonth}月 的租赁结算单吗？\n${includeIdle ? '（将包含闲置设备）' : '（不包含闲置设备）'}`)) return
 
     setGenerating(true)
     try {
-      const result = await generateMonthlySettlement(selectedYear, selectedMonth, user.email)
+      const result = await generateMonthlySettlement(selectedYear, selectedMonth, user.email, includeIdle)
       if (result.success) {
         toast.success(result.message)
         await fetchSettlement()
@@ -502,6 +504,18 @@ export default function RentSettlement() {
                   ))}
                 </select>
               </div>
+              <label
+                className="flex items-center gap-1.5 text-sm text-gray-600 cursor-pointer select-none px-2 py-1 rounded hover:bg-gray-50"
+                title="勾选后生成结算单时会包含闲置(idle)状态的设备"
+              >
+                <input
+                  type="checkbox"
+                  checked={includeIdle}
+                  onChange={(e) => setIncludeIdle(e.target.checked)}
+                  className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                />
+                <span>包含闲置设备</span>
+              </label>
               <div className="w-px h-8 bg-gray-200 mx-1" />
               {isAdmin ? (
                 <>
@@ -521,6 +535,8 @@ export default function RentSettlement() {
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                         </svg>
                         一键生成结算单
+                        {!includeIdle && <span className="text-[10px] opacity-80 ml-1">(不含闲置)</span>}
+                        {includeIdle && <span className="text-[10px] opacity-80 ml-1">(含闲置)</span>}
                       </>
                     )}
                   </button>

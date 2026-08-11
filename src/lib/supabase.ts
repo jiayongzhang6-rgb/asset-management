@@ -350,10 +350,12 @@ export async function getDepartmentRentStats(): Promise<DepartmentRentStat[]> {
 }
 
 // 一键生成月度租赁结算单（按部门分组）
+// includeIdle: 是否包含闲置(idle)设备，默认 false（不统计闲置）
 export async function generateMonthlySettlement(
   year: number,
   month: number,
-  operatorEmail: string
+  operatorEmail: string,
+  includeIdle: boolean = false
 ): Promise<{
   success: boolean
   message: string
@@ -372,9 +374,10 @@ export async function generateMonthlySettlement(
 
     if (existing && existing.length > 0) {
       // 已有记录，更新租金为最新值
+      // 按当前 includeIdle 策略同步：不统计闲置时，删除闲置设备的结算记录
       const { data: assets, error: assetErr } = await supabase
         .from('assets')
-        .select('asset_code, monthly_rent, department, user_name')
+        .select('asset_code, monthly_rent, department, user_name, status')
         .neq('status', 'retired')
 
       if (assetErr) throw assetErr
@@ -382,7 +385,59 @@ export async function generateMonthlySettlement(
       const assetMap = new Map((assets || []).map(a => [a.asset_code, a]))
       let updatedCount = 0
 
+      // 若不包含闲置，先删除已存在的闲置设备结算记录
+      if (!includeIdle) {
+        const idleCodes = (assets || [])
+          .filter(a => a.status === 'idle')
+          .map(a => a.asset_code)
+          .filter(Boolean)
+        if (idleCodes.length > 0) {
+          // 分批删除（避免 IN 列表过长）
+          const batchSize = 200
+          for (let i = 0; i < idleCodes.length; i += batchSize) {
+            const batch = idleCodes.slice(i, i + batchSize)
+            await supabase
+              .from('rent_records')
+              .delete()
+              .in('asset_code', batch)
+              .eq('year', year)
+              .eq('month', month)
+          }
+        }
+      } else {
+        // 包含闲置：把之前可能被删除的闲置设备补回来
+        const idleAssets = (assets || []).filter(a => a.status === 'idle')
+        if (idleAssets.length > 0) {
+          const toInsert = idleAssets.map(a => ({
+            asset_code: a.asset_code,
+            asset_id: String(a.id),
+            department: a.department || '未分配',
+            user_name: a.user_name || '',
+            monthly_rent: Number(a.monthly_rent) || 0,
+            year,
+            month,
+            status: 'unpaid' as const,
+            paid_date: null
+          }))
+          // 先查已存在的，避免重复
+          const existingCodes = idleAssets.map(a => a.asset_code)
+          const { data: existingIdle } = await supabase
+            .from('rent_records')
+            .select('asset_code')
+            .eq('year', year)
+            .eq('month', month)
+            .in('asset_code', existingCodes)
+          const existSet = new Set((existingIdle || []).map(r => r.asset_code))
+          const newOnes = toInsert.filter(r => !existSet.has(r.asset_code))
+          if (newOnes.length > 0) {
+            await supabase.from('rent_records').insert(newOnes)
+          }
+        }
+      }
+
       for (const [code, a] of assetMap) {
+        // 不统计闲置时跳过闲置设备
+        if (!includeIdle && a.status === 'idle') continue
         const { error: upErr } = await supabase
           .from('rent_records')
           .update({
@@ -400,16 +455,21 @@ export async function generateMonthlySettlement(
 
       return {
         success: true,
-        message: `结算单已更新（${updatedCount} 条记录已同步最新租金）`,
+        message: `结算单已更新（${updatedCount} 条记录已同步最新租金${!includeIdle ? '，已剔除闲置设备' : '，已包含闲置设备'}）`,
         details: { departments: 0, totalRecords: updatedCount, totalRent: 0, errors: [] }
       }
     }
 
     // 2. 首次生成：获取所有非报废资产
-    const { data: assets, error: assetErr } = await supabase
+    let query = supabase
       .from('assets')
       .select('id, asset_code, department, user_name, monthly_rent, status')
       .neq('status', 'retired')
+    if (!includeIdle) {
+      query = query.neq('status', 'idle')
+    }
+
+    const { data: assets, error: assetErr } = await query
 
     if (assetErr) throw assetErr
 
@@ -445,7 +505,7 @@ export async function generateMonthlySettlement(
 
     // 记录历史
     await recordAllHistory('SYSTEM', 'create', operatorEmail,
-      `生成 ${year}年${month}月 租赁结算单：${newRecords.length} 条记录，${deptSet.size} 个部门，总计 ¥${totalRent.toFixed(2)}`)
+      `生成 ${year}年${month}月 租赁结算单（${includeIdle ? '含闲置' : '不含闲置'}）：${newRecords.length} 条记录，${deptSet.size} 个部门，总计 ¥${totalRent.toFixed(2)}`)
 
     return {
       success: true,
