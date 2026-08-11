@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../App'
-import { supabase, recordAllHistory, generateUniqueAssetCode, sanitizeAssetData, saveAssetSnapshot } from '../lib/supabase'
+import { supabase, recordAllHistory, generateUniqueAssetCode, updateAssetRobust, insertAssetRobust, saveAssetSnapshot } from '../lib/supabase'
 import toast from 'react-hot-toast'
 import * as XLSX from 'xlsx'
 
@@ -166,11 +166,13 @@ export default function Import() {
             if (user) {
               await saveAssetSnapshot(asset.asset_code, 'import_update', user.email, existingAsset)
             }
-            const cleanAsset = await sanitizeAssetData(asset)
-            const { error: updateError } = await supabase
-              .from('assets')
-              .update(cleanAsset)
-              .eq('asset_code', asset.asset_code)
+            // category 列空字符串则剥掉（保持与新增一致的语义）
+            const assetCopy = { ...asset }
+            if ('category' in assetCopy && !assetCopy.category) {
+              delete assetCopy.category
+            }
+            // 使用 updateAssetRobust 双通道更新，category 不会因 schema cache 看不到列而失败
+            const { error: updateError } = await updateAssetRobust(asset.asset_code, assetCopy)
 
             if (updateError) {
               console.error('Error updating asset:', updateError)
@@ -189,8 +191,12 @@ export default function Import() {
             if (!hasExplicitCode) {
               asset.asset_code = await generateUniqueAssetCode()
             }
-            const cleanAsset = await sanitizeAssetData(asset)
-            const { data, error: insertError } = await supabase.from('assets').insert(cleanAsset).select()
+            // category 列空字符串则剥掉
+            if ('category' in asset && !asset.category) {
+              delete (asset as any).category
+            }
+            // 使用 insertAssetRobust 双通道插入
+            const { data, error: insertError } = await insertAssetRobust(asset)
 
             if (insertError) {
               console.error('Error inserting asset:', insertError)

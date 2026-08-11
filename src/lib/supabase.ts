@@ -1177,6 +1177,66 @@ export async function updateAssetRobust(
   return { error: null }
 }
 
+/**
+ * 健壮的资产新增：和 updateAssetRobust 相同的双通道思路。
+ *   A. 无 category → 直接 REST INSERT
+ *   B. 有 category →
+ *       1) 剥 category 先 REST INSERT（保证不会因 schema cache 看不到列而报错）
+ *       2) 再用 execute_sql RPC 单独 UPDATE 写 category（绕过 PostgREST）
+ *
+ * 返回 { data: 插入的行[], error: null } 或 { data: null, error }
+ */
+export async function insertAssetRobust(
+  data: Record<string, any>
+): Promise<{ data: any[] | null; error: any | null }> {
+  const hasCategory = 'category' in data && data.category !== '' && data.category != null
+
+  // ===== 路径 A：没有 category 字段 → 直接 REST INSERT =====
+  if (!hasCategory) {
+    const { data: inserted, error } = await supabase
+      .from('assets')
+      .insert(data)
+      .select()
+    return { data: inserted, error }
+  }
+
+  // ===== 路径 B：有 category → 分离写入 =====
+  const { category: catVal, ...rest } = data
+
+  // B1：先 REST INSERT（不带 category）
+  const { data: inserted, error: insertErr } = await supabase
+    .from('assets')
+    .insert(rest)
+    .select()
+  if (insertErr) {
+    console.error('[Category] 通道 B1（REST INSERT 无 category）失败:', insertErr.message)
+    return { data: null, error: insertErr }
+  }
+
+  // B2：用 execute_sql RPC 单独 UPDATE 写入 category
+  if (inserted && inserted.length > 0 && inserted[0].asset_code) {
+    const sqlOk = await updateAssetCategoryViaSQL(inserted[0].asset_code, String(catVal))
+    if (!sqlOk) {
+      console.warn('[Category] 通道 B2（execute_sql 写 category）失败，尝试 REST 兜底')
+      // 兜底：单独 REST UPDATE category（此时列可能刚好可见了）
+      try {
+        const { error: fallbackErr } = await supabase
+          .from('assets')
+          .update({ category: catVal, updated_at: new Date().toISOString() })
+          .eq('asset_code', inserted[0].asset_code)
+        if (fallbackErr) {
+          console.error('[Category] 兜底 REST UPDATE category 失败:', fallbackErr.message, '（资产已创建，但分类未写入）')
+          // 不整体失败，因为资产已经插入成功了；分类只是没写进去
+        }
+      } catch (e: any) {
+        console.error('[Category] 兜底 REST 异常:', e?.message)
+      }
+    }
+  }
+
+  return { data: inserted, error: null }
+}
+
 // 重置 category 支持检测（添加列后调用）
 export function resetCategoryCheck(): void {
   _categorySupported = null

@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../App'
 import toast from 'react-hot-toast'
 import * as XLSX from 'xlsx'
-import { supabase, type Asset, initDatabase, formatUserIdentifier, formatMemory, formatStorage, getStatusText, getStatusColor, recordAllHistory, generateUniqueAssetCode, sanitizeAssetData, updateAssetRobust, isCategorySupportedSync, saveAssetSnapshot, formatHardwareSpec, estimateAssetValue, estimateAssetValueWithAI, batchEstimateAssetValueWithAI, getAIValuationConfig, type AIValResult, restoreAIValuationsFromCache, syncResolveAIValuation } from '../lib/supabase'
+import { supabase, type Asset, initDatabase, formatUserIdentifier, formatMemory, formatStorage, getStatusText, getStatusColor, recordAllHistory, generateUniqueAssetCode, updateAssetRobust, insertAssetRobust, isCategorySupportedSync, saveAssetSnapshot, formatHardwareSpec, estimateAssetValue, estimateAssetValueWithAI, batchEstimateAssetValueWithAI, getAIValuationConfig, type AIValResult, restoreAIValuationsFromCache, syncResolveAIValuation } from '../lib/supabase'
 import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js'
 import { Pie } from 'react-chartjs-2'
 
@@ -416,10 +416,9 @@ export default function Index() {
       if (!assetData.category) {
         delete assetData.category
       }
-      // 运行时检测：如果 category 列不可用则自动剥离
-      const cleanData = await sanitizeAssetData(assetData)
-      console.log('Index: Creating asset with data:', cleanData, 'generated code:', assetCode)
-      const { data, error } = await supabase.from('assets').insert(cleanData).select()
+      console.log('Index: Creating asset with data:', assetData, 'generated code:', assetCode)
+      // 使用 insertAssetRobust 双通道插入，category 不会因 schema cache 看不到列而失败
+      const { data, error } = await insertAssetRobust(assetData)
       if (error) throw error
       console.log('Index: Asset created successfully:', data)
 
@@ -432,9 +431,9 @@ export default function Index() {
       setIsAddDialogOpen(false)
       resetForm()
       toast.success('资产添加成功')
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error adding asset:', error)
-      toast.error('资产添加失败')
+      toast.error(`资产添加失败: ${error?.message || JSON.stringify(error)}`)
     }
   }
 
