@@ -1668,6 +1668,46 @@ WHERE asset_code IN (${inList})
 }
 
 /**
+ * 查询单台资产的 AI 估值（优先 REST，失败走 execute_sql RPC）。
+ * 用于 estimateAssetValueWithAI 的 DB 缓存检查，避免重复调用 AI 浪费 token。
+ */
+async function fetchSingleAIValuationFromDB(assetCode: string): Promise<{
+  fixedValue?: number
+  currentValue?: number
+  reason?: string
+} | null> {
+  if (!assetCode) return null
+  try {
+    // 优先 REST（schema cache 可见时）
+    const { data, error } = await supabase
+      .from('assets')
+      .select('ai_fixed_value, ai_current_value, ai_reason, ai_valuated_at')
+      .eq('asset_code', assetCode)
+      .maybeSingle()
+    if (!error && data) {
+      const current = Number(data.ai_current_value)
+      if (current && current > 0) {
+        return {
+          fixedValue: Number(data.ai_fixed_value) || current,
+          currentValue: current,
+          reason: data.ai_reason ?? undefined
+        }
+      }
+    }
+    // REST 失败（schema cache 看不到 ai_* 列）→ 走 execute_sql RPC
+    const m = await fetchAIMapFromDBViaSQL([assetCode])
+    const v = m.get(assetCode)
+    if (v && v.currentValue && v.currentValue > 0) {
+      return { fixedValue: v.fixedValue, currentValue: v.currentValue, reason: v.reason }
+    }
+    return null
+  } catch (e: any) {
+    console.warn('[AI DB] fetchSingleAIValuationFromDB 异常:', e?.message)
+    return null
+  }
+}
+
+/**
  * 把 AI 估值结果写入 assets 表对应的 ai_* 列（持久化到数据库）。
  * 刷新/换浏览器/清 localStorage 都不会丢。
  * 双通道：优先 REST API（PostgREST schema cache 刷新后）；
