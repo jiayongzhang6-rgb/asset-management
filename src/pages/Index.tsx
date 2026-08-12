@@ -50,7 +50,7 @@ export default function Index() {
   const [totalAssets, setTotalAssets] = useState(0)
   // 筛选相关状态
   const [statusFilter, setStatusFilter] = useState('all') // all, active, idle, maintenance, retired
-  const [departmentFilter, setDepartmentFilter] = useState('all')
+  const [departmentFilter, setDepartmentFilter] = useState<string[]>([]) // 多选：空数组=全部
   // 高级筛选
   const [showAdvancedSearch, setShowAdvancedSearch] = useState(false)
   const [advancedFilters, setAdvancedFilters] = useState({
@@ -173,8 +173,9 @@ export default function Index() {
       if (statusFilter !== 'all') {
         allQuery = allQuery.eq('status', statusFilter)
       }
-      if (departmentFilter !== 'all') {
-        allQuery = allQuery.eq('department', departmentFilter)
+      if (departmentFilter.length > 0) {
+        const deptOr = departmentFilter.map(d => `department.eq.${d.replace(/,/g, '%2C')}`).join(',')
+        allQuery = allQuery.or(deptOr)
       }
       // 只有 category 列在 schema cache 中可用时才走后端筛选；否则转到前端过滤
       const catSupported = isCategorySupportedSync()
@@ -220,8 +221,9 @@ export default function Index() {
       if (statusFilter !== 'all') {
         query = query.eq('status', statusFilter)
       }
-      if (departmentFilter !== 'all') {
-        query = query.eq('department', departmentFilter)
+      if (departmentFilter.length > 0) {
+        const deptOr = departmentFilter.map(d => `department.eq.${d.replace(/,/g, '%2C')}`).join(',')
+        query = query.or(deptOr)
       }
       if (advancedFilters.category && catSupported) {
         query = query.eq('category', advancedFilters.category)
@@ -336,6 +338,19 @@ export default function Index() {
   useEffect(() => {
     fetchAssets()
   }, [page, pageSize, statusFilter, departmentFilter, advancedFilters])
+
+  // 点击外部关闭部门多选下拉框
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      const dropdown = document.getElementById('dept-multi-dropdown')
+      const btn = (e.target as HTMLElement)?.closest('button')
+      if (dropdown && !dropdown.contains(e.target as Node) && !btn?.textContent?.includes('部门')) {
+        dropdown.classList.add('hidden')
+      }
+    }
+    document.addEventListener('click', handler)
+    return () => document.removeEventListener('click', handler)
+  }, [])
 
   // 处理从详情页传来的编辑请求
   useEffect(() => {
@@ -1358,16 +1373,61 @@ export default function Index() {
               />
             </div>
             <div className="flex flex-wrap gap-2 items-center">
-              <select
-                className="w-auto text-sm"
-                value={departmentFilter}
-                onChange={(e) => setDepartmentFilter(e.target.value)}
-              >
-                <option value="all">全部部门</option>
-                {departments.map(dept => (
-                  <option key={dept} value={dept}>{dept}</option>
-                ))}
-              </select>
+              {/* 部门多选下拉框 */}
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const el = document.getElementById('dept-multi-dropdown')
+                    el?.classList.toggle('hidden')
+                  }}
+                  className="w-auto text-sm px-3 py-2 border rounded-md bg-white flex items-center gap-1 hover:bg-gray-50"
+                >
+                  {departmentFilter.length === 0 ? '全部部门' : `部门(${departmentFilter.length})`}
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+                <div
+                  id="dept-multi-dropdown"
+                  className="hidden absolute z-20 mt-1 w-56 max-h-64 overflow-y-auto bg-white border rounded-md shadow-lg p-2"
+                >
+                  <div className="flex justify-between items-center mb-2 pb-2 border-b">
+                    <button
+                      type="button"
+                      onClick={() => setDepartmentFilter([])}
+                      className="text-xs text-blue-600 hover:underline"
+                    >清空</button>
+                    <span className="text-xs text-gray-500">已选 {departmentFilter.length}</span>
+                  </div>
+                  {departments.length === 0 && (
+                    <div className="text-xs text-gray-400 py-2 text-center">暂无部门数据</div>
+                  )}
+                  {departments.map(dept => {
+                    const checked = departmentFilter.includes(dept)
+                    return (
+                      <label
+                        key={dept}
+                        className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-gray-50 cursor-pointer text-sm"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setDepartmentFilter([...departmentFilter, dept])
+                            } else {
+                              setDepartmentFilter(departmentFilter.filter(d => d !== dept))
+                            }
+                          }}
+                          className="rounded"
+                        />
+                        <span className="truncate">{dept}</span>
+                      </label>
+                    )
+                  })}
+                </div>
+              </div>
               <select
                 className="w-auto text-sm"
                 value={statusFilter}
