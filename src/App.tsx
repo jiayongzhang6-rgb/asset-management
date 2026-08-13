@@ -1,4 +1,4 @@
-import { BrowserRouter, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
+import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import React, { createContext, useContext, useState, useEffect } from 'react'
 import { Toaster } from 'react-hot-toast'
 import { supabase, type User, initDatabase, warmUpCategoryCheck } from './lib/supabase'
@@ -193,6 +193,15 @@ export function useAuth() {
   return context
 }
 
+// 管理员路由守卫：非 admin 访问管理路径时自动跳回首页
+function AdminRoute({ children }: { children: React.ReactNode }) {
+  const { user } = useAuth()
+  if (user?.role !== 'admin') {
+    return <Navigate to="/" replace />
+  }
+  return <>{children}</>
+}
+
 // URL参数处理组件
 function URLHandler() {
   const location = useLocation()
@@ -245,13 +254,14 @@ export default function App() {
             <Route path="/" element={<Index />} />
             <Route path="/asset/:id" element={<AssetDetail />} />
             <Route path="/login" element={<Login />} />
-            <Route path="/import" element={<Import />} />
-            <Route path="/history" element={<OperationHistory />} />
-            <Route path="/rent" element={<RentDetail />} />
-            <Route path="/settlement" element={<RentSettlement />} />
-            <Route path="/users" element={<Users />} />
             <Route path="/change-password" element={<ChangePassword />} />
-            <Route path="/ai-valuation" element={<AiValuationSettings />} />
+            {/* 以下管理功能仅对 admin 开放 */}
+            <Route path="/import" element={<AdminRoute><Import /></AdminRoute>} />
+            <Route path="/history" element={<AdminRoute><OperationHistory /></AdminRoute>} />
+            <Route path="/rent" element={<AdminRoute><RentDetail /></AdminRoute>} />
+            <Route path="/settlement" element={<AdminRoute><RentSettlement /></AdminRoute>} />
+            <Route path="/users" element={<AdminRoute><Users /></AdminRoute>} />
+            <Route path="/ai-valuation" element={<AdminRoute><AiValuationSettings /></AdminRoute>} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </ErrorBoundary>
