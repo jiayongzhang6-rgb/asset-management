@@ -157,14 +157,7 @@ export default function AiValuationSettings() {
               </div>
               {config.enabled && !config.apiKey && (
                 <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-yellow-700 text-sm">
-                  ⚠️ 已启用 AI 估值，但未填写 API Key，将暂时使用本地算法。
-                  <button
-                    type="button"
-                    onClick={() => setConfig(prev => ({ ...prev, apiKey: 'tp-c1g9ybgzzj40176tvxhkgtc92c3ok7l9lz8rs2arqmlgs8o0' }))}
-                    className="ml-2 underline hover:text-yellow-900 font-medium"
-                  >
-                    👉 一键填入小米 MiMo Key
-                  </button>
+                  ⚠️ 已启用 AI 估值，但未填写 API Key，将暂时使用本地算法。请在下方「API Key」输入框填写您自己的 Key（如小米 MiMo / DeepSeek 等）。
                 </div>
               )}
             </div>
@@ -332,19 +325,12 @@ export default function AiValuationSettings() {
                   ✨
                 </div>
                 <div className="min-w-0">
-                  <p className="font-semibold text-gray-800">默认已配置小米 MiMo</p>
+                  <p className="font-semibold text-gray-800">可选：使用小米 MiMo 大模型</p>
                   <p className="text-xs text-gray-600 mt-0.5">
-                    Base URL：<code className="bg-white/80 px-1 rounded">https://token-plan-cn.xiaomimimo.com/v1</code> ·
+                    在下方「API Key」填入您自己的 MiMo Key；Base URL：<code className="bg-white/80 px-1 rounded">https://token-plan-cn.xiaomimimo.com/v1</code> ·
                     模型：<code className="bg-white/80 px-1 rounded">mimo-v2.5-pro</code>
                   </p>
                   <div className="flex flex-wrap items-center gap-2 mt-2">
-                    <button
-                      type="button"
-                      onClick={() => setConfig(prev => ({ ...prev, apiKey: 'tp-c1g9ybgzzj40176tvxhkgtc92c3ok7l9lz8rs2arqmlgs8o0' }))}
-                      className="text-xs px-2.5 py-1 rounded-md bg-gradient-to-r from-indigo-500 to-purple-600 text-white hover:from-indigo-600 hover:to-purple-700 shadow-sm"
-                    >
-                      🔑 一键填入 MiMo API Key
-                    </button>
                     <button
                       type="button"
                       onClick={() => setConfig(prev => ({
@@ -354,7 +340,7 @@ export default function AiValuationSettings() {
                       }))}
                       className="text-xs px-2.5 py-1 rounded-md bg-white text-indigo-600 border border-indigo-200 hover:bg-indigo-50"
                     >
-                      恢复 MiMo Base/Model
+                      一键填入 MiMo Base/Model
                     </button>
                   </div>
                 </div>
@@ -401,13 +387,6 @@ export default function AiValuationSettings() {
                   </div>
                   <div className="flex items-center justify-between mt-1">
                     <p className="text-xs text-gray-400">🔐 仅保存在当前浏览器本地 localStorage，不会上传到服务器。</p>
-                    <button
-                      type="button"
-                      onClick={() => setConfig(prev => ({ ...prev, apiKey: 'tp-c1g9ybgzzj40176tvxhkgtc92c3ok7l9lz8rs2arqmlgs8o0' }))}
-                      className="text-[11px] text-indigo-600 hover:text-indigo-700 underline underline-offset-2"
-                    >
-                      填入 MiMo Key
-                    </button>
                   </div>
                 </div>
 
