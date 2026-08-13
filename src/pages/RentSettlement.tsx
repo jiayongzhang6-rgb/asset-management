@@ -15,7 +15,9 @@ import {
   getAIValuationConfig,
   type AIValResult,
   restoreAIValuationsFromCache,
-  syncResolveAIValuation
+  syncResolveAIValuation,
+  isAIForceDisabled,
+  getAIDailyUsage
 } from '../lib/supabase'
 
 // 合并了 assets 硬件信息后的结算记录类型
@@ -229,6 +231,29 @@ export default function RentSettlement() {
 
     if (toEstimate.length === 0) {
       toast.success(`全部 ${alreadyValued.length} 台结算记录已有 AI 估值，无需重复估值`)
+      return
+    }
+
+    // ★ 安全检查 1：全局禁用
+    if (isAIForceDisabled()) {
+      toast.error('AI 调用已被全局禁用，请在 AI 估值设置页重新启用')
+      return
+    }
+
+    // ★ 安全检查 2：每日额度
+    const usage = getAIDailyUsage()
+    const remaining = usage.limit > 0 ? usage.limit - usage.count : Infinity
+    if (usage.limit > 0 && usage.count >= usage.limit) {
+      toast.error(`今日 AI 调用已达上限（${usage.count}/${usage.limit}次），请明天再试或调整上限`)
+      return
+    }
+
+    // ★ 安全检查 3：确认弹窗（防止误触）
+    const confirmMsg = `即将对 ${toEstimate.length} 台结算记录调用 AI 估值。\n` +
+      `跳过已估值: ${alreadyValued.length} 台\n` +
+      `今日已用: ${usage.count}/${usage.limit || '不限'} 次，剩余: ${remaining === Infinity ? '不限' : remaining} 次\n\n` +
+      `确认调用？（AI 调用会消耗 Token）`
+    if (!window.confirm(confirmMsg)) {
       return
     }
 

@@ -2058,7 +2058,20 @@ export interface AIValuationConfig {
   model: string         // 模型名，如 gpt-4o-mini / deepseek-chat / qwen-plus 等
   enabled: boolean      // 是否启用AI估值（关闭则走本地保底算法）
   cacheTTL: number      // 缓存有效期（毫秒），默认 24h
+  forceDisabled?: boolean  // ★ 全局紧急切断：为 true 时所有 AI 调用直接拒绝，防止意外消耗
+  dailyLimit?: number      // ★ 每日调用上限（次），默认 50；0 = 不限
 }
+
+// AI 调用日志条目（用于审计谁/何时调用了 AI）
+interface AICallLog {
+  timestamp: number
+  assetCodes: string[]
+  count: number
+  source: string
+}
+
+const AI_CALL_LOG_KEY = 'ai_valuation_call_log_v1'
+const AI_DAILY_COUNT_KEY = 'ai_valuation_daily_count_v1'
 
 const AI_CONFIG_KEY = 'ai_valuation_config_v1'
 const AI_CACHE_KEY = 'ai_valuation_cache_v1'
@@ -2071,7 +2084,9 @@ const DEFAULT_AI_CONFIG: AIValuationConfig = {
   enabled: false,
   // 用户要求「估值一次后，刷新页面还能一直保存」：
   // 缓存 TTL 改为 90 天（基本等同「永久」，过期前若已写 DB 就不依赖缓存）
-  cacheTTL: 90 * 24 * 60 * 60 * 1000
+  cacheTTL: 90 * 24 * 60 * 60 * 1000,
+  forceDisabled: false,
+  dailyLimit: 50  // 默认每日最多 50 次 AI 调用，防止意外消耗
 }
 
 // 读取AI配置（从 localStorage，因为纯前端不存数据库）
@@ -2099,6 +2114,88 @@ export function saveAIValuationConfig(cfg: Partial<AIValuationConfig>): AIValuat
   const next = { ...current, ...cfg }
   localStorage.setItem(AI_CONFIG_KEY, JSON.stringify(next))
   return next
+}
+
+// ===== AI 安全护栏 =====
+
+// 获取今日已调用次数（按本地日期重置）
+function getTodayKey(): string {
+  const d = new Date()
+  return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`
+}
+
+export function getAIDailyUsage(): { date: string; count: number; limit: number } {
+  if (typeof window === 'undefined') return { date: getTodayKey(), count: 0, limit: 0 }
+  try {
+    const raw = localStorage.getItem(AI_DAILY_COUNT_KEY)
+    const cfg = getAIValuationConfig()
+    const limit = cfg.dailyLimit ?? 0
+    if (!raw) return { date: getTodayKey(), count: 0, limit }
+    const parsed = JSON.parse(raw) as { date: string; count: number }
+    if (parsed.date !== getTodayKey()) {
+      return { date: getTodayKey(), count: 0, limit }
+    }
+    return { date: parsed.date, count: parsed.count, limit }
+  } catch {
+    return { date: getTodayKey(), count: 0, limit: 0 }
+  }
+}
+
+// 增加一次调用计数；返回 false 表示已达上限
+function incrementAIDailyCount(count: number): boolean {
+  if (typeof window === 'undefined') return true
+  const cfg = getAIValuationConfig()
+  const limit = cfg.dailyLimit ?? 0
+  if (limit === 0) return true // 不限
+  const usage = getAIDailyUsage()
+  const newCount = usage.count + count
+  if (newCount > limit) return false
+  localStorage.setItem(AI_DAILY_COUNT_KEY, JSON.stringify({
+    date: getTodayKey(),
+    count: newCount
+  }))
+  return true
+}
+
+// 记录 AI 调用日志
+function logAICall(assetCodes: string[], source: string): void {
+  if (typeof window === 'undefined') return
+  try {
+    const raw = localStorage.getItem(AI_CALL_LOG_KEY)
+    const logs: AICallLog[] = raw ? JSON.parse(raw) : []
+    logs.unshift({
+      timestamp: Date.now(),
+      assetCodes,
+      count: assetCodes.length,
+      source
+    })
+    // 最多保留 200 条
+    const trimmed = logs.slice(0, 200)
+    localStorage.setItem(AI_CALL_LOG_KEY, JSON.stringify(trimmed))
+  } catch { /* ignore */ }
+}
+
+// 获取 AI 调用日志（供 UI 展示）
+export function getAICallLogs(): AICallLog[] {
+  if (typeof window === 'undefined') return []
+  try {
+    const raw = localStorage.getItem(AI_CALL_LOG_KEY)
+    return raw ? JSON.parse(raw) : []
+  } catch {
+    return []
+  }
+}
+
+// 清空 AI 调用日志
+export function clearAICallLogs(): void {
+  if (typeof window === 'undefined') return
+  localStorage.removeItem(AI_CALL_LOG_KEY)
+}
+
+// 检查 AI 是否被全局禁用
+export function isAIForceDisabled(): boolean {
+  const cfg = getAIValuationConfig()
+  return !!cfg.forceDisabled
 }
 
 // 缓存条目类型
@@ -2295,9 +2392,22 @@ export async function estimateAssetValueWithAI(asset: {
 }> {
   const config = getAIValuationConfig()
 
-  // ① 用户明确：不要本地估值；未启用 / 未配 Key → 直接返回 none
+  // ① ★ 全局紧急切断（防止意外消耗 token）
+  if (config.forceDisabled) {
+    return { source: 'none' as const, error: 'AI 调用已被全局禁用，请在 AI 估值设置页重新启用。' }
+  }
+
+  // ② 用户明确：不要本地估值；未启用 / 未配 Key → 直接返回 none
   if (!config.enabled || !config.apiKey) {
     return { source: 'none' as const, error: 'AI估值未启用或未填写 API Key，请先到 AI估值设置页配置。' }
+  }
+
+  // ③ 每日调用上限检查
+  if (config.dailyLimit && config.dailyLimit > 0) {
+    const usage = getAIDailyUsage()
+    if (usage.count >= config.dailyLimit) {
+      return { source: 'none' as const, error: `今日 AI 调用已达上限（${usage.count}/${config.dailyLimit}次），请明天再试或在 AI 估值设置页调整上限。` }
+    }
   }
 
   // ② 先查 localStorage 缓存（避免重复调用 AI）
@@ -2359,6 +2469,13 @@ export async function estimateAssetValueWithAI(asset: {
 
   // ③ 调用 AI
   try {
+    // ★ 先扣减每日额度（在实际调用前占位，避免并发超卖）
+    if (config.dailyLimit && config.dailyLimit > 0) {
+      if (!incrementAIDailyCount(1)) {
+        return { source: 'none' as const, error: `今日 AI 调用已达上限（${config.dailyLimit}次/天），请明天再试或在 AI 估值设置页调整。` }
+      }
+    }
+
     const content = await callAI(
       [
         { role: 'system', content: '你是专业的二手硬件估值师，只输出 JSON。' },
@@ -2401,6 +2518,11 @@ export async function estimateAssetValueWithAI(asset: {
       })
     }
 
+    // ★ 记录调用日志
+    if (asset.asset_code) {
+      logAICall([asset.asset_code], 'single')
+    }
+
     return {
       fixedValue: parsed.fixedValue,
       currentValue: parsed.currentValue,
@@ -2427,14 +2549,48 @@ export async function batchEstimateAssetValueWithAI(
   reason?: string
   error?: string
 }>> {
+  // ★ 批量级别安全检查：先扣减整批额度，避免并发超额
+  const config = getAIValuationConfig()
+  if (config.forceDisabled) {
+    return assets.map(() => ({ source: 'none' as const, error: 'AI 调用已被全局禁用' }))
+  }
+  if (!config.enabled || !config.apiKey) {
+    return assets.map(() => ({ source: 'none' as const, error: 'AI估值未启用或未配置' }))
+  }
+  if (config.dailyLimit && config.dailyLimit > 0) {
+    const usage = getAIDailyUsage()
+    const remaining = config.dailyLimit - usage.count
+    if (remaining <= 0) {
+      return assets.map(() => ({ source: 'none' as const, error: `今日 AI 调用已达上限（${config.dailyLimit}次/天）` }))
+    }
+    if (remaining < assets.length) {
+      // 额度不足，只处理剩余额度内的
+      console.warn(`[AI 估值] 今日额度剩余 ${remaining}，请求 ${assets.length} 台，仅处理前 ${remaining} 台`)
+    }
+  }
+
   const results: any[] = new Array(assets.length)
   let cursor = 0
   let done = 0
+  const batchAssetCodes: string[] = []
 
   async function worker() {
     while (cursor < assets.length) {
       const idx = cursor++
+      // ★ 额度检查：逐台检查是否还有剩余
+      if (config.dailyLimit && config.dailyLimit > 0) {
+        const usage = getAIDailyUsage()
+        if (usage.count >= config.dailyLimit) {
+          results[idx] = { source: 'none' as const, error: `今日 AI 调用已达上限（${config.dailyLimit}次/天）` }
+          done++
+          onProgress?.(done, assets.length)
+          continue
+        }
+      }
       results[idx] = await estimateAssetValueWithAI(assets[idx])
+      if (results[idx].source === 'ai' && assets[idx].asset_code) {
+        batchAssetCodes.push(assets[idx].asset_code)
+      }
       done++
       onProgress?.(done, assets.length)
     }
@@ -2442,6 +2598,11 @@ export async function batchEstimateAssetValueWithAI(
 
   const workers = Array.from({ length: Math.min(concurrency, assets.length) }, () => worker())
   await Promise.all(workers)
+
+  // ★ 记录批量调用日志
+  if (batchAssetCodes.length > 0) {
+    logAICall(batchAssetCodes, 'batch')
+  }
 
   // 统一批量写 DB（AI 出值的那些）
   let dbWriteCount = 0

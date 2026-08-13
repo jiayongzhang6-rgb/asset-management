@@ -10,7 +10,11 @@ import {
   estimateAssetValueWithAI,
   estimateAssetValue,
   formatHardwareSpec,
-  type AIValuationConfig
+  type AIValuationConfig,
+  getAIDailyUsage,
+  getAICallLogs,
+  clearAICallLogs,
+  isAIForceDisabled
 } from '../lib/supabase'
 
 export default function AiValuationSettings() {
@@ -23,6 +27,8 @@ export default function AiValuationSettings() {
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState<any>(null)
   const [showKey, setShowKey] = useState(false)
+  const [logs, setLogs] = useState<any[]>([])
+  const [dailyUsage, setDailyUsage] = useState({ count: 0, limit: 0 })
 
   // 示例设备用于测试
   const demoAsset = {
@@ -37,6 +43,9 @@ export default function AiValuationSettings() {
 
   useEffect(() => {
     setConfig(getAIValuationConfig())
+    setLogs(getAICallLogs())
+    const u = getAIDailyUsage()
+    setDailyUsage({ count: u.count, limit: u.limit })
   }, [])
 
   const handleSave = () => {
@@ -156,6 +165,162 @@ export default function AiValuationSettings() {
                   >
                     👉 一键填入小米 MiMo Key
                   </button>
+                </div>
+              )}
+            </div>
+
+            {/* 安全护栏卡片 */}
+            <div className="card border-red-200">
+              <div className="flex items-start justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-gradient-to-br from-red-500 to-orange-500 rounded-xl flex items-center justify-center text-white">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                    </svg>
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-semibold text-gray-800">安全护栏</h2>
+                    <p className="text-xs text-gray-500">防止 AI 调用意外消耗 Token 的三重保险</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* 今日用量 */}
+              <div className="flex items-center justify-between mb-4 p-3 bg-indigo-50 rounded-lg">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-gray-600">今日调用量:</span>
+                  <span className="font-bold text-indigo-600 text-lg">
+                    {dailyUsage.count} / {dailyUsage.limit || '∞'}
+                  </span>
+                  {dailyUsage.limit > 0 && (
+                    <div className="w-24 h-2 bg-gray-200 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full transition-all ${dailyUsage.count >= dailyUsage.limit ? 'bg-red-500' : 'bg-indigo-500'}`}
+                        style={{ width: `${Math.min(100, (dailyUsage.count / dailyUsage.limit) * 100)}%` }}
+                      />
+                    </div>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const u = getAIDailyUsage()
+                    setDailyUsage({ count: u.count, limit: u.limit })
+                  }}
+                  className="text-xs text-indigo-600 hover:text-indigo-800"
+                >
+                  刷新
+                </button>
+              </div>
+
+              {/* 每日上限 */}
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                  每日调用上限（次/天）：
+                  <span className="font-semibold text-indigo-600 ml-1">
+                    {config.dailyLimit === 0 ? '不限' : config.dailyLimit}
+                  </span>
+                </label>
+                <input
+                  type="range"
+                  disabled={!isAdmin}
+                  min={0}
+                  max={500}
+                  value={config.dailyLimit ?? 50}
+                  onChange={(e) => setConfig({ ...config, dailyLimit: Number(e.target.value) })}
+                  className="w-full accent-indigo-600"
+                />
+                <div className="flex justify-between text-xs text-gray-400 mt-1">
+                  <span>0 (不限)</span>
+                  <span>50</span>
+                  <span>500</span>
+                </div>
+              </div>
+
+              {/* 全局紧急切断 */}
+              <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-medium text-red-700 flex items-center gap-1.5">
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+                      </svg>
+                      全局紧急切断
+                    </p>
+                    <p className="text-xs text-red-500 mt-0.5">开启后所有 AI 调用将被直接拒绝，防止意外消耗 Token</p>
+                  </div>
+                  <label className="inline-flex items-center cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      disabled={!isAdmin}
+                      checked={!!config.forceDisabled}
+                      onChange={(e) => {
+                        setConfig({ ...config, forceDisabled: e.target.checked })
+                        if (e.target.checked) {
+                          toast.warning('⚠️ AI 调用已被全局禁用')
+                        } else {
+                          toast.success('AI 调用已恢复')
+                        }
+                      }}
+                      className="sr-only peer"
+                    />
+                    <div className={`relative w-14 h-7 rounded-full transition-colors ${config.forceDisabled ? 'bg-red-600' : 'bg-gray-300'} ${!isAdmin ? 'opacity-50' : ''}`}>
+                      <div className={`absolute top-0.5 left-0.5 w-6 h-6 bg-white rounded-full shadow transition-transform ${config.forceDisabled ? 'translate-x-7' : ''}`} />
+                    </div>
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            {/* 调用日志卡片 */}
+            <div className="card">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-base font-semibold text-gray-800 flex items-center gap-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                  </svg>
+                  调用日志
+                  <span className="text-xs text-gray-400 font-normal">（最近 {logs.length} 条）</span>
+                </h3>
+                {logs.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (window.confirm('确定清空调用日志？')) {
+                        clearAICallLogs()
+                        setLogs([])
+                        toast.success('日志已清空')
+                      }
+                    }}
+                    className="text-xs text-gray-500 hover:text-red-600"
+                  >
+                    清空日志
+                  </button>
+                )}
+              </div>
+              {logs.length === 0 ? (
+                <p className="text-sm text-gray-400 text-center py-4">暂无调用记录</p>
+              ) : (
+                <div className="max-h-48 overflow-y-auto space-y-1">
+                  {logs.slice(0, 30).map((log, i) => (
+                    <div key={i} className="flex items-center gap-2 text-xs py-1 border-b border-gray-50 last:border-0">
+                      <span className="text-gray-400 font-mono">
+                        {new Date(log.timestamp).toLocaleString('zh-CN', { hour12: false })}
+                      </span>
+                      <span className={`px-1.5 py-0.5 rounded font-medium ${log.source === 'batch' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
+                        {log.source === 'batch' ? '批量' : '单台'}
+                      </span>
+                      <span className="text-gray-600">
+                        {log.count} 台设备
+                        {log.assetCodes && log.assetCodes.length <= 3 && (
+                          <span className="text-gray-400 ml-1">({log.assetCodes.join(', ')})</span>
+                        )}
+                        {log.assetCodes && log.assetCodes.length > 3 && (
+                          <span className="text-gray-400 ml-1">({log.assetCodes.slice(0, 3).join(', ')}...)</span>
+                        )}
+                      </span>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
