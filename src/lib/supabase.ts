@@ -1893,10 +1893,6 @@ export const initDatabase = async () => {
         created_at TIMESTAMP DEFAULT NOW()
       );
       ALTER TABLE operation_history ENABLE ROW LEVEL SECURITY;
-      CREATE POLICY "Allow public read access" ON operation_history FOR SELECT USING (true);
-      CREATE POLICY "Allow public insert access" ON operation_history FOR INSERT WITH CHECK (true);
-      CREATE POLICY "Allow public update access" ON operation_history FOR UPDATE USING (true);
-      CREATE POLICY "Allow public delete access" ON operation_history FOR DELETE USING (true);
     `,
     maintenance_records: `
       CREATE TABLE IF NOT EXISTS maintenance_records (
@@ -1911,10 +1907,6 @@ export const initDatabase = async () => {
         updated_at timestamp with time zone default now()
       );
       ALTER TABLE maintenance_records ENABLE ROW LEVEL SECURITY;
-      CREATE POLICY "Allow public read access" ON maintenance_records FOR SELECT USING (true);
-      CREATE POLICY "Allow public insert access" ON maintenance_records FOR INSERT WITH CHECK (true);
-      CREATE POLICY "Allow public update access" ON maintenance_records FOR UPDATE USING (true);
-      CREATE POLICY "Allow public delete access" ON maintenance_records FOR DELETE USING (true);
     `,
     asset_images: `
       CREATE TABLE asset_images (
@@ -1926,9 +1918,6 @@ export const initDatabase = async () => {
         updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
       );
       ALTER TABLE asset_images ENABLE ROW LEVEL SECURITY;
-      CREATE POLICY "Allow public read access" ON asset_images FOR SELECT USING (true);
-      CREATE POLICY "Allow public insert access" ON asset_images FOR INSERT WITH CHECK (true);
-      CREATE POLICY "Allow public delete access" ON asset_images FOR DELETE USING (true);
     `,
     usage_history: `
       CREATE TABLE IF NOT EXISTS usage_history (
@@ -1941,10 +1930,6 @@ export const initDatabase = async () => {
         updated_at timestamp with time zone default now()
       );
       ALTER TABLE usage_history ENABLE ROW LEVEL SECURITY;
-      CREATE POLICY "Allow public read access" ON usage_history FOR SELECT USING (true);
-      CREATE POLICY "Allow public insert access" ON usage_history FOR INSERT WITH CHECK (true);
-      CREATE POLICY "Allow public update access" ON usage_history FOR UPDATE USING (true);
-      CREATE POLICY "Allow public delete access" ON usage_history FOR DELETE USING (true);
     `,
     rent_records: `
       CREATE TABLE IF NOT EXISTS rent_records (
@@ -1966,10 +1951,6 @@ export const initDatabase = async () => {
       CREATE INDEX IF NOT EXISTS idx_rent_records_department ON rent_records(department);
       CREATE INDEX IF NOT EXISTS idx_rent_records_status ON rent_records(status);
       ALTER TABLE rent_records ENABLE ROW LEVEL SECURITY;
-      CREATE POLICY "Allow public read access" ON rent_records FOR SELECT USING (true);
-      CREATE POLICY "Allow public insert access" ON rent_records FOR INSERT WITH CHECK (true);
-      CREATE POLICY "Allow public update access" ON rent_records FOR UPDATE USING (true);
-      CREATE POLICY "Allow public delete access" ON rent_records FOR DELETE USING (true);
     `,
     asset_snapshots: `
       CREATE TABLE IF NOT EXISTS asset_snapshots (
@@ -1983,9 +1964,6 @@ export const initDatabase = async () => {
       CREATE INDEX IF NOT EXISTS idx_asset_snapshots_asset_code ON asset_snapshots(asset_code);
       CREATE INDEX IF NOT EXISTS idx_asset_snapshots_created_at ON asset_snapshots(created_at);
       ALTER TABLE asset_snapshots ENABLE ROW LEVEL SECURITY;
-      CREATE POLICY "Allow public read access" ON asset_snapshots FOR SELECT USING (true);
-      CREATE POLICY "Allow public insert access" ON asset_snapshots FOR INSERT WITH CHECK (true);
-      CREATE POLICY "Allow public delete access" ON asset_snapshots FOR DELETE USING (true);
     `
   }
 
