@@ -69,6 +69,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const s = data.session
       if (s?.user?.email) {
         applyUser(s.user.email, roleFromSession(s))
+      } else {
+        // 没有有效 Supabase session：清掉 localStorage 旧登录态，强制重新登录。
+        // 否则前端看似已登录，但 Supabase 客户端无 JWT，请求走 anon key
+        // 会被 RLS 拒绝（auth.uid() 为 null），导致数据加载失败/不一致。
+        // 旧账号在此处会被导向登录页，登录时走 signIn 的静默迁移逻辑。
+        setUser(null)
+        localStorage.removeItem('user')
       }
     })
     const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
