@@ -15,7 +15,7 @@ create or replace function verify_user_password(p_email text, p_password text)
 returns json
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 declare
   v_user users%rowtype;
@@ -50,7 +50,7 @@ create or replace function register_user(p_email text, p_password text)
 returns json
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 declare
   v_id bigint;
@@ -72,7 +72,7 @@ create or replace function change_password(p_email text, p_old text, p_new text)
 returns json
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 declare
   v_user users%rowtype;
@@ -102,7 +102,7 @@ create or replace function reset_password(p_email text, p_temp text)
 returns json
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 begin
   update users set password = crypt(p_temp, gen_salt('bf')) where email = p_email;
@@ -120,7 +120,7 @@ create or replace function delete_user(p_id bigint)
 returns json
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 begin
   delete from users where id = p_id;
@@ -146,19 +146,35 @@ drop policy if exists "Allow public insert access" on users;
 drop policy if exists "Allow public update access" on users;
 drop policy if exists "Allow public delete access" on users;
 
+-- 8a) 两个 SECURITY DEFINER 辅助函数：回查“已存”的 role / email。
+--     用 definer 是为了让策略里的判断绕过 RLS，避免同表递归
+--     （否则会报 infinite recursion detected in policy for relation users）。
+create or replace function user_current_role(p_id bigint)
+returns text language sql security definer set search_path = public, extensions
+as $$ select role from users where id = p_id; $$;
+
+create or replace function user_current_email(p_id bigint)
+returns text language sql security definer set search_path = public, extensions
+as $$ select email from users where id = p_id; $$;
+
+grant execute on function user_current_role(bigint) to anon, authenticated;
+grant execute on function user_current_email(bigint) to anon, authenticated;
+
 -- 禁止直接通过 API 插入 admin 角色（注册 RPC 用 definer 权限绕过此限制）
+-- 注意：RLS 策略里直接写列名即可，不要写 NEW./OLD.（那是触发器/RULE 的写法，会报 42P01）
 create policy "no_direct_admin_insert" on users
-  for insert with check (NEW.role = 'user');
+  for insert with check (role = 'user');
 
--- 禁止把角色提升为 admin（除非该账号本来就是 admin）
-create policy "no_anon_admin_escalation" on users
+-- 禁止自我提权为 admin + 禁止修改邮箱（合在一个策略里用 AND，避免多条 permissive 策略被 OR 合并导致防线失效）
+--   * role <> 'admin' OR 该账号本来已是 admin  -> 阻止 user 变 admin，但允许 admin 行保持 admin
+--   * email = 已存的 email                      -> 阻止改邮箱劫持账号
+--   注：WITH CHECK 只能看到“新行”的列，旧值通过上面的 definer 函数回查（绕过 RLS，不会递归）。
+create policy "users_update_guard" on users
   for update using (true)
-  with check (NEW.role <> 'admin' OR OLD.role = 'admin');
-
--- 禁止修改邮箱（防账号劫持）
-create policy "no_email_change" on users
-  for update using (true)
-  with check (NEW.email = OLD.email);
+  with check (
+    (role <> 'admin' OR user_current_role(id) = 'admin')
+    and (email = user_current_email(id))
+  );
 
 -- 禁止删除用户（防数据销毁；删除请走 delete_user RPC）
 create policy "no_user_delete" on users
