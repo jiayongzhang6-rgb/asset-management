@@ -145,6 +145,10 @@ grant execute on function delete_user(bigint) to anon, authenticated;
 drop policy if exists "Allow public insert access" on users;
 drop policy if exists "Allow public update access" on users;
 drop policy if exists "Allow public delete access" on users;
+-- 新策略也先 drop，保证整文件可重复执行（幂等）
+drop policy if exists "no_direct_admin_insert" on users;
+drop policy if exists "users_update_guard" on users;
+drop policy if exists "no_user_delete" on users;
 
 -- 8a) 两个 SECURITY DEFINER 辅助函数：回查“已存”的 role / email。
 --     用 definer 是为了让策略里的判断绕过 RLS，避免同表递归
