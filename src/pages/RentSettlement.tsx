@@ -214,18 +214,54 @@ export default function RentSettlement() {
       navigate('/ai-valuation')
       return
     }
+
+    // ★ 先区分已估值 vs 待估值（三级兜底：DB列 + state + localStorage），避免重复调 AI
+    const alreadyValued: typeof settlementRecords = []
+    const toEstimate: typeof settlementRecords = []
+    settlementRecords.forEach(r => {
+      const v = syncResolveAIValuation(aiValuations, r as any)
+      if (v.source === 'ai' && typeof v.currentValue === 'number' && v.currentValue > 0) {
+        alreadyValued.push(r)
+      } else {
+        toEstimate.push(r)
+      }
+    })
+
+    if (toEstimate.length === 0) {
+      toast.success(`全部 ${alreadyValued.length} 台结算记录已有 AI 估值，无需重复估值`)
+      return
+    }
+
     setAiLoading(true)
-    const toastId = toast.loading(`正在调用 AI 估值（${settlementRecords.length} 台）...`)
+    const toastId = toast.loading(`正在调用 AI 估值（${toEstimate.length} 台待估值，跳过 ${alreadyValued.length} 台已有估值，并发 5）...`)
     try {
-      const results = await batchEstimateAssetValueWithAI(settlementRecords, 5)
+      const results = await batchEstimateAssetValueWithAI(toEstimate, 5)
       const nextMap = new Map<string, AIValResult>()
+      // 保留已有估值
+      alreadyValued.forEach(r => {
+        const v = syncResolveAIValuation(aiValuations, r as any)
+        if (v.source === 'ai') nextMap.set(r.asset_code, v)
+      })
       let aiCount = 0
-      settlementRecords.forEach((r, i) => {
+      let failedCount = 0
+      let lastError: string | undefined
+      toEstimate.forEach((r, i) => {
         nextMap.set(r.asset_code, results[i])
         if (results[i].source === 'ai') aiCount++
+        else {
+          failedCount++
+          if (results[i].error && !lastError) lastError = results[i].error
+        }
       })
       setAiValuations(nextMap)
-      toast.success(`AI 估值完成：AI 出值 ${aiCount} / ${settlementRecords.length} 台`, { id: toastId })
+      if (failedCount === 0) {
+        toast.success(`AI 估值完成：${aiCount} 台成功出值（跳过 ${alreadyValued.length} 台已有估值）`, { id: toastId })
+      } else {
+        toast.success(`AI 估值完成：成功 ${aiCount} 台，失败 ${failedCount} 台（跳过 ${alreadyValued.length} 台已有估值，失败可重试）`, { id: toastId })
+      }
+      if (lastError && failedCount > 0) {
+        console.warn('AI 估值部分失败，首个错误:', lastError)
+      }
     } catch (e: any) {
       toast.error(`AI 估值异常: ${e?.message || e}`, { id: toastId })
     } finally {

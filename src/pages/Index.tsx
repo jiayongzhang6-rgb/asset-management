@@ -416,11 +416,13 @@ export default function Index() {
     }
 
     // 区分：已有估值的 vs 待估值的
+    // ★ 用 syncResolveAIValuation（DB列 + state + localStorage 三级兜底），
+    //   避免 state 未回填完成时把已估值的资产误判为"待估值"而重复调 AI 浪费 token
     const alreadyValued: typeof allAssets = []
     const toEstimate: typeof allAssets = []
     allAssets.forEach(a => {
-      const v = aiValuations.get(a.asset_code)
-      if (v && v.source === 'ai' && (v.fixedValue || v.currentValue)) {
+      const v = syncResolveAIValuation(aiValuations, a as any)
+      if (v.source === 'ai' && typeof v.currentValue === 'number' && v.currentValue > 0) {
         alreadyValued.push(a)
       } else {
         toEstimate.push(a)
