@@ -2,6 +2,12 @@ import { BrowserRouter, Route, Routes, useLocation, useNavigate } from 'react-ro
 import React, { createContext, useContext, useState, useEffect } from 'react'
 import { Toaster } from 'react-hot-toast'
 import { supabase, type User, initDatabase, warmUpCategoryCheck } from './lib/supabase'
+import {
+  verifyUserPassword,
+  registerUserRpc,
+  resetPasswordRpc,
+  changePasswordRpc,
+} from './lib/authRpc'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import Index from './pages/Index'
 import AssetDetail from './pages/AssetDetail'
@@ -32,17 +38,12 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  // 1. 修正后的初始化逻辑
+  // 仅从 localStorage 还原；角色以登录时数据库返回为准（服务端可信），
+  // 不再在前端根据 adminEmails 推导，避免被 DevTools 篡改提权。
   const [user, setUser] = useState<any>(() => {
     const savedUser = localStorage.getItem('user')
     if (savedUser) {
-      const parsedUser = JSON.parse(savedUser)
-      // 管理员邮箱列表
-      const adminEmails = ['747227185@qq.com']
-      return {
-        ...parsedUser,
-        role: parsedUser.role || (adminEmails.includes(parsedUser.email) ? 'admin' : 'user')
-      }
+      return JSON.parse(savedUser)
     }
     return null
   })
@@ -50,34 +51,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(false)
   const [pendingRedirect, setPendingRedirect] = useState<string | null>(null)
 
-  // 2. 修正后的登录/创建逻辑
+  // 登录：密码校验交给数据库 RPC，前端只拿到 ok/email/role，绝不接触明文或哈希
   const signIn = async (emailOrPhone: string, password: string) => {
     setLoading(true)
     try {
       // 如果是手机号（纯数字），转换为邮箱格式查询
       const email = /^\d{11}$/.test(emailOrPhone) ? `${emailOrPhone}@phone.local` : emailOrPhone
 
-      // 直接在我们的 users 表中查询用户信息并验证密码
-      const { data: users, error: fetchError } = await supabase.from('users').select('*').eq('email', email)
-      if (fetchError) throw fetchError
-
-      let userData;
-      if (users && users.length > 0) {
-        userData = users[0]
-        // 检查密码是否存在
-        if (!userData.password) {
-          throw new Error('密码未设置，请联系管理员')
-        }
-        // 检查密码是否正确
-        if (userData.password !== password) {
-          throw new Error('密码错误')
-        }
-      } else {
-        throw new Error('账号不存在')
+      const result = await verifyUserPassword(email, password)
+      if (!result.ok) {
+        throw new Error('账号或密码错误')
       }
 
+      const userData = { email: result.email, role: result.role ?? 'user' }
       setUser(userData)
-      // 存储到localStorage
+      // 存储到localStorage（不含密码）
       localStorage.setItem('user', JSON.stringify(userData))
     } catch (error) {
       console.error('Error signing in:', error)
@@ -93,24 +81,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // 如果是手机号（纯数字），转换为邮箱格式存储
       const email = /^\d{11}$/.test(emailOrPhone) ? `${emailOrPhone}@phone.local` : emailOrPhone
 
-      // 首先检查用户是否已存在
-      const { data: existingUsers, error: fetchError } = await supabase.from('users').select('*').eq('email', email)
-      if (fetchError) throw fetchError
-
-      if (existingUsers && existingUsers.length > 0) {
-        throw new Error('该手机号已被注册')
+      const result = await registerUserRpc(email, password)
+      if (!result.ok) {
+        if (result.reason === 'exists') {
+          throw new Error('该手机号已被注册')
+        }
+        throw new Error('注册失败，请稍后重试')
       }
 
-      // 直接在 users 表中创建用户记录，不使用 Supabase Auth
-      // 管理员邮箱列表
-      const adminEmails = ['747227185@qq.com']
-      const role = adminEmails.includes(email) ? 'admin' : 'user'
-      const { data, error: insertError } = await supabase.from('users').insert({ email, password, role }).select().single()
-      if (insertError) throw insertError
-
-      const userData = data || { email, password, role }
+      const userData = { email: result.email, role: result.role ?? 'user' }
       setUser(userData)
-      // 存储到localStorage
       localStorage.setItem('user', JSON.stringify(userData))
     } catch (error) {
       console.error('Error signing up:', error)
@@ -133,8 +113,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // 如果是手机号（纯数字），转换为邮箱格式查询
       const email = /^\d{11}$/.test(emailOrPhone) ? `${emailOrPhone}@phone.local` : emailOrPhone
 
-      // 检查用户是否存在
-      const { data: users, error: fetchError } = await supabase.from('users').select('*').eq('email', email)
+      // 检查用户是否存在（仅取 email，不取密码）
+      const { data: users, error: fetchError } = await supabase
+        .from('users')
+        .select('email')
+        .eq('email', email)
       if (fetchError) throw fetchError
 
       if (!users || users.length === 0) {
@@ -143,17 +126,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       // 生成一个临时密码
       const tempPassword = Math.random().toString(36).substring(2, 10)
-      
-      // 更新用户密码
-      const { error: updateError } = await supabase
-        .from('users')
-        .update({ password: tempPassword })
-        .eq('email', email)
-      
-      if (updateError) throw updateError
-      
+
+      // 通过 RPC 重置（数据库内部哈希存储）
+      const result = await resetPasswordRpc(email, tempPassword)
+      if (!result.ok) throw new Error('密码重置失败')
+
       console.log('密码已重置为:', tempPassword)
-      
+
       // 提示用户联系管理员获取临时密码
       alert('密码重置请求已提交，请联系管理员获取临时密码。')
     } catch (error) {
@@ -171,23 +150,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         throw new Error('用户未登录')
       }
 
-      // 验证旧密码
-      if (user.password !== oldPassword) {
+      // 通过 RPC 校验旧密码并写入新哈希，前端不再持有密码
+      const result = await changePasswordRpc(user.email, oldPassword, newPassword)
+      if (!result.ok) {
         throw new Error('旧密码错误')
       }
-
-      // 更新密码
-      const { error: updateError } = await supabase
-        .from('users')
-        .update({ password: newPassword })
-        .eq('email', user.email)
-      
-      if (updateError) throw updateError
-
-      // 更新本地用户数据
-      const updatedUser = { ...user, password: newPassword }
-      setUser(updatedUser)
-      localStorage.setItem('user', JSON.stringify(updatedUser))
 
       alert('密码修改成功！')
     } catch (error) {
@@ -249,7 +216,7 @@ function URLHandler() {
         navigate('/login')
       }
     }
-    
+
     // 处理直接访问资产详情页的情况
     if (location.pathname.startsWith('/asset/') && !isAuthenticated) {
       // 保存当前路径作为待跳转页面

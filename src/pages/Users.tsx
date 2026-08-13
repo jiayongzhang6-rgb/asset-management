@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../App'
 import { supabase, formatUserIdentifier, type User } from '../lib/supabase'
+import { deleteUserRpc, resetPasswordRpc } from '../lib/authRpc'
 import toast from 'react-hot-toast'
 
 export default function Users() {
@@ -41,11 +42,9 @@ export default function Users() {
   const handleDeleteUser = async (userId: number) => {
     if (window.confirm('确定要删除这个用户吗？')) {
       try {
-        const { error } = await supabase
-          .from('users')
-          .delete()
-          .eq('id', userId)
-        if (error) throw error
+        // 走 RPC（SECURITY DEFINER），绕过 RLS 的「禁止删除」策略
+        const result = await deleteUserRpc(userId)
+        if (!result.ok) throw new Error('用户删除失败')
         await fetchUsers()
         toast.success('用户删除成功')
       } catch (error) {
@@ -59,13 +58,11 @@ export default function Users() {
     if (window.confirm('确定要为这个用户重置密码吗？')) {
       try {
         const tempPassword = Math.random().toString(36).substring(2, 10)
-        
-        const { error } = await supabase
-          .from('users')
-          .update({ password: tempPassword })
-          .eq('id', userId)
-        if (error) throw error
-        
+
+        // 走 RPC（SECURITY DEFINER），数据库内部哈希存储临时密码
+        const result = await resetPasswordRpc(email, tempPassword)
+        if (!result.ok) throw new Error('密码重置失败')
+
         toast(`密码重置成功！\n用户: ${formatUserIdentifier(email)}\n临时密码: ${tempPassword}`, { duration: 10000 })
       } catch (error) {
         console.error('Error resetting password:', error)
