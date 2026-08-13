@@ -780,10 +780,13 @@ export default function AssetDetail() {
                   <span className="text-sm text-gray-500">位置</span>
                   <span className="text-sm font-medium text-gray-900">{asset.location || <span className="text-gray-400">-</span>}</span>
                 </div>
-                <div className="flex items-center justify-between py-2 border-b border-gray-50">
+                                {user?.role === 'admin' && (
+<div className="flex items-center justify-between py-2 border-b border-gray-50">
                   <span className="text-sm text-gray-500">月租费</span>
                   <span className="text-sm font-semibold text-blue-600">{asset.monthly_rent ? `¥${asset.monthly_rent}` : <span className="text-gray-400">-</span>}</span>
                 </div>
+                )}
+
                 <div className="flex items-center justify-between py-2 border-b border-gray-50">
                   <span className="text-sm text-gray-500">创建时间</span>
                   <span className="text-sm font-medium text-gray-900">{new Date(asset.created_at).toLocaleString('zh-CN')}</span>

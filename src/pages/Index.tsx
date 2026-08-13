@@ -410,8 +410,8 @@ export default function Index() {
     setAiEnabled(cfg.enabled && !!cfg.apiKey)
 
     if (!cfg.enabled || !cfg.apiKey) {
-      toast.error('请先在「AI估值」页面配置 API 并启用开关')
-      navigate('/ai-valuation')
+      toast.error(user?.role === 'admin' ? '请先在「AI估值」页面配置 API 并启用开关' : 'AI 估值功能暂未开放')
+      if (user?.role === 'admin') navigate('/ai-valuation')
       return
     }
 
@@ -1187,7 +1187,7 @@ export default function Index() {
               </div>
               <h2 className="text-lg font-semibold text-gray-800">筛选汇总</h2>
               <span className="text-sm text-gray-400">（基于下方筛选结果自动生成）</span>
-              {aiEnabled ? (
+              {user?.role === 'admin' && (aiEnabled ? (
                 <span className="badge bg-gradient-to-r from-indigo-100 to-purple-100 text-indigo-700 border border-indigo-200 text-[11px]">
                   ✨ AI 估值模式
                 </span>
@@ -1195,7 +1195,8 @@ export default function Index() {
                 <span className="badge bg-red-100 text-red-600 border border-red-200 text-[11px]" title="AI 估值未启用，无法估值">
                   ⚠ AI未启用
                 </span>
-              )}
+              ))}
+
             </div>
             <div className="flex flex-wrap items-center gap-3">
               <div className="flex flex-wrap items-center gap-4 text-sm">
@@ -1203,11 +1204,15 @@ export default function Index() {
                   <span className="text-gray-500">设备数:</span>
                   <span className="font-bold text-gray-900">{allAssets.length}</span>
                 </div>
+                {user?.role === 'admin' && (
                 <div className="flex items-center gap-1.5">
                   <span className="text-gray-500">月租合计:</span>
                   <span className="font-bold text-purple-600 text-lg">¥{allAssets.reduce((sum, a) => sum + (Number(a.monthly_rent) || 0), 0).toFixed(2)}</span>
                 </div>
+                )}
+
                 {(() => {
+                  if (user?.role !== 'admin') return null
                   let aiSumCurrent = 0
                   let aiSumFixed = 0
                   let aiCount = 0
@@ -1252,6 +1257,7 @@ export default function Index() {
                 })()}
               </div>
               <div className="flex items-center gap-1.5">
+                {user?.role === 'admin' && (
                 <button
                   onClick={handleRefreshAIValuation}
                   disabled={aiLoading || allAssets.length === 0}
@@ -1269,6 +1275,7 @@ export default function Index() {
                     </>
                   )}
                 </button>
+                )}
                 <button onClick={() => setShowSummaryPanel(!showSummaryPanel)} className="btn btn-ghost text-sm">
                   <svg xmlns="http://www.w3.org/2000/svg" className={`h-4 w-4 transition-transform ${showSummaryPanel ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
@@ -1287,15 +1294,21 @@ export default function Index() {
                     <th className="text-left py-2 px-3 font-medium text-gray-500">配置</th>
                     <th className="text-left py-2 px-3 font-medium text-gray-500">部门</th>
                     <th className="text-left py-2 px-3 font-medium text-gray-500">使用人</th>
-                    <th className="text-right py-2 px-3 font-medium text-gray-500">月租费</th>
+                    {user?.role === 'admin' && (<th className="text-right py-2 px-3 font-medium text-gray-500">月租费</th>)}
+
+                    {user?.role === 'admin' && (
                     <th className="text-center py-2 px-3 font-medium text-indigo-600 bg-indigo-50/50" colSpan={2}>
                       ✨ AI估值（仅此来源，不再本地兜底）
                     </th>
+                    )}
+
                   </tr>
                   <tr className="border-b border-gray-100 text-xs">
-                    <th colSpan={5} />
-                    <th className="text-right py-1.5 px-3 font-medium text-indigo-400 bg-indigo-50/50">购入价</th>
-                    <th className="text-right py-1.5 px-3 font-medium text-indigo-400 bg-indigo-50/50">当前价</th>
+                    <th colSpan={user?.role === 'admin' ? 5 : 4} />
+                    {user?.role === 'admin' && (<th className="text-right py-1.5 px-3 font-medium text-indigo-400 bg-indigo-50/50">购入价</th>)}
+
+                    {user?.role === 'admin' && (<th className="text-right py-1.5 px-3 font-medium text-indigo-400 bg-indigo-50/50">当前价</th>)}
+
                   </tr>
                 </thead>
                 <tbody>
@@ -1308,7 +1321,9 @@ export default function Index() {
                         <td className="py-2 px-3 font-mono text-xs text-gray-600">{formatHardwareSpec(a)}</td>
                         <td className="py-2 px-3">{a.department || '-'}</td>
                         <td className="py-2 px-3">{a.user_name || '-'}</td>
-                        <td className="py-2 px-3 text-right font-medium text-blue-600">¥{a.monthly_rent || 0}</td>
+                        {user?.role === 'admin' && (<td className="py-2 px-3 text-right font-medium text-blue-600">¥{a.monthly_rent || 0}</td>)}
+
+                        {user?.role === 'admin' && (<>
                         <td className="py-2 px-3 text-right bg-indigo-50/40">
                           {hasAI ? (
                             <>
@@ -1355,6 +1370,8 @@ export default function Index() {
                             </button>
                           )}
                         </td>
+                        </>)}
+
                       </tr>
                     )
                   })}
@@ -1362,21 +1379,28 @@ export default function Index() {
                 <tfoot>
                   <tr className="bg-purple-50">
                     <td colSpan={4} className="py-2 px-3 font-semibold text-gray-700 text-right">合计（{allAssets.length} 台）</td>
-                    <td className="py-2 px-3 text-right font-bold text-purple-600 text-lg">
-                      ¥{allAssets.reduce((sum, a) => sum + (Number(a.monthly_rent) || 0), 0).toFixed(2)}
-                    </td>
+                    {user?.role === 'admin' && (
+                      <td className="py-2 px-3 text-right font-bold text-purple-600 text-lg">
+                        ¥{allAssets.reduce((sum, a) => sum + (Number(a.monthly_rent) || 0), 0).toFixed(2)}
+                      </td>
+                    )}
+                    {user?.role === 'admin' && (
                     <td className="py-2 px-3 text-right font-semibold text-indigo-600 bg-indigo-50/40 border-l-2 border-indigo-200">
                       ¥{allAssets.reduce((sum, a) => {
                         const v = syncResolveAIValuation(aiValuations, a as any)
                         return sum + (v.source === 'ai' ? (v.fixedValue ?? v.currentValue ?? 0) : 0)
                       }, 0).toLocaleString()}
                     </td>
-                    <td className="py-2 px-3 text-right font-bold text-indigo-700 text-lg bg-indigo-50/50">
+                    )}
+
+                                        {user?.role === 'admin' && (
+<td className="py-2 px-3 text-right font-bold text-indigo-700 text-lg bg-indigo-50/50">
                       ¥{allAssets.reduce((sum, a) => {
                         const v = syncResolveAIValuation(aiValuations, a as any)
                         return sum + (v.source === 'ai' ? (v.currentValue ?? 0) : 0)
                       }, 0).toLocaleString()}
-                    </td>
+                    </td>                    )}
+
                   </tr>
                 </tfoot>
               </table>
