@@ -100,7 +100,7 @@ export default function AssetDetail() {
       console.log('AssetDetail: Fetching asset with code:', cleanedId)
       
       const { data, error } = await supabase
-        .from('assets')
+        .from('assets_public')
         .select('*')
         .eq('asset_code', cleanedId)
       
@@ -140,7 +140,7 @@ export default function AssetDetail() {
       } else {
         console.error('AssetDetail: No asset found with code:', cleanedId)
         
-        const { data: allAssets } = await supabase.from('assets').select('asset_code')
+        const { data: allAssets } = await supabase.from('assets_public').select('asset_code')
         console.log('AssetDetail: All assets in database:', allAssets)
         
         toast.error('资产不存在，请检查二维码是否正确')

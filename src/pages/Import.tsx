@@ -111,7 +111,7 @@ export default function Import() {
       const code = asset.asset_code?.trim()
       if (!code) continue
       const { data, error } = await supabase
-        .from('assets')
+        .from('assets_public')
         .select('brand, model')
         .eq('asset_code', code)
         .single()
@@ -150,7 +150,7 @@ export default function Import() {
 
           if (hasExplicitCode) {
             const { data, error: checkError } = await supabase
-              .from('assets')
+              .from('assets_public')
               .select('*')
               .eq('asset_code', asset.asset_code)
               .single()

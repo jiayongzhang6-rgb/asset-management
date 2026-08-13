@@ -243,7 +243,7 @@ export async function updateAssetRent(
   try {
     // 1. 获取旧数据
     const { data: oldAsset, error: getErr } = await supabase
-      .from('assets')
+      .from('assets_public')
       .select('*')
       .eq('asset_code', assetCode)
       .single()
@@ -307,7 +307,7 @@ export async function batchUpdateRent(
 export async function getDepartmentRentStats(): Promise<DepartmentRentStat[]> {
   try {
     const { data, error } = await supabase
-      .from('assets')
+      .from('assets_public')
       .select('asset_code, department, user_name, monthly_rent, status, brand, model')
       .neq('status', 'retired')
       .order('department')
@@ -376,7 +376,7 @@ export async function generateMonthlySettlement(
       // 已有记录，更新租金为最新值
       // 按当前 includeIdle 策略同步：不统计闲置时，删除闲置设备的结算记录
       const { data: assets, error: assetErr } = await supabase
-        .from('assets')
+        .from('assets_public')
         .select('asset_code, monthly_rent, department, user_name, status')
         .neq('status', 'retired')
 
@@ -462,7 +462,7 @@ export async function generateMonthlySettlement(
 
     // 2. 首次生成：获取所有非报废资产
     let query = supabase
-      .from('assets')
+      .from('assets_public')
       .select('id, asset_code, department, user_name, monthly_rent, status')
       .neq('status', 'retired')
     if (!includeIdle) {
@@ -534,7 +534,7 @@ export async function getRandomAssetsRent(count: number = 10): Promise<{
 }> {
   try {
     const { data, error } = await supabase
-      .from('assets')
+      .from('assets_public')
       .select('asset_code, brand, model, department, user_name, monthly_rent, status')
       .neq('status', 'retired')
 
@@ -828,14 +828,14 @@ export async function generateUniqueAssetCode(): Promise<string> {
   try {
     // 查询当月所有以该前缀开头的资产编码
     const { data, error } = await supabase
-      .from('assets')
+      .from('assets_public')
       .select('asset_code')
       .like('asset_code', `${prefix}%`)
 
     if (error) {
       console.warn('Failed to query max asset code, falling back to count:', error.message)
       // 降级：用总数+1
-      const { count } = await supabase.from('assets').select('*', { count: 'exact', head: true })
+      const { count } = await supabase.from('assets_public').select('*', { count: 'exact', head: true })
       return `${prefix}${String((count || 0) + 1).padStart(3, '0')}`
     }
 
@@ -947,7 +947,7 @@ export async function recoverOverwrittenAssets(operatorEmail?: string): Promise<
     try {
       // 找到对应用户的资产
       const { data: assets, error } = await supabase
-        .from('assets')
+        .from('assets_public')
         .select('*')
         .eq('user_name', record._id)
         .limit(5)
@@ -1063,7 +1063,7 @@ export function isCategorySupportedSync(): boolean {
 export async function isCategorySupported(): Promise<boolean> {
   if (_categorySupported !== null) return _categorySupported
   try {
-    const { error } = await supabase.from('assets').select('category').limit(1)
+    const { error } = await supabase.from('assets_public').select('category').limit(1)
     if (!error) {
       _categorySupported = true
       return true
@@ -1081,7 +1081,7 @@ export async function isCategorySupported(): Promise<boolean> {
       }
       // 等待 schema cache 刷新
       await new Promise(r => setTimeout(r, 1500))
-      const { error: retryErr } = await supabase.from('assets').select('category').limit(1)
+      const { error: retryErr } = await supabase.from('assets_public').select('category').limit(1)
       _categorySupported = !retryErr
       if (retryErr) {
         console.warn('[Category] 刷新后仍不可见，将剥离 category 字段')
@@ -1393,7 +1393,7 @@ export function isAIColumnsSupportedSync(): boolean {
 export async function isAIColumnsSupported(): Promise<boolean> {
   if (_aiColumnsSupported !== null) return _aiColumnsSupported
   try {
-    const { error } = await supabase.from('assets').select('ai_current_value').limit(1)
+    const { error } = await supabase.from('assets_public').select('ai_current_value').limit(1)
     if (!error) {
       _aiColumnsSupported = true
       return true
@@ -1413,7 +1413,7 @@ export async function isAIColumnsSupported(): Promise<boolean> {
       }
       console.log('[AI DB] NOTIFY pgrst sent, 等待 2s 后重试...')
       await new Promise(r => setTimeout(r, 2000))
-      const { error: retryErr } = await supabase.from('assets').select('ai_current_value').limit(1)
+      const { error: retryErr } = await supabase.from('assets_public').select('ai_current_value').limit(1)
       _aiColumnsSupported = !retryErr
       if (retryErr) {
         console.warn('[AI DB] NOTIFY 后 REST API 仍看不到列，将使用 execute_sql 通道兜底')
@@ -1680,7 +1680,7 @@ async function fetchSingleAIValuationFromDB(assetCode: string): Promise<{
   try {
     // 优先 REST（schema cache 可见时）
     const { data, error } = await supabase
-      .from('assets')
+      .from('assets_public')
       .select('ai_fixed_value, ai_current_value, ai_reason, ai_valuated_at')
       .eq('asset_code', assetCode)
       .maybeSingle()

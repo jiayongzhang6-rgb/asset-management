@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../App'
 import { supabase, formatUserIdentifier, type User } from '../lib/supabase'
-import { deleteUserRpc, resetPasswordRpc } from '../lib/authRpc'
+import { deleteUserRpc, resetPasswordRpc, adminResetAuthPassword } from '../lib/authRpc'
 import toast from 'react-hot-toast'
 
 export default function Users() {
@@ -59,9 +59,13 @@ export default function Users() {
       try {
         const tempPassword = Math.random().toString(36).substring(2, 10)
 
-        // 走 RPC（SECURITY DEFINER），数据库内部哈希存储临时密码
-        const result = await resetPasswordRpc(email, tempPassword)
-        if (!result.ok) throw new Error('密码重置失败')
+        // 优先走新 RPC（更新 auth.users 的加密密码，已迁移账号生效）
+        const res = await adminResetAuthPassword(email, tempPassword)
+        if (!res.ok) {
+          // 回退旧 RPC（尚未迁移到 Supabase Auth 的账号）
+          const r2 = await resetPasswordRpc(email, tempPassword)
+          if (!r2.ok) throw new Error('密码重置失败')
+        }
 
         toast(`密码重置成功！\n用户: ${formatUserIdentifier(email)}\n临时密码: ${tempPassword}`, { duration: 10000 })
       } catch (error) {

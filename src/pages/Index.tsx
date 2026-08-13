@@ -139,7 +139,7 @@ export default function Index() {
     try {
       // 获取部门
       const { data: deptData } = await supabase
-        .from('assets')
+        .from('assets_public')
         .select('department')
         .not('department', 'is', null)
         .not('department', 'eq', '')
@@ -148,7 +148,7 @@ export default function Index() {
 
       // 获取分类
       const { data: catData } = await supabase
-        .from('assets')
+        .from('assets_public')
         .select('category')
         .not('category', 'is', null)
         .not('category', 'eq', '')
@@ -166,7 +166,7 @@ export default function Index() {
     let filteredAllData: Asset[] = []
     try {
       // 1. 获取全部资产数据（用于汇总统计）
-      let allQuery = supabase.from('assets').select('*')
+      let allQuery = supabase.from('assets_public').select('*')
       if (searchTerm) {
         allQuery = allQuery.or(`asset_code.ilike.%${searchTerm}%,brand.ilike.%${searchTerm}%,model.ilike.%${searchTerm}%,department.ilike.%${searchTerm}%,user_name.ilike.%${searchTerm}%`)
       }
@@ -214,7 +214,7 @@ export default function Index() {
 
       // 2. 获取分页数据
       const offset = (page - 1) * pageSize
-      let query = supabase.from('assets').select('*', { count: 'exact' })
+      let query = supabase.from('assets_public').select('*', { count: 'exact' })
       if (searchTerm) {
         query = query.or(`asset_code.ilike.%${searchTerm}%,brand.ilike.%${searchTerm}%,model.ilike.%${searchTerm}%,department.ilike.%${searchTerm}%,user_name.ilike.%${searchTerm}%`)
       }
@@ -636,7 +636,7 @@ export default function Index() {
     if (window.confirm('确定要删除这个资产吗？')) {
       try {
         // 获取要删除的资产信息
-        const { data: asset, error: getError } = await supabase.from('assets').select('*').eq('id', id).single()
+        const { data: asset, error: getError } = await supabase.from('assets_public').select('*').eq('id', id).single()
         if (getError) throw getError
 
         // 删除前保存快照（可用于恢复）
@@ -682,7 +682,7 @@ export default function Index() {
       try {
         // 并行获取所有要删除的资产信息
         const assetResults = await Promise.all(
-          selectedIds.map(id => supabase.from('assets').select('*').eq('id', id).single())
+          selectedIds.map(id => supabase.from('assets_public').select('*').eq('id', id).single())
         )
 
         // 并行删除所有资产及其关联数据
@@ -885,7 +885,7 @@ export default function Index() {
     }
 
     try {
-      const { data: allData } = await supabase.from('assets').select('*')
+      const { data: allData } = await supabase.from('assets_public').select('*')
       if (!allData || allData.length === 0) {
         toast.error('没有可导出的数据')
         return

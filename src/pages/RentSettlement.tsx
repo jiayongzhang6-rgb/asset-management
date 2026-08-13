@@ -73,7 +73,7 @@ export default function RentSettlement() {
       if (records.length > 0) {
         const assetCodes = [...new Set(records.map(r => r.asset_code))]
         const { data: assetsData, error: assetErr } = await supabase
-          .from('assets')
+          .from('assets_public')
           .select('*')
           .in('asset_code', assetCodes)
 

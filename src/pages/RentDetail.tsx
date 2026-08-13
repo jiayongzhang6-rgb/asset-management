@@ -35,7 +35,7 @@ export default function RentDetail() {
   const fetchDepartments = async () => {
     try {
       const { data } = await supabase
-        .from('assets')
+        .from('assets_public')
         .select('department')
         .not('department', 'is', null)
         .not('department', 'eq', '')
@@ -66,7 +66,7 @@ export default function RentDetail() {
       if (data && data.length > 0) {
         const assetCodes = [...new Set(data.map(r => r.asset_code))]
         const { data: assetsData, error: assetsError } = await supabase
-          .from('assets')
+          .from('assets_public')
           .select('asset_code, monthly_rent, department, user_name')
           .in('asset_code', assetCodes)
 
@@ -159,7 +159,7 @@ export default function RentDetail() {
 
     try {
       const { data: assets, error: assetsError } = await supabase
-        .from('assets')
+        .from('assets_public')
         .select('id, asset_code, department, user_name, monthly_rent')
         .neq('monthly_rent', 0)
 
