@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '../App'
 import toast from 'react-hot-toast'
-import { supabase, type Asset, type MaintenanceRecord, type AssetImage, type UsageHistoryRecord, formatUserIdentifier, formatMemory, formatStorage, getStatusText, getStatusColor, getOperationTypeText, getOperationTypeColor, recordAllHistory, getBeijingTime, updateAssetRobust, saveAssetSnapshot, fetchCategoriesViaSQL } from '../lib/supabase'
+import { supabase, type Asset, type MaintenanceRecord, type AssetImage, type UsageHistoryRecord, formatUserIdentifier, formatMemory, formatStorage, getStatusText, getStatusColor, getOperationTypeText, getOperationTypeColor, recordAllHistory, getBeijingTime, updateAssetRobust, saveAssetSnapshot, fetchAssetExtraFieldsViaSQL } from '../lib/supabase'
 
 const categories = ['笔记本', '台式机', '显示器', '外设', '服务器', '网络设备', '其他']
 
@@ -35,6 +35,8 @@ export default function AssetDetail() {
     os: '',
     category: '',
     department: '',
+    lessee_entity: '',
+    lessee_manager: '',
     user_name: '',
     location: '',
     status: 'active',
@@ -112,11 +114,17 @@ export default function AssetDetail() {
         toast.error(`无法获取资产数据: ${error.message}`)
       } else if (data && data.length > 0) {
         let assetData = data[0]
-        // 补读 category（PostgREST schema cache 可能不返回该字段）
+        // 补读扩展字段（category/承租主体/承租负责人，PostgREST schema cache 可能不返回）
         try {
-          const catMap = await fetchCategoriesViaSQL([assetData.asset_code])
-          if (catMap.has(assetData.asset_code)) {
-            assetData = { ...assetData, category: catMap.get(assetData.asset_code) ?? '' }
+          const extraMap = await fetchAssetExtraFieldsViaSQL([assetData.asset_code])
+          const extra = extraMap.get(assetData.asset_code)
+          if (extra) {
+            assetData = {
+              ...assetData,
+              category: extra.category ?? assetData.category,
+              lessee_entity: extra.lessee_entity ?? '',
+              lessee_manager: extra.lessee_manager ?? ''
+            }
           }
         } catch { /* ignore */ }
         console.log('AssetDetail: Asset fetched successfully:', assetData)
@@ -131,6 +139,8 @@ export default function AssetDetail() {
           os: assetData.os || '',
           category: assetData.category || '',
           department: assetData.department || '',
+          lessee_entity: assetData.lessee_entity || '',
+          lessee_manager: assetData.lessee_manager || '',
           user_name: assetData.user_name || '',
           location: assetData.location || '',
           status: assetData.status || 'active',
@@ -251,6 +261,8 @@ export default function AssetDetail() {
     if (updateData.os !== undefined && updateData.os !== asset.os) changes.push(`操作系统: ${asset.os || '无'} → ${updateData.os || '无'}`)
     if (updateData.category !== undefined && updateData.category !== asset.category) changes.push(`分类: ${asset.category || '无'} → ${updateData.category || '无'}`)
     if (updateData.department !== asset.department) changes.push(`部门: ${asset.department || '无'} → ${updateData.department || '无'}`)
+    if (updateData.lessee_entity !== undefined && updateData.lessee_entity !== (asset.lessee_entity || '')) changes.push(`承租主体: ${asset.lessee_entity || '无'} → ${updateData.lessee_entity || '无'}`)
+    if (updateData.lessee_manager !== undefined && updateData.lessee_manager !== (asset.lessee_manager || '')) changes.push(`承租负责人: ${asset.lessee_manager || '无'} → ${updateData.lessee_manager || '无'}`)
     if (updateData.user_name !== asset.user_name) changes.push(`使用人: ${asset.user_name || '无'} → ${updateData.user_name || '无'}`)
     if (updateData.location !== asset.location) changes.push(`位置: ${asset.location || '无'} → ${updateData.location || '无'}`)
     if (updateData.status && updateData.status !== asset.status) changes.push(`状态: ${getStatusText(asset.status)} → ${getStatusText(updateData.status)}`)
@@ -264,8 +276,8 @@ export default function AssetDetail() {
       await saveAssetSnapshot(assetCodeToUse, 'update', user.email, asset)
     }
 
-    // 健壮更新：自动双通道，category 不会因为 schema cache 看不到而失败
-    const { error: updateError, categoryError } = await updateAssetRobust(assetCodeToUse, updateData)
+    // 健壮更新：自动双通道，扩展字段（category/承租信息）不会因 schema cache 看不到而失败
+    const { error: updateError, extraError } = await updateAssetRobust(assetCodeToUse, updateData)
     if (updateError) {
       console.error('AssetDetail: Update error:', updateError)
       throw updateError
@@ -278,9 +290,9 @@ export default function AssetDetail() {
     setIsEditDialogOpen(false)
     await fetchAsset()
     await fetchAssetHistory()
-    // category 单独失败时，其他字段已更新成功，给明确提示
-    if (categoryError) {
-      toast.error(`其他字段已更新，但分类未保存。\n原因：${categoryError}`, { duration: 8000 })
+    // 扩展字段单独失败时，其他字段已更新成功，给明确提示
+    if (extraError) {
+      toast.error(`其他字段已更新，但分类/承租信息未保存。\n原因：${extraError}`, { duration: 8000 })
     } else {
       toast.success('资产更新成功')
     }
@@ -773,6 +785,14 @@ export default function AssetDetail() {
                   <span className="text-sm font-medium text-gray-900">{asset.department || <span className="text-gray-400">-</span>}</span>
                 </div>
                 <div className="flex items-center justify-between py-2 border-b border-gray-50">
+                  <span className="text-sm text-gray-500">承租主体</span>
+                  <span className="text-sm font-medium text-gray-900">{asset.lessee_entity || <span className="text-gray-400">-</span>}</span>
+                </div>
+                <div className="flex items-center justify-between py-2 border-b border-gray-50">
+                  <span className="text-sm text-gray-500">承租负责人</span>
+                  <span className="text-sm font-medium text-gray-900">{asset.lessee_manager || <span className="text-gray-400">-</span>}</span>
+                </div>
+                <div className="flex items-center justify-between py-2 border-b border-gray-50">
                   <span className="text-sm text-gray-500">使用人</span>
                   <span className="text-sm font-medium text-gray-900">{asset.user_name || <span className="text-gray-400">-</span>}</span>
                 </div>
@@ -1132,6 +1152,30 @@ export default function AssetDetail() {
                     onChange={(e) => setFormData({ ...formData, department: e.target.value })}
                   />
                 </div>
+                {user?.role === 'admin' && (
+                  <>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1.5">承租主体</label>
+                      <input
+                        type="text"
+                        className="input"
+                        value={formData.lessee_entity}
+                        onChange={(e) => setFormData({ ...formData, lessee_entity: e.target.value })}
+                        placeholder="如：某某公司"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1.5">承租负责人</label>
+                      <input
+                        type="text"
+                        className="input"
+                        value={formData.lessee_manager}
+                        onChange={(e) => setFormData({ ...formData, lessee_manager: e.target.value })}
+                        placeholder="如：张三"
+                      />
+                    </div>
+                  </>
+                )}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1.5">使用人</label>
                   <input

@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../App'
 import toast from 'react-hot-toast'
 import * as XLSX from 'xlsx'
-import { supabase, type Asset, initDatabase, formatUserIdentifier, formatMemory, formatStorage, getStatusText, getStatusColor, recordAllHistory, generateUniqueAssetCode, sanitizeAssetData, isCategorySupportedSync, saveAssetSnapshot, formatHardwareSpec, estimateAssetValue, estimateAssetValueWithAI, batchEstimateAssetValueWithAI, getAIValuationConfig, type AIValResult, restoreAIValuationsFromCache, syncResolveAIValuation, fetchCategoriesViaSQL, updateAssetRobust, insertAssetRobust, isAIForceDisabled, getAIDailyUsage } from '../lib/supabase'
+import { supabase, type Asset, initDatabase, formatUserIdentifier, formatMemory, formatStorage, getStatusText, getStatusColor, recordAllHistory, generateUniqueAssetCode, sanitizeAssetData, isCategorySupportedSync, saveAssetSnapshot, formatHardwareSpec, estimateAssetValue, estimateAssetValueWithAI, batchEstimateAssetValueWithAI, getAIValuationConfig, type AIValResult, restoreAIValuationsFromCache, syncResolveAIValuation, fetchAssetExtraFieldsViaSQL, updateAssetRobust, insertAssetRobust, isAIForceDisabled, getAIDailyUsage } from '../lib/supabase'
 import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js'
 import { Pie } from 'react-chartjs-2'
 
@@ -38,6 +38,8 @@ export default function Index() {
     os: '',
     category: '',
     department: '',
+    lessee_entity: '',
+    lessee_manager: '',
     user_name: '',
     location: '',
     status: 'active',
@@ -267,24 +269,28 @@ export default function Index() {
       setLoading(false)
     }
 
-    // ===== category 补读 =====
-    // PostgREST schema cache 可能看不到 category 列，导致 .select('*') 不返回该字段。
-    // 这里通过 execute_sql RPC 直接从 DB 读取 category，覆盖到前端数据中。
-    // 这样即使 schema cache 未刷新，分类的读写都能正常工作。
+    // ===== 扩展字段补读（category/承租主体/承租负责人） =====
+    // PostgREST schema cache 可能看不到这些列，导致 .select('*') 不返回对应字段。
+    // 这里通过 execute_sql RPC 直接从 DB 读取，覆盖到前端数据中。
+    // 这样即使 schema cache 未刷新，分类与承租信息的读写都能正常工作。
     if (filteredAllData.length > 0) {
       try {
         const allCodes = filteredAllData.map(a => a.asset_code).filter(Boolean)
-        const catMap = await fetchCategoriesViaSQL(allCodes)
-        if (catMap.size > 0) {
-          const mergedAll = filteredAllData.map(a => ({
-            ...a,
-            category: catMap.has(a.asset_code) ? (catMap.get(a.asset_code) ?? '') : a.category
-          }))
+        const extraMap = await fetchAssetExtraFieldsViaSQL(allCodes)
+        if (extraMap.size > 0) {
+          const mergeExtra = (a: Asset): Asset => {
+            const extra = extraMap.get(a.asset_code)
+            if (!extra) return a
+            return {
+              ...a,
+              category: extra.category ?? a.category,
+              lessee_entity: extra.lessee_entity ?? '',
+              lessee_manager: extra.lessee_manager ?? ''
+            }
+          }
+          const mergedAll = filteredAllData.map(mergeExtra)
           setAllAssets(mergedAll)
-          setAssets(prev => prev.map(a => ({
-            ...a,
-            category: catMap.has(a.asset_code) ? (catMap.get(a.asset_code) ?? '') : a.category
-          })))
+          setAssets(prev => prev.map(mergeExtra))
           filteredAllData = mergedAll
         }
       } catch (e) {
@@ -391,6 +397,8 @@ export default function Index() {
       os: '',
       category: '',
       department: '',
+      lessee_entity: '',
+      lessee_manager: '',
       user_name: '',
       location: '',
       status: 'active',
@@ -559,6 +567,8 @@ export default function Index() {
         if (updateData.os !== undefined && updateData.os !== asset.os) changes.push(`操作系统: ${asset.os || '无'} → ${updateData.os || '无'}`)
         if (updateData.category !== undefined && updateData.category !== asset.category) changes.push(`分类: ${asset.category || '无'} → ${updateData.category || '无'}`)
         if (updateData.department !== undefined && updateData.department !== asset.department) changes.push(`部门: ${asset.department || '无'} → ${updateData.department || '无'}`)
+        if (updateData.lessee_entity !== undefined && updateData.lessee_entity !== (asset.lessee_entity || '')) changes.push(`承租主体: ${asset.lessee_entity || '无'} → ${updateData.lessee_entity || '无'}`)
+        if (updateData.lessee_manager !== undefined && updateData.lessee_manager !== (asset.lessee_manager || '')) changes.push(`承租负责人: ${asset.lessee_manager || '无'} → ${updateData.lessee_manager || '无'}`)
         if (updateData.user_name !== undefined && updateData.user_name !== asset.user_name) changes.push(`使用人: ${asset.user_name || '无'} → ${updateData.user_name || '无'}`)
         if (updateData.location !== undefined && updateData.location !== asset.location) changes.push(`位置: ${asset.location || '无'} → ${updateData.location || '无'}`)
         if (updateData.status !== undefined && updateData.status !== asset.status) changes.push(`状态: ${getStatusText(asset.status)} → ${getStatusText(updateData.status)}`)
@@ -572,9 +582,9 @@ export default function Index() {
           await saveAssetSnapshot(editingAsset.asset_code, 'update', user.email, editingAsset)
         }
 
-        // 健壮更新：自动处理 category 列的 PostgREST schema cache 问题
-        // 若 REST API 因看不到 category 列而失败，会自动剥离 category 重试 + execute_sql 补写
-        const { error, categoryError } = await updateAssetRobust(editingAsset.asset_code, updateData)
+        // 健壮更新：自动处理扩展列（category/承租字段）的 PostgREST schema cache 问题
+        // 若 REST API 因看不到这些列而失败，会自动剥离重试 + execute_sql 补写
+        const { error, extraError } = await updateAssetRobust(editingAsset.asset_code, updateData)
         if (error) throw error
         console.log('Index: Asset updated successfully')
 
@@ -590,9 +600,9 @@ export default function Index() {
         setIsEditDialogOpen(false)
         setEditingAsset(null)
         resetForm()
-        // category 单独失败时，其他字段已更新成功，给明确提示
-        if (categoryError) {
-          toast.error(`其他字段已更新，但分类未保存。\n原因：${categoryError}`, { duration: 8000 })
+        // 扩展字段单独失败时，其他字段已更新成功，给明确提示
+        if (extraError) {
+          toast.error(`其他字段已更新，但分类/承租信息未保存。\n原因：${extraError}`, { duration: 8000 })
         } else {
           toast.success('资产更新成功')
         }
@@ -616,6 +626,8 @@ export default function Index() {
       os: asset.os || '',
       category: asset.category || '',
       department: asset.department || '',
+      lessee_entity: asset.lessee_entity || '',
+      lessee_manager: asset.lessee_manager || '',
       user_name: asset.user_name || '',
       location: asset.location || '',
       status: asset.status || 'active',
@@ -1860,6 +1872,30 @@ export default function Index() {
                     required
                   />
                 </div>
+                {user?.role === 'admin' && (
+                  <>
+                    <div>
+                      <label className="block text-sm font-medium text-secondary-700 mb-1">承租主体</label>
+                      <input
+                        type="text"
+                        className="input"
+                        value={formData.lessee_entity}
+                        onChange={(e) => setFormData({ ...formData, lessee_entity: e.target.value })}
+                        placeholder="如：某某公司"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-secondary-700 mb-1">承租负责人</label>
+                      <input
+                        type="text"
+                        className="input"
+                        value={formData.lessee_manager}
+                        onChange={(e) => setFormData({ ...formData, lessee_manager: e.target.value })}
+                        placeholder="如：张三"
+                      />
+                    </div>
+                  </>
+                )}
                 <div>
                   <label className="block text-sm font-medium text-secondary-700 mb-1">使用人</label>
                   <input
@@ -2051,6 +2087,30 @@ export default function Index() {
                     required
                   />
                 </div>
+                {user?.role === 'admin' && (
+                  <>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">承租主体</label>
+                      <input
+                        type="text"
+                        className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        value={formData.lessee_entity}
+                        onChange={(e) => setFormData({ ...formData, lessee_entity: e.target.value })}
+                        placeholder="如：某某公司"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">承租负责人</label>
+                      <input
+                        type="text"
+                        className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        value={formData.lessee_manager}
+                        onChange={(e) => setFormData({ ...formData, lessee_manager: e.target.value })}
+                        placeholder="如：张三"
+                      />
+                    </div>
+                  </>
+                )}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">使用人</label>
                   <input

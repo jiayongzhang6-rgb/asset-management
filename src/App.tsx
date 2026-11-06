@@ -16,6 +16,7 @@ import {
 import { ErrorBoundary } from './components/ErrorBoundary'
 import Index from './pages/Index'
 import AssetDetail from './pages/AssetDetail'
+import PublicAsset from './pages/PublicAsset'
 import Login from './pages/Login'
 import Import from './pages/Import'
 import OperationHistory from './pages/OperationHistory'
@@ -135,24 +136,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  const signUp = async (emailOrPhone: string, password: string) => {
-    setLoading(true)
-    try {
-      const email = normalizePhone(emailOrPhone)
-      const { data, error } = await signUpAuth(email, password)
-      if (error) throw error
-      if (data.session) {
-        applyUser(email, roleFromSession(data.session))
-      } else if (data.user) {
-        // 开启了确认邮件：暂无 session，提示去邮箱确认
-        throw new Error('注册成功，请查收确认邮件后登录')
-      }
-    } catch (error) {
-      console.error('Error signing up:', error)
-      throw error
-    } finally {
-      setLoading(false)
-    }
+  // 注册功能已关闭：账号统一由管理员在「用户管理」中创建
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const signUp = async (_emailOrPhone: string, _password: string) => {
+    throw new Error('注册功能已关闭，请联系管理员开通账号')
   }
 
   const signOut = async () => {
@@ -248,27 +235,20 @@ function URLHandler() {
     const action = params.get('action')
     const id = params.get('id')
 
-    // 处理扫码跳转
+    // 处理扫码跳转：直接进入资产页（未登录时由路由展示只读公开视图，无需登录）
     if (action === 'edit' && id) {
-      // 如果用户已登录，直接跳转到资产详情页
-      if (isAuthenticated) {
-        navigate(`/asset/${id}`)
-      } else {
-        // 如果用户未登录，保存目标页面，等登录后再跳转
-        setPendingRedirect(`/asset/${id}`)
-        navigate('/login')
-      }
+      navigate(`/asset/${id}`)
     }
-
-    // 处理直接访问资产详情页的情况
-    if (location.pathname.startsWith('/asset/') && !isAuthenticated) {
-      // 保存当前路径作为待跳转页面
-      setPendingRedirect(location.pathname)
-      navigate('/login')
-    }
+    // 注意：/asset/:id 路径不再强制跳转登录页，未登录用户看到的是只读公开视图
   }, [location.search, location.pathname, navigate, isAuthenticated, setPendingRedirect])
 
   return null
+}
+
+// 资产详情路由分流：已登录 → 完整详情页；未登录（扫码） → 只读公开视图
+function AssetRoute() {
+  const { isAuthenticated } = useAuth()
+  return isAuthenticated ? <AssetDetail /> : <PublicAsset />
 }
 
 export default function App() {
@@ -286,7 +266,9 @@ export default function App() {
         <ErrorBoundary>
           <Routes>
             <Route path="/" element={<Index />} />
-            <Route path="/asset/:id" element={<AssetDetail />} />
+            <Route path="/asset/:id" element={<AssetRoute />} />
+            {/* 扫码公开视图：始终只读，无论是否登录 */}
+            <Route path="/public/asset/:id" element={<PublicAsset />} />
             <Route path="/login" element={<Login />} />
             <Route path="/change-password" element={<ChangePassword />} />
             {/* 以下管理功能仅对 admin 开放 */}

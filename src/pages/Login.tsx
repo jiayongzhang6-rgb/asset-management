@@ -6,11 +6,10 @@ import toast from 'react-hot-toast'
 export default function Login() {
   const navigate = useNavigate()
   const location = useLocation()
-  const { signIn, signUp, resetPassword, pendingRedirect, setPendingRedirect } = useAuth()
+  const { signIn, resetPassword, pendingRedirect, setPendingRedirect } = useAuth()
   const [phone, setPhone] = useState('')
   const [password, setPassword] = useState('')
   const [isLoading, setIsLoading] = useState(false)
-  const [isSignUp, setIsSignUp] = useState(false)
   const [isForgotPassword, setIsForgotPassword] = useState(false)
   const [error, setError] = useState('')
 
@@ -34,15 +33,6 @@ export default function Login() {
         await resetPassword(phone)
         toast.success('重置密码链接已发送，请查收！')
         setIsForgotPassword(false)
-      } else if (isSignUp) {
-        await signUp(phone, password)
-        toast.success('注册成功！')
-        if (pendingRedirect) {
-          navigate(pendingRedirect)
-          setPendingRedirect(null)
-        } else {
-          navigate('/')
-        }
       } else {
         await signIn(phone, password)
         toast.success('登录成功！')
@@ -54,7 +44,7 @@ export default function Login() {
         }
       }
     } catch (err: any) {
-      const msg = err.message || (isSignUp ? '注册失败' : isForgotPassword ? '重置密码失败' : '登录失败')
+      const msg = err.message || (isForgotPassword ? '重置密码失败' : '登录失败')
       setError(msg)
       toast.error(msg)
     } finally {
@@ -84,7 +74,7 @@ export default function Login() {
 
         {/* 模式标题 */}
         <h2 className="text-lg font-semibold text-center text-gray-700 mb-6">
-          {isForgotPassword ? '找回密码' : isSignUp ? '创建账户' : '欢迎回来'}
+          {isForgotPassword ? '找回密码' : '欢迎回来'}
         </h2>
 
         {/* 提示信息 */}
@@ -94,15 +84,6 @@ export default function Login() {
               <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
             请先登录以查看资产详情
-          </div>
-        )}
-
-        {isSignUp && (
-          <div className="mb-4 px-4 py-3 rounded-lg bg-indigo-50 border border-indigo-100 text-sm text-indigo-700 flex items-center gap-2">
-            <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            请使用手机号注册，需输入11位手机号码。
           </div>
         )}
 
@@ -119,28 +100,20 @@ export default function Login() {
         <form onSubmit={handleSubmit} className="space-y-5">
           <div>
             <label className="block text-sm font-medium text-gray-600 mb-1.5">
-              {isSignUp ? '手机号' : '手机号 / 邮箱'}
+              手机号 / 邮箱
             </label>
             <div className="relative">
               <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" />
               </svg>
               <input
-                type={isSignUp ? "tel" : "text"}
+                type="text"
                 className="input pl-10"
-                placeholder={isSignUp ? "请输入11位手机号" : "请输入手机号或邮箱"}
+                placeholder="请输入手机号或邮箱"
                 value={phone}
-                onChange={(e) => {
-                  if (isSignUp) {
-                    const value = e.target.value.replace(/\D/g, '').slice(0, 11)
-                    setPhone(value)
-                  } else {
-                    setPhone(e.target.value)
-                  }
-                }}
+                onChange={(e) => setPhone(e.target.value)}
                 required
                 disabled={isLoading}
-                {...(isSignUp ? { pattern: "\\d{11}", maxLength: 11, minLength: 11 } : {})}
               />
             </div>
           </div>
@@ -176,31 +149,20 @@ export default function Login() {
                 <span className="spinner !w-4 !h-4 !border-2 !border-white/30 !border-t-white" />
                 处理中...
               </span>
-            ) : isForgotPassword ? '发送重置链接' : (isSignUp ? '注册' : '登录')}
+            ) : isForgotPassword ? '发送重置链接' : '登录'}
           </button>
         </form>
 
-        {/* 模式切换 */}
+        {/* 模式切换（注册功能已关闭，账号由管理员开通） */}
         <div className="mt-6 flex items-center justify-center gap-4">
           {!isForgotPassword && (
-            <>
-              <button
-                onClick={() => setIsSignUp(!isSignUp)}
-                className="btn btn-ghost !text-xs"
-                disabled={isLoading}
-              >
-                {isSignUp ? '← 已有账户？登录' : '没有账户？注册 →'}
-              </button>
-              {!isSignUp && (
-                <button
-                  onClick={() => setIsForgotPassword(true)}
-                  className="btn btn-ghost !text-xs"
-                  disabled={isLoading}
-                >
-                  忘记密码？
-                </button>
-              )}
-            </>
+            <button
+              onClick={() => setIsForgotPassword(true)}
+              className="btn btn-ghost !text-xs"
+              disabled={isLoading}
+            >
+              忘记密码？
+            </button>
           )}
           {isForgotPassword && (
             <button
@@ -214,7 +176,7 @@ export default function Login() {
         </div>
 
         {/* 分隔线 */}
-        {!isForgotPassword && !isSignUp && (
+        {!isForgotPassword && (
           <>
             <div className="relative my-6">
               <div className="absolute inset-0 flex items-center">

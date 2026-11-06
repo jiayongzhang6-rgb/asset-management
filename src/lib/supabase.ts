@@ -37,6 +37,8 @@ export interface Asset {
   os: string
   category: AssetCategory | string
   department: string
+  lessee_entity?: string
+  lessee_manager?: string
   user_name: string
   location: string
   status: AssetStatus | string
@@ -1109,11 +1111,16 @@ export function warmUpCategoryCheck(): void {
   }
 }
 
-// 在发送给 Supabase 之前，如果 category 列不可用则剥离该字段
+// 需要走 execute_sql 通道的扩展字段（PostgREST schema cache 可能看不到这些新列）
+// category=分类, lessee_entity=承租主体, lessee_manager=承租负责人
+const EXTRA_SQL_FIELDS = ['category', 'lessee_entity', 'lessee_manager'] as const
+
+// 在发送给 Supabase 之前，如果扩展列不可用则剥离这些字段
 export async function sanitizeAssetData<T extends Record<string, any>>(data: T): Promise<T> {
   const supported = await isCategorySupported()
-  if (!supported && 'category' in data) {
-    const { category, ...rest } = data
+  if (!supported) {
+    const rest = { ...data }
+    for (const k of EXTRA_SQL_FIELDS) delete (rest as any)[k]
     return rest as T
   }
   return data
@@ -1123,32 +1130,52 @@ export async function sanitizeAssetData<T extends Record<string, any>>(data: T):
 export async function sanitizeAssetBatch<T extends Record<string, any>>(items: T[]): Promise<T[]> {
   const supported = await isCategorySupported()
   if (supported) return items
-  return items.map(item => {
-    if ('category' in item) {
-      const { category, ...rest } = item
-      return rest as T
-    }
-    return item
+  return items.map(item => sanitizeFieldsSync(item))
+}
+
+function sanitizeFieldsSync<T extends Record<string, any>>(item: T): T {
+  const rest = { ...item }
+  for (const k of EXTRA_SQL_FIELDS) delete (rest as any)[k]
+  return rest as T
+}
+
+// 一次性补齐所有扩展列（DO 块作为单条命令执行，多列一次加完）
+async function ensureExtraColumnsViaSQL(): Promise<boolean> {
+  const { error } = await supabase.rpc('execute_sql', {
+    sql: `DO $$ BEGIN
+      ALTER TABLE assets ADD COLUMN IF NOT EXISTS category VARCHAR(50) DEFAULT '';
+      ALTER TABLE assets ADD COLUMN IF NOT EXISTS lessee_entity VARCHAR(100) DEFAULT '';
+      ALTER TABLE assets ADD COLUMN IF NOT EXISTS lessee_manager VARCHAR(50) DEFAULT '';
+    END $$;`
   })
+  if (error) {
+    console.warn('[ExtraFields] ALTER TABLE 失败:', error.message)
+    return false
+  }
+  try { await supabase.rpc('execute_sql', { sql: "NOTIFY pgrst, 'reload schema';" }) } catch { /* ignore */ }
+  return true
 }
 
 /**
- * 通过 execute_sql RPC 更新单个资产的 category（绕过 PostgREST schema cache）。
- * 当 REST API 因 schema cache 看不到 category 列而更新失败时使用。
- * 如果 category 列不存在，会自动添加列后再更新。
+ * 通过 execute_sql RPC 更新单个资产的扩展字段（category/lessee_entity/lessee_manager），
+ * 绕过 PostgREST schema cache。列不存在时自动添加后重试。
  */
-export async function updateAssetCategoryViaSQL(assetCode: string, category: string): Promise<boolean> {
+export async function updateAssetExtraFieldsViaSQL(assetCode: string, fields: Record<string, string>): Promise<boolean> {
   if (!assetCode) return false
+  const keys = Object.keys(fields).filter(k => (EXTRA_SQL_FIELDS as readonly string[]).includes(k))
+  if (keys.length === 0) return true
   try {
-    const escapedCat = String(category ?? '').replace(/'/g, "''")
     const escapedCode = String(assetCode).replace(/'/g, "''")
-    const updateSql = `UPDATE assets SET category = '${escapedCat}' WHERE asset_code = '${escapedCode}';`
+    const setClause = keys
+      .map(k => `${k} = '${String(fields[k] ?? '').replace(/'/g, "''")}'`)
+      .join(', ')
+    const updateSql = `UPDATE assets SET ${setClause} WHERE asset_code = '${escapedCode}';`
     const { data, error } = await supabase.rpc('execute_sql', { sql: updateSql })
 
     // 如果 RPC 本身报错（PostgreSQL 错误，如列不存在），检查是否是列缺失问题
-    const missingCol = error && /column|does not exist|category/i.test(error.message || '')
+    const missingCol = error && /column|does not exist/i.test(error.message || '')
     if (error && !missingCol) {
-      console.warn('[Category] execute_sql RPC 调用失败:', error.message)
+      console.warn('[ExtraFields] execute_sql RPC 调用失败:', error.message)
       return false
     }
 
@@ -1156,37 +1183,30 @@ export async function updateAssetCategoryViaSQL(assetCode: string, category: str
     const needAddColumn = missingCol || !isExecuteSqlSuccess(data)
     if (needAddColumn) {
       const reason = error?.message || (data as any)?.error || '未知'
-      console.warn('[Category] category 列不可用，尝试自动添加:', reason)
-      const { error: alterErr } = await supabase.rpc('execute_sql', {
-        sql: `ALTER TABLE assets ADD COLUMN IF NOT EXISTS category VARCHAR(50) DEFAULT '';`
-      })
-      if (alterErr) {
-        console.warn('[Category] ALTER TABLE 失败:', alterErr.message)
-        // ALTER TABLE 本身也可能因为 execute_sql 函数不存在而失败
-        // 这种情况只能返回 false
-        return false
-      }
-      try { await supabase.rpc('execute_sql', { sql: "NOTIFY pgrst, 'reload schema';" }) } catch { /* ignore */ }
+      console.warn('[ExtraFields] 扩展列不可用，尝试自动添加:', reason)
+      const alterOk = await ensureExtraColumnsViaSQL()
+      if (!alterOk) return false // execute_sql 函数本身可能不存在
       const { error: retryErr } = await supabase.rpc('execute_sql', { sql: updateSql })
-      if (retryErr) { console.warn('[Category] 重试更新失败:', retryErr.message); return false }
-      console.log('[Category] 已自动添加 category 列并更新成功')
+      if (retryErr) { console.warn('[ExtraFields] 重试更新失败:', retryErr.message); return false }
+      console.log('[ExtraFields] 已自动添加扩展列并更新成功')
     }
     // 刷新运行时检测缓存，让后续 REST API 也能识别 category
     resetCategoryCheck()
     return true
   } catch (e: any) {
-    console.warn('[Category] execute_sql 异常:', e?.message)
+    console.warn('[ExtraFields] execute_sql 异常:', e?.message)
     return false
   }
 }
 
 /**
- * 通过 execute_sql RPC 批量读取资产的 category（绕过 PostgREST schema cache）。
- * 当 REST API 的 .select('*') 因 schema cache 看不到 category 列而不返回该字段时使用。
- * 返回 Map<asset_code, category>。execute_sql 不存在或列不存在时返回空 Map。
+ * 通过 execute_sql RPC 批量读取资产的扩展字段（category/lessee_entity/lessee_manager），
+ * 绕过 PostgREST schema cache。
+ * 返回 Map<asset_code, {category, lessee_entity, lessee_manager}>。
+ * execute_sql 不存在或列不存在时返回空 Map。
  */
-export async function fetchCategoriesViaSQL(assetCodes: string[]): Promise<Map<string, string>> {
-  const out = new Map<string, string>()
+export async function fetchAssetExtraFieldsViaSQL(assetCodes: string[]): Promise<Map<string, Record<string, string>>> {
+  const out = new Map<string, Record<string, string>>()
   if (!assetCodes || assetCodes.length === 0) return out
   try {
     const inList = assetCodes
@@ -1194,23 +1214,26 @@ export async function fetchCategoriesViaSQL(assetCodes: string[]): Promise<Map<s
       .map(c => `'${c.replace(/'/g, "''")}'`)
       .join(',')
     if (!inList) return out
-    const sql = `SELECT asset_code, category FROM assets WHERE asset_code IN (${inList});`
+    const sql = `SELECT asset_code, category, lessee_entity, lessee_manager FROM assets WHERE asset_code IN (${inList});`
     const { data, error } = await supabase.rpc('execute_sql', { sql })
 
     // 如果列不存在，自动添加后再读
-    const missingCol = error && /column|does not exist|category/i.test(error.message || '')
+    const missingCol = error && /column|does not exist/i.test(error.message || '')
     if (error && missingCol) {
-      console.warn('[Category] fetchCategoriesViaSQL 检测到列不存在，尝试自动添加')
-      const { error: alterErr } = await supabase.rpc('execute_sql', {
-        sql: `ALTER TABLE assets ADD COLUMN IF NOT EXISTS category VARCHAR(50) DEFAULT '';`
-      })
-      if (!alterErr) {
-        try { await supabase.rpc('execute_sql', { sql: "NOTIFY pgrst, 'reload schema';" }) } catch { /* ignore */ }
+      console.warn('[ExtraFields] 检测到扩展列不存在，尝试自动添加')
+      const alterOk = await ensureExtraColumnsViaSQL()
+      if (alterOk) {
         const { data: retryData, error: retryErr } = await supabase.rpc('execute_sql', { sql })
         if (!retryErr) {
           const rows: any[] = parseExecuteSqlResult(retryData)
           for (const r of rows) {
-            if (r && r.asset_code) out.set(r.asset_code, r.category ?? '')
+            if (r && r.asset_code) {
+              out.set(r.asset_code, {
+                category: r.category ?? '',
+                lessee_entity: r.lessee_entity ?? '',
+                lessee_manager: r.lessee_manager ?? ''
+              })
+            }
           }
           return out
         }
@@ -1219,95 +1242,97 @@ export async function fetchCategoriesViaSQL(assetCodes: string[]): Promise<Map<s
     }
 
     if (error) {
-      console.warn('[Category] fetchCategoriesViaSQL 失败（execute_sql RPC 可能不存在）:', error.message)
+      console.warn('[ExtraFields] 读取失败（execute_sql RPC 可能不存在）:', error.message)
       return out
     }
     if (!isExecuteSqlSuccess(data)) {
-      console.warn('[Category] fetchCategoriesViaSQL 返回错误:', (data as any)?.error)
+      console.warn('[ExtraFields] 返回错误:', (data as any)?.error)
       return out
     }
     const rows: any[] = parseExecuteSqlResult(data)
     for (const r of rows) {
       if (r && r.asset_code) {
-        out.set(r.asset_code, r.category ?? '')
+        out.set(r.asset_code, {
+          category: r.category ?? '',
+          lessee_entity: r.lessee_entity ?? '',
+          lessee_manager: r.lessee_manager ?? ''
+        })
       }
     }
     return out
   } catch (e: any) {
-    console.warn('[Category] fetchCategoriesViaSQL 异常:', e?.message)
+    console.warn('[ExtraFields] 读取异常:', e?.message)
     return out
   }
 }
 
 /**
- * 健壮的资产更新：完全规避 PostgREST schema cache 看不到 category 列的问题。
+ * 健壮的资产更新：完全规避 PostgREST schema cache 看不到扩展列（category/lessee_*）的问题。
  *
  * 策略（双通道，完全不依赖错误信息关键字匹配）：
- *   A. 数据中不带 category → 直接走普通 REST API 更新
- *   B. 数据中带 category →
- *       1) 先剥离 category，用 REST API 更新其余所有字段（100% 不依赖 schema cache）
- *       2) 再用 execute_sql RPC 单独写 category（直接在 DB 层执行 UPDATE，绕过 PostgREST）
+ *   A. 数据中不带扩展字段 → 直接走普通 REST API 更新
+ *   B. 数据中带扩展字段 →
+ *       1) 先剥离扩展字段，用 REST API 更新其余所有字段（100% 不依赖 schema cache）
+ *       2) 再用 execute_sql RPC 一次性写所有扩展字段（直接在 DB 层执行 UPDATE，绕过 PostgREST）
  *
  * 返回值：
- *   - error: 主流程错误（非 category 字段更新失败时返回）。null 表示其他字段已成功更新。
- *   - categoryError: category 单独写入失败的错误信息。非空时说明分类没保存，
+ *   - error: 主流程错误（非扩展字段更新失败时返回）。null 表示其他字段已成功更新。
+ *   - extraError: 扩展字段单独写入失败的错误信息。非空时说明分类/承租信息没保存，
  *     通常是因为 execute_sql RPC 函数未创建，需要在 Supabase Dashboard 执行 SQL 脚本。
  */
 export async function updateAssetRobust(
   assetCode: string,
   data: Record<string, any>
-): Promise<{ error: any | null; categoryError?: string | null }> {
+): Promise<{ error: any | null; extraError?: string | null }> {
   if (!assetCode) return { error: new Error('asset_code is required') }
 
   const payload = { ...data, updated_at: new Date().toISOString() }
-  const hasCategory = 'category' in payload
 
-  // ===== 路径 A：数据里没有 category → 直接走 REST API =====
-  if (!hasCategory) {
-    const { error } = await supabase
-      .from('assets')
-      .update(payload)
-      .eq('asset_code', assetCode)
-    return { error }
+  // 剥离扩展字段
+  const extraFields: Record<string, string> = {}
+  const rest: Record<string, any> = {}
+  for (const [k, v] of Object.entries(payload)) {
+    if ((EXTRA_SQL_FIELDS as readonly string[]).includes(k)) {
+      if (v !== undefined && v !== null) extraFields[k] = String(v)
+    } else {
+      rest[k] = v
+    }
   }
 
-  // ===== 路径 B：数据里有 category → 用分离更新模式 =====
-  const { category: catVal, ...rest } = payload
-
-  // B1：先用 REST API 更新除 category 外的所有字段
+  // 1：先用 REST API 更新除扩展字段外的所有字段
   const { error: restErr } = await supabase
     .from('assets')
     .update(rest)
     .eq('asset_code', assetCode)
   if (restErr) {
-    console.error('[Category] 通道 B1（REST 更新非 category 字段）失败:', restErr.message)
+    console.error('[ExtraFields] REST 更新基础字段失败:', restErr.message)
     return { error: restErr }
   }
 
-  // B2：用 execute_sql RPC 单独写 category（绕过 PostgREST schema cache）
-  if (catVal !== undefined && catVal !== null) {
-    const sqlOk = await updateAssetCategoryViaSQL(assetCode, String(catVal))
+  // 2：用 execute_sql RPC 一次性写所有扩展字段（绕过 PostgREST schema cache）
+  if (Object.keys(extraFields).length > 0) {
+    const sqlOk = await updateAssetExtraFieldsViaSQL(assetCode, extraFields)
     if (!sqlOk) {
-      // B2 失败 → 尝试兜底 REST 写入（schema cache 可能已被其他操作刷新）
+      // SQL 通道失败 → 尝试兜底 REST 写入（schema cache 可能已被其他操作刷新）
       let fallbackOk = false
       try {
         const { error: fallbackErr } = await supabase
           .from('assets')
-          .update({ category: catVal, updated_at: payload.updated_at })
+          .update({ ...extraFields, updated_at: payload.updated_at })
           .eq('asset_code', assetCode)
         if (!fallbackErr) {
           fallbackOk = true
         } else {
-          console.warn('[Category] 兜底 REST 写入也失败:', fallbackErr.message)
+          console.warn('[ExtraFields] 兜底 REST 写入也失败:', fallbackErr.message)
         }
       } catch (e: any) {
-        console.warn('[Category] 兜底 REST 异常:', e?.message)
+        console.warn('[ExtraFields] 兜底 REST 异常:', e?.message)
       }
       if (!fallbackOk) {
-        // B2 和兜底都失败 → category 未保存。返回明确的错误信息让前端提示用户。
+        // SQL 通道和兜底都失败 → 扩展字段未保存。返回明确的错误信息让前端提示用户。
         return {
           error: null, // 其他字段已成功更新，主流程不报错
-          categoryError: '分类未保存：数据库缺少 execute_sql 函数或 category 列不可用。请在 Supabase Dashboard 的 SQL Editor 中执行 sql/create-execute-sql-rpc.sql 脚本。'
+          extraError: '分类/承租信息未保存：数据库缺少 execute_sql 函数或扩展列不可用。请在 Supabase Dashboard 的 SQL Editor 中执行 sql/init-all.sql 脚本。'
         }
       }
     }
@@ -1318,57 +1343,54 @@ export async function updateAssetRobust(
 
 /**
  * 健壮的资产新增：和 updateAssetRobust 相同的双通道思路。
- *   A. 无 category → 直接 REST INSERT
- *   B. 有 category →
- *       1) 剥 category 先 REST INSERT（保证不会因 schema cache 看不到列而报错）
- *       2) 再用 execute_sql RPC 单独 UPDATE 写 category（绕过 PostgREST）
+ *   A. 无扩展字段 → 直接 REST INSERT
+ *   B. 有扩展字段（category/lessee_*）→
+ *       1) 剥离扩展字段先 REST INSERT（保证不会因 schema cache 看不到列而报错）
+ *       2) 再用 execute_sql RPC 单独 UPDATE 写扩展字段（绕过 PostgREST）
  *
  * 返回 { data: 插入的行[], error: null } 或 { data: null, error }
  */
 export async function insertAssetRobust(
   data: Record<string, any>
 ): Promise<{ data: any[] | null; error: any | null }> {
-  const hasCategory = 'category' in data && data.category !== '' && data.category != null
-
-  // ===== 路径 A：没有 category 字段 → 直接 REST INSERT =====
-  if (!hasCategory) {
-    const { data: inserted, error } = await supabase
-      .from('assets')
-      .insert(data)
-      .select()
-    return { data: inserted, error }
+  // 剥离非空的扩展字段
+  const extraFields: Record<string, string> = {}
+  const rest: Record<string, any> = {}
+  for (const [k, v] of Object.entries(data)) {
+    if ((EXTRA_SQL_FIELDS as readonly string[]).includes(k)) {
+      if (v !== '' && v !== undefined && v !== null) extraFields[k] = String(v)
+    } else {
+      rest[k] = v
+    }
   }
 
-  // ===== 路径 B：有 category → 分离写入 =====
-  const { category: catVal, ...rest } = data
-
-  // B1：先 REST INSERT（不带 category）
+  // 1：先 REST INSERT（不带扩展字段）
   const { data: inserted, error: insertErr } = await supabase
     .from('assets')
     .insert(rest)
     .select()
   if (insertErr) {
-    console.error('[Category] 通道 B1（REST INSERT 无 category）失败:', insertErr.message)
+    console.error('[ExtraFields] REST INSERT 失败:', insertErr.message)
     return { data: null, error: insertErr }
   }
 
-  // B2：用 execute_sql RPC 单独 UPDATE 写入 category
-  if (inserted && inserted.length > 0 && inserted[0].asset_code) {
-    const sqlOk = await updateAssetCategoryViaSQL(inserted[0].asset_code, String(catVal))
+  // 2：用 execute_sql RPC 单独 UPDATE 写入扩展字段
+  if (Object.keys(extraFields).length > 0 && inserted && inserted.length > 0 && inserted[0].asset_code) {
+    const sqlOk = await updateAssetExtraFieldsViaSQL(inserted[0].asset_code, extraFields)
     if (!sqlOk) {
-      console.warn('[Category] 通道 B2（execute_sql 写 category）失败，尝试 REST 兜底')
-      // 兜底：单独 REST UPDATE category（此时列可能刚好可见了）
+      console.warn('[ExtraFields] execute_sql 写扩展字段失败，尝试 REST 兜底')
+      // 兜底：单独 REST UPDATE（此时列可能刚好可见了）
       try {
         const { error: fallbackErr } = await supabase
           .from('assets')
-          .update({ category: catVal, updated_at: new Date().toISOString() })
+          .update({ ...extraFields, updated_at: new Date().toISOString() })
           .eq('asset_code', inserted[0].asset_code)
         if (fallbackErr) {
-          console.error('[Category] 兜底 REST UPDATE category 失败:', fallbackErr.message, '（资产已创建，但分类未写入）')
-          // 不整体失败，因为资产已经插入成功了；分类只是没写进去
+          console.error('[ExtraFields] 兜底 REST UPDATE 失败:', fallbackErr.message, '（资产已创建，但扩展字段未写入）')
+          // 不整体失败，因为资产已经插入成功了；扩展字段只是没写进去
         }
       } catch (e: any) {
-        console.error('[Category] 兜底 REST 异常:', e?.message)
+        console.error('[ExtraFields] 兜底 REST 异常:', e?.message)
       }
     }
   }
