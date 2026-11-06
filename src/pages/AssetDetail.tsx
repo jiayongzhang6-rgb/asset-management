@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '../App'
 import toast from 'react-hot-toast'
-import { supabase, type Asset, type MaintenanceRecord, type AssetImage, type UsageHistoryRecord, formatUserIdentifier, formatMemory, formatStorage, getStatusText, getStatusColor, getOperationTypeText, getOperationTypeColor, recordAllHistory, getBeijingTime, updateAssetRobust, saveAssetSnapshot, fetchAssetExtraFieldsViaSQL } from '../lib/supabase'
+import { supabase, type Asset, type MaintenanceRecord, type AssetImage, type UsageHistoryRecord, formatUserIdentifier, formatMemory, formatStorage, getStatusText, getStatusColor, getOperationTypeText, getOperationTypeColor, recordAllHistory, getBeijingTime, updateAssetRobust, saveAssetSnapshot, fetchAssetExtraFieldsViaSQL, fetchLinkedAssetsByParent, updateAssetExtraFieldsViaSQL } from '../lib/supabase'
 
 const categories = ['笔记本', '台式机', '显示器', '外设', '服务器', '网络设备', '其他']
 
@@ -21,6 +21,10 @@ export default function AssetDetail() {
   const [qrCodeUrl, setQrCodeUrl] = useState('')
   const [assetHistory, setAssetHistory] = useState<UsageHistoryRecord[]>([])
   const [assetImages, setAssetImages] = useState<AssetImage[]>([])
+  // 关联设备（外设：显示器/键鼠等，parent_asset_code = 本机编码）
+  const [linkedAssets, setLinkedAssets] = useState<Asset[]>([])
+  const [linkCodeInput, setLinkCodeInput] = useState('')
+  const [linking, setLinking] = useState(false)
   const [isImageUploadDialogOpen, setIsImageUploadDialogOpen] = useState(false)
   const [uploading, setUploading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -37,6 +41,7 @@ export default function AssetDetail() {
     department: '',
     lessee_entity: '',
     lessee_manager: '',
+    parent_asset_code: '',
     user_name: '',
     location: '',
     status: 'active',
@@ -141,6 +146,7 @@ export default function AssetDetail() {
           department: assetData.department || '',
           lessee_entity: assetData.lessee_entity || '',
           lessee_manager: assetData.lessee_manager || '',
+          parent_asset_code: assetData.parent_asset_code || '',
           user_name: assetData.user_name || '',
           location: assetData.location || '',
           status: assetData.status || 'active',
@@ -218,11 +224,97 @@ export default function AssetDetail() {
     fetchAsset()
   }, [id])
 
+  // 加载关联设备（外设）
+  const fetchLinked = async () => {
+    if (!asset?.asset_code) {
+      setLinkedAssets([])
+      return
+    }
+    const list = await fetchLinkedAssetsByParent(asset.asset_code)
+    if (list.length === 0) {
+      setLinkedAssets([])
+      return
+    }
+    // 补读扩展字段（分类可能不在 schema cache 中）
+    try {
+      const extras = await fetchAssetExtraFieldsViaSQL(list.map(a => a.asset_code))
+      setLinkedAssets(list.map(a => ({
+        ...a,
+        category: extras.get(a.asset_code)?.category ?? a.category
+      })))
+    } catch {
+      setLinkedAssets(list)
+    }
+  }
+
   useEffect(() => {
     fetchAssetHistory()
     fetchMaintenanceRecords()
     fetchAssetImages()
+    fetchLinked()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [asset])
+
+  // 关联一台已有资产到当前主机
+  const handleLinkAsset = async () => {
+    if (!user?.role || user.role !== 'admin') {
+      toast.error('只有管理员可以关联设备')
+      return
+    }
+    if (!asset) return
+    const code = linkCodeInput.trim()
+    if (!code) {
+      toast.error('请输入要关联的资产编码')
+      return
+    }
+    if (code === asset.asset_code) {
+      toast.error('不能关联自身')
+      return
+    }
+    if (linkedAssets.some(a => a.asset_code === code)) {
+      toast.error('该资产已关联到本机')
+      return
+    }
+    setLinking(true)
+    try {
+      const { data, error } = await supabase
+        .from('assets_public')
+        .select('*')
+        .eq('asset_code', code)
+      if (error) throw error
+      if (!data || data.length === 0) throw new Error('未找到该资产编码，请确认已先在资产列表中创建')
+
+      const ok = await updateAssetExtraFieldsViaSQL(code, { parent_asset_code: asset.asset_code })
+      if (!ok) throw new Error('关联失败：数据库扩展列不可用，请联系管理员执行 sql/init-all.sql')
+
+      if (user?.email) {
+        await recordAllHistory(code, 'update', user.email, `关联到主机: ${asset.asset_code}`)
+      }
+      setLinkCodeInput('')
+      await fetchLinked()
+      toast.success('关联成功')
+    } catch (e: any) {
+      toast.error(`关联失败: ${e?.message || e}`)
+    } finally {
+      setLinking(false)
+    }
+  }
+
+  // 解除关联
+  const handleUnlinkAsset = async (code: string) => {
+    if (!window.confirm(`确定解除 ${code} 与本机的关联吗？`)) return
+    try {
+      const ok = await updateAssetExtraFieldsViaSQL(code, { parent_asset_code: '' })
+      if (!ok) throw new Error('解除失败：数据库扩展列不可用')
+      if (user?.email && asset) {
+        await recordAllHistory(code, 'update', user.email, `解除与主机 ${asset.asset_code} 的关联`)
+      }
+      await fetchLinked()
+      toast.success('已解除关联')
+    } catch (e: any) {
+      toast.error(`解除失败: ${e?.message || e}`)
+    }
+  }
 
  const handleEditSubmit = async (e: React.FormEvent) => {
   e.preventDefault()
@@ -263,6 +355,7 @@ export default function AssetDetail() {
     if (updateData.department !== asset.department) changes.push(`部门: ${asset.department || '无'} → ${updateData.department || '无'}`)
     if (updateData.lessee_entity !== undefined && updateData.lessee_entity !== (asset.lessee_entity || '')) changes.push(`承租主体: ${asset.lessee_entity || '无'} → ${updateData.lessee_entity || '无'}`)
     if (updateData.lessee_manager !== undefined && updateData.lessee_manager !== (asset.lessee_manager || '')) changes.push(`承租负责人: ${asset.lessee_manager || '无'} → ${updateData.lessee_manager || '无'}`)
+    if (updateData.parent_asset_code !== undefined && updateData.parent_asset_code !== (asset.parent_asset_code || '')) changes.push(`所属主机: ${asset.parent_asset_code || '无'} → ${updateData.parent_asset_code || '无'}`)
     if (updateData.user_name !== asset.user_name) changes.push(`使用人: ${asset.user_name || '无'} → ${updateData.user_name || '无'}`)
     if (updateData.location !== asset.location) changes.push(`位置: ${asset.location || '无'} → ${updateData.location || '无'}`)
     if (updateData.status && updateData.status !== asset.status) changes.push(`状态: ${getStatusText(asset.status)} → ${getStatusText(updateData.status)}`)
@@ -793,6 +886,21 @@ export default function AssetDetail() {
                   <span className="text-sm font-medium text-gray-900">{asset.lessee_manager || <span className="text-gray-400">-</span>}</span>
                 </div>
                 <div className="flex items-center justify-between py-2 border-b border-gray-50">
+                  <span className="text-sm text-gray-500">所属主机</span>
+                  <span className="text-sm font-medium text-gray-900">
+                    {asset.parent_asset_code ? (
+                      <button
+                        type="button"
+                        onClick={() => navigate(`/asset/${asset.parent_asset_code}`)}
+                        className="text-blue-600 hover:underline font-mono"
+                        title="查看主机详情"
+                      >
+                        {asset.parent_asset_code}
+                      </button>
+                    ) : <span className="text-gray-400">-</span>}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between py-2 border-b border-gray-50">
                   <span className="text-sm text-gray-500">使用人</span>
                   <span className="text-sm font-medium text-gray-900">{asset.user_name || <span className="text-gray-400">-</span>}</span>
                 </div>
@@ -831,6 +939,96 @@ export default function AssetDetail() {
               {asset.notes || <span className="text-gray-400 italic">暂无备注</span>}
             </div>
           </div>
+        </div>
+
+        {/* 关联设备（外设：显示器 / 键鼠 / 其他） */}
+        <div className="card mb-6">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 bg-cyan-50 rounded-lg flex items-center justify-center">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-cyan-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h8m-8 4h8m-8 4h5M5 3h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2z" />
+                </svg>
+              </div>
+              <h3 className="text-lg font-semibold text-gray-900">关联设备</h3>
+              <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">{linkedAssets.length}</span>
+            </div>
+            {user?.role === 'admin' && (
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  className="input !w-44 text-sm"
+                  placeholder="输入外设资产编码"
+                  value={linkCodeInput}
+                  onChange={(e) => setLinkCodeInput(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleLinkAsset() } }}
+                />
+                <button
+                  type="button"
+                  onClick={handleLinkAsset}
+                  disabled={linking}
+                  className="btn btn-primary text-sm !py-2"
+                >
+                  {linking ? '关联中...' : '关联'}
+                </button>
+              </div>
+            )}
+          </div>
+          <p className="text-xs text-gray-400 mb-3">
+            显示器、键鼠及其他外设请先在资产列表中新增（系统会分配固定编码），再在此填写其编码进行关联。
+          </p>
+          {linkedAssets.length === 0 ? (
+            <div className="text-center py-8 bg-gray-50 rounded-lg border-2 border-dashed border-gray-200">
+              <p className="text-sm text-gray-400">暂无关联设备</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-gray-100 text-gray-500">
+                    <th className="text-left py-2 px-2 font-medium">资产编码</th>
+                    <th className="text-left py-2 px-2 font-medium">分类</th>
+                    <th className="text-left py-2 px-2 font-medium">品牌 / 型号</th>
+                    <th className="text-left py-2 px-2 font-medium">状态</th>
+                    <th className="text-right py-2 px-2 font-medium">操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {linkedAssets.map(la => (
+                    <tr key={la.asset_code} className="border-b border-gray-50 hover:bg-gray-50/60">
+                      <td className="py-2 px-2">
+                        <button
+                          type="button"
+                          onClick={() => navigate(`/asset/${la.asset_code}`)}
+                          className="font-mono text-blue-600 hover:underline"
+                        >
+                          {la.asset_code}
+                        </button>
+                      </td>
+                      <td className="py-2 px-2 text-gray-700">{la.category || '-'}</td>
+                      <td className="py-2 px-2 text-gray-700">{la.brand || '-'} {la.model || ''}</td>
+                      <td className="py-2 px-2">
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${getStatusColor(la.status)}`}>
+                          {getStatusText(la.status)}
+                        </span>
+                      </td>
+                      <td className="py-2 px-2 text-right">
+                        {user?.role === 'admin' && (
+                          <button
+                            type="button"
+                            onClick={() => handleUnlinkAsset(la.asset_code)}
+                            className="text-red-600 hover:text-red-800 text-xs"
+                          >
+                            解除关联
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
 
         {/* 资产图片 */}
@@ -1172,6 +1370,16 @@ export default function AssetDetail() {
                         value={formData.lessee_manager}
                         onChange={(e) => setFormData({ ...formData, lessee_manager: e.target.value })}
                         placeholder="如：张三"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1.5">所属主机编码</label>
+                      <input
+                        type="text"
+                        className="input"
+                        value={formData.parent_asset_code}
+                        onChange={(e) => setFormData({ ...formData, parent_asset_code: e.target.value })}
+                        placeholder="外设填写主机资产编码；主机留空"
                       />
                     </div>
                   </>

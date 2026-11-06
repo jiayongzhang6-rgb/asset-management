@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../App'
 import toast from 'react-hot-toast'
 import * as XLSX from 'xlsx'
-import { supabase, type Asset, initDatabase, formatUserIdentifier, formatMemory, formatStorage, getStatusText, getStatusColor, recordAllHistory, generateUniqueAssetCode, sanitizeAssetData, isCategorySupportedSync, saveAssetSnapshot, formatHardwareSpec, estimateAssetValue, estimateAssetValueWithAI, batchEstimateAssetValueWithAI, getAIValuationConfig, type AIValResult, restoreAIValuationsFromCache, syncResolveAIValuation, fetchAssetExtraFieldsViaSQL, updateAssetRobust, insertAssetRobust, isAIForceDisabled, getAIDailyUsage } from '../lib/supabase'
+import { supabase, type Asset, initDatabase, formatUserIdentifier, formatMemory, formatStorage, getStatusText, getStatusColor, recordAllHistory, generateUniqueAssetCode, sanitizeAssetData, isCategorySupportedSync, saveAssetSnapshot, formatHardwareSpec, estimateAssetValue, estimateAssetValueWithAI, batchEstimateAssetValueWithAI, getAIValuationConfig, type AIValResult, restoreAIValuationsFromCache, syncResolveAIValuation, fetchAssetExtraFieldsViaSQL, fetchDistinctExtraValues, updateAssetRobust, insertAssetRobust, isAIForceDisabled, getAIDailyUsage } from '../lib/supabase'
 import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js'
 import { Pie } from 'react-chartjs-2'
 
@@ -11,6 +11,69 @@ import { Pie } from 'react-chartjs-2'
 ChartJS.register(ArcElement, Tooltip, Legend)
 
 const categories = ['笔记本', '台式机', '显示器', '外设', '服务器', '网络设备', '其他']
+
+// 通用多选筛选下拉框（部门 / 承租主体 / 承租负责人复用）
+function MultiSelectFilter({
+  label,
+  options,
+  selected,
+  onChange,
+  emptyText = '暂无数据'
+}: {
+  label: string
+  options: string[]
+  selected: string[]
+  onChange: (next: string[]) => void
+  emptyText?: string
+}) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen(v => !v)}
+        className="w-auto text-sm px-3 py-2 border rounded-md bg-white flex items-center gap-1 hover:bg-gray-50"
+      >
+        {selected.length === 0 ? label : `${label}(${selected.length})`}
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+          <div className="absolute z-20 mt-1 w-56 max-h-64 overflow-y-auto bg-white border rounded-md shadow-lg p-2">
+            <div className="flex justify-between items-center mb-2 pb-2 border-b">
+              <button type="button" onClick={() => onChange([])} className="text-xs text-blue-600 hover:underline">
+                清空
+              </button>
+              <span className="text-xs text-gray-500">已选 {selected.length}</span>
+            </div>
+            {options.length === 0 && (
+              <div className="text-xs text-gray-400 py-2 text-center">{emptyText}</div>
+            )}
+            {options.map(opt => (
+              <label
+                key={opt}
+                className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-gray-50 cursor-pointer text-sm"
+              >
+                <input
+                  type="checkbox"
+                  checked={selected.includes(opt)}
+                  onChange={(e) =>
+                    onChange(e.target.checked ? [...selected, opt] : selected.filter(d => d !== opt))
+                  }
+                  className="rounded"
+                />
+                <span className="truncate">{opt}</span>
+              </label>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
 
 export default function Index() {
   const navigate = useNavigate()
@@ -40,6 +103,7 @@ export default function Index() {
     department: '',
     lessee_entity: '',
     lessee_manager: '',
+    parent_asset_code: '',
     user_name: '',
     location: '',
     status: 'active',
@@ -53,6 +117,10 @@ export default function Index() {
   // 筛选相关状态
   const [statusFilter, setStatusFilter] = useState('all') // all, active, idle, maintenance, retired
   const [departmentFilter, setDepartmentFilter] = useState<string[]>([]) // 多选：空数组=全部
+  const [lesseeEntityFilter, setLesseeEntityFilter] = useState<string[]>([]) // 承租主体多选
+  const [lesseeManagerFilter, setLesseeManagerFilter] = useState<string[]>([]) // 承租负责人多选
+  const [lesseeEntities, setLesseeEntities] = useState<string[]>([]) // 承租主体可选项
+  const [lesseeManagers, setLesseeManagers] = useState<string[]>([]) // 承租负责人可选项
   // 高级筛选
   const [showAdvancedSearch, setShowAdvancedSearch] = useState(false)
   const [advancedFilters, setAdvancedFilters] = useState({
@@ -156,6 +224,14 @@ export default function Index() {
         .not('category', 'eq', '')
       const uniqueCategories = [...new Set((catData || []).map(a => a.category))].filter(c => c)
       setCategoriesFilter(uniqueCategories)
+
+      // 获取承租主体 / 承租负责人（走 execute_sql 直连 DB，避免 schema cache 看不到新列）
+      const [entities, managers] = await Promise.all([
+        fetchDistinctExtraValues('lessee_entity'),
+        fetchDistinctExtraValues('lessee_manager')
+      ])
+      setLesseeEntities(entities)
+      setLesseeManagers(managers)
     } catch (error) {
       console.error('Error fetching departments:', error)
     }
@@ -212,90 +288,104 @@ export default function Index() {
           })
         }
       }
+      // ===== 扩展字段补读（category/承租主体/承租负责人/所属主机） =====
+      // PostgREST schema cache 可能看不到这些列，导致 .select('*') 不返回对应字段。
+      // 这里通过 execute_sql RPC 直接从 DB 读取，覆盖到前端数据中。
+      let mergeExtra: (a: Asset) => Asset = (a) => a
+      if (filteredAllData.length > 0) {
+        try {
+          const allCodes = filteredAllData.map(a => a.asset_code).filter(Boolean)
+          const extraMap = await fetchAssetExtraFieldsViaSQL(allCodes)
+          if (extraMap.size > 0) {
+            mergeExtra = (a: Asset): Asset => {
+              const extra = extraMap.get(a.asset_code)
+              if (!extra) return a
+              return {
+                ...a,
+                category: extra.category ?? a.category,
+                lessee_entity: extra.lessee_entity ?? '',
+                lessee_manager: extra.lessee_manager ?? '',
+                parent_asset_code: extra.parent_asset_code ?? ''
+              }
+            }
+            filteredAllData = filteredAllData.map(mergeExtra)
+          }
+        } catch (e) {
+          // 忽略，execute_sql 可能不存在
+        }
+      }
+
+      // ===== 承租主体 / 承租负责人 筛选（前端过滤） =====
+      // 这两列不在 PostgREST schema cache 中，无法用后端 .eq/.or 过滤，故在前端处理
+      if (lesseeEntityFilter.length > 0) {
+        filteredAllData = filteredAllData.filter(a => lesseeEntityFilter.includes(a.lessee_entity || ''))
+      }
+      if (lesseeManagerFilter.length > 0) {
+        filteredAllData = filteredAllData.filter(a => lesseeManagerFilter.includes(a.lessee_manager || ''))
+      }
       setAllAssets(filteredAllData)
 
       // 2. 获取分页数据
       const offset = (page - 1) * pageSize
-      let query = supabase.from('assets_public').select('*', { count: 'exact' })
-      if (searchTerm) {
-        query = query.or(`asset_code.ilike.%${searchTerm}%,brand.ilike.%${searchTerm}%,model.ilike.%${searchTerm}%,department.ilike.%${searchTerm}%,user_name.ilike.%${searchTerm}%`)
-      }
-      if (statusFilter !== 'all') {
-        query = query.eq('status', statusFilter)
-      }
-      if (departmentFilter.length > 0) {
-        const deptOr = departmentFilter.map(d => `department.eq.${d.replace(/,/g, '%2C')}`).join(',')
-        query = query.or(deptOr)
-      }
-      if (advancedFilters.category && catSupported) {
-        query = query.eq('category', advancedFilters.category)
-      }
-      if (advancedFilters.brand) {
-        query = query.ilike('brand', `%${advancedFilters.brand}%`)
-      }
-      const { data, error, count } = await query.range(offset, offset + pageSize - 1)
-      if (error) throw error
+      const lesseeFilterActive = lesseeEntityFilter.length > 0 || lesseeManagerFilter.length > 0
 
-      // 前端过滤：内存、存储 + （后端不支持 category 时在此补上）
-      let pageData = data || []
-      if (advancedFilters.category && !catSupported) {
-        pageData = pageData.filter((a: any) => a.category === advancedFilters.category)
-      }
-      if (advancedFilters.minMemory) {
-        const minMem = parseFloat(advancedFilters.minMemory)
-        if (!isNaN(minMem)) {
-          pageData = pageData.filter(a => {
-            const val = parseFloat(a.ram)
-            return !isNaN(val) && val >= minMem
-          })
+      if (lesseeFilterActive) {
+        // 承租筛选激活时，全量数据已在内存中 → 本地分页，保证统计与分页一致
+        setAssets(filteredAllData.slice(offset, offset + pageSize))
+        setTotalAssets(filteredAllData.length)
+      } else {
+        let query = supabase.from('assets_public').select('*', { count: 'exact' })
+        if (searchTerm) {
+          query = query.or(`asset_code.ilike.%${searchTerm}%,brand.ilike.%${searchTerm}%,model.ilike.%${searchTerm}%,department.ilike.%${searchTerm}%,user_name.ilike.%${searchTerm}%`)
         }
-      }
-      if (advancedFilters.minStorage) {
-        const minStor = parseFloat(advancedFilters.minStorage)
-        if (!isNaN(minStor)) {
-          pageData = pageData.filter(a => {
-            const val = parseFloat(a.storage)
-            return !isNaN(val) && val >= minStor
-          })
+        if (statusFilter !== 'all') {
+          query = query.eq('status', statusFilter)
         }
-      }
+        if (departmentFilter.length > 0) {
+          const deptOr = departmentFilter.map(d => `department.eq.${d.replace(/,/g, '%2C')}`).join(',')
+          query = query.or(deptOr)
+        }
+        if (advancedFilters.category && catSupported) {
+          query = query.eq('category', advancedFilters.category)
+        }
+        if (advancedFilters.brand) {
+          query = query.ilike('brand', `%${advancedFilters.brand}%`)
+        }
+        const { data, error, count } = await query.range(offset, offset + pageSize - 1)
+        if (error) throw error
 
-      setAssets(pageData)
-      setTotalAssets(count || 0)
-      console.log('Index: Assets fetched successfully', pageData)
+        // 前端过滤：内存、存储 + （后端不支持 category 时在此补上）
+        let pageData = data || []
+        if (advancedFilters.category && !catSupported) {
+          pageData = pageData.filter((a: any) => a.category === advancedFilters.category)
+        }
+        if (advancedFilters.minMemory) {
+          const minMem = parseFloat(advancedFilters.minMemory)
+          if (!isNaN(minMem)) {
+            pageData = pageData.filter(a => {
+              const val = parseFloat(a.ram)
+              return !isNaN(val) && val >= minMem
+            })
+          }
+        }
+        if (advancedFilters.minStorage) {
+          const minStor = parseFloat(advancedFilters.minStorage)
+          if (!isNaN(minStor)) {
+            pageData = pageData.filter(a => {
+              const val = parseFloat(a.storage)
+              return !isNaN(val) && val >= minStor
+            })
+          }
+        }
+
+        setAssets(pageData.map(mergeExtra))
+        setTotalAssets(count || 0)
+      }
+      console.log('Index: Assets fetched successfully')
     } catch (error) {
       console.error('Error fetching assets:', error)
     } finally {
       setLoading(false)
-    }
-
-    // ===== 扩展字段补读（category/承租主体/承租负责人） =====
-    // PostgREST schema cache 可能看不到这些列，导致 .select('*') 不返回对应字段。
-    // 这里通过 execute_sql RPC 直接从 DB 读取，覆盖到前端数据中。
-    // 这样即使 schema cache 未刷新，分类与承租信息的读写都能正常工作。
-    if (filteredAllData.length > 0) {
-      try {
-        const allCodes = filteredAllData.map(a => a.asset_code).filter(Boolean)
-        const extraMap = await fetchAssetExtraFieldsViaSQL(allCodes)
-        if (extraMap.size > 0) {
-          const mergeExtra = (a: Asset): Asset => {
-            const extra = extraMap.get(a.asset_code)
-            if (!extra) return a
-            return {
-              ...a,
-              category: extra.category ?? a.category,
-              lessee_entity: extra.lessee_entity ?? '',
-              lessee_manager: extra.lessee_manager ?? ''
-            }
-          }
-          const mergedAll = filteredAllData.map(mergeExtra)
-          setAllAssets(mergedAll)
-          setAssets(prev => prev.map(mergeExtra))
-          filteredAllData = mergedAll
-        }
-      } catch (e) {
-        // 忽略，execute_sql 可能不存在
-      }
     }
 
     // 单独获取累计已缴租金（不随筛选变化）
@@ -343,20 +433,7 @@ export default function Index() {
 
   useEffect(() => {
     fetchAssets()
-  }, [page, pageSize, statusFilter, departmentFilter, advancedFilters])
-
-  // 点击外部关闭部门多选下拉框
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      const dropdown = document.getElementById('dept-multi-dropdown')
-      const btn = (e.target as HTMLElement)?.closest('button')
-      if (dropdown && !dropdown.contains(e.target as Node) && !btn?.textContent?.includes('部门')) {
-        dropdown.classList.add('hidden')
-      }
-    }
-    document.addEventListener('click', handler)
-    return () => document.removeEventListener('click', handler)
-  }, [])
+  }, [page, pageSize, statusFilter, departmentFilter, lesseeEntityFilter, lesseeManagerFilter, advancedFilters])
 
   // 处理从详情页传来的编辑请求
   useEffect(() => {
@@ -399,6 +476,7 @@ export default function Index() {
       department: '',
       lessee_entity: '',
       lessee_manager: '',
+      parent_asset_code: '',
       user_name: '',
       location: '',
       status: 'active',
@@ -526,6 +604,7 @@ export default function Index() {
       }
 
       await fetchAssets()
+      await fetchDepartmentsAndCategories()
       setIsAddDialogOpen(false)
       resetForm()
       toast.success('资产添加成功')
@@ -569,6 +648,7 @@ export default function Index() {
         if (updateData.department !== undefined && updateData.department !== asset.department) changes.push(`部门: ${asset.department || '无'} → ${updateData.department || '无'}`)
         if (updateData.lessee_entity !== undefined && updateData.lessee_entity !== (asset.lessee_entity || '')) changes.push(`承租主体: ${asset.lessee_entity || '无'} → ${updateData.lessee_entity || '无'}`)
         if (updateData.lessee_manager !== undefined && updateData.lessee_manager !== (asset.lessee_manager || '')) changes.push(`承租负责人: ${asset.lessee_manager || '无'} → ${updateData.lessee_manager || '无'}`)
+        if (updateData.parent_asset_code !== undefined && updateData.parent_asset_code !== (asset.parent_asset_code || '')) changes.push(`所属主机: ${asset.parent_asset_code || '无'} → ${updateData.parent_asset_code || '无'}`)
         if (updateData.user_name !== undefined && updateData.user_name !== asset.user_name) changes.push(`使用人: ${asset.user_name || '无'} → ${updateData.user_name || '无'}`)
         if (updateData.location !== undefined && updateData.location !== asset.location) changes.push(`位置: ${asset.location || '无'} → ${updateData.location || '无'}`)
         if (updateData.status !== undefined && updateData.status !== asset.status) changes.push(`状态: ${getStatusText(asset.status)} → ${getStatusText(updateData.status)}`)
@@ -597,6 +677,8 @@ export default function Index() {
         }
 
         await fetchAssets()
+        // 刷新承租主体/负责人筛选项
+        await fetchDepartmentsAndCategories()
         setIsEditDialogOpen(false)
         setEditingAsset(null)
         resetForm()
@@ -628,6 +710,7 @@ export default function Index() {
       department: asset.department || '',
       lessee_entity: asset.lessee_entity || '',
       lessee_manager: asset.lessee_manager || '',
+      parent_asset_code: asset.parent_asset_code || '',
       user_name: asset.user_name || '',
       location: asset.location || '',
       status: asset.status || 'active',
@@ -1094,7 +1177,7 @@ export default function Index() {
       </header>
 
       <main className="relative z-10 container mx-auto px-4 py-6" style={{ minHeight: '80vh' }}>
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7 gap-4 mb-6">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 mb-6">
           <div className="stat-card">
             <div className="flex items-center gap-3">
               <div className="stat-icon bg-blue-50 text-blue-600">
@@ -1105,6 +1188,32 @@ export default function Index() {
               <div className="min-w-0">
                 <p className="text-xs text-gray-500 font-medium">资产总数</p>
                 <p className="text-xl font-bold text-gray-900">{allAssets.filter(a => a.status !== 'retired').length}</p>
+              </div>
+            </div>
+          </div>
+          <div className="stat-card">
+            <div className="flex items-center gap-3">
+              <div className="stat-icon bg-sky-50 text-sky-600">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 19h18M5 19V5h14v14M9 9h6v6H9V9z" />
+                </svg>
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs text-gray-500 font-medium">笔记本数量</p>
+                <p className="text-xl font-bold text-sky-600">{allAssets.filter(a => a.category === '笔记本').length}</p>
+              </div>
+            </div>
+          </div>
+          <div className="stat-card">
+            <div className="flex items-center gap-3">
+              <div className="stat-icon bg-violet-50 text-violet-600">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4h16v12H4V4zm4 16h8m-4 0v-4m-6 4h12" />
+                </svg>
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs text-gray-500 font-medium">台式机数量</p>
+                <p className="text-xl font-bold text-violet-600">{allAssets.filter(a => a.category === '台式机').length}</p>
               </div>
             </div>
           </div>
@@ -1439,60 +1548,29 @@ export default function Index() {
             </div>
             <div className="flex flex-wrap gap-2 items-center">
               {/* 部门多选下拉框 */}
-              <div className="relative">
-                <button
-                  type="button"
-                  onClick={() => {
-                    const el = document.getElementById('dept-multi-dropdown')
-                    el?.classList.toggle('hidden')
-                  }}
-                  className="w-auto text-sm px-3 py-2 border rounded-md bg-white flex items-center gap-1 hover:bg-gray-50"
-                >
-                  {departmentFilter.length === 0 ? '全部部门' : `部门(${departmentFilter.length})`}
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                  </svg>
-                </button>
-                <div
-                  id="dept-multi-dropdown"
-                  className="hidden absolute z-20 mt-1 w-56 max-h-64 overflow-y-auto bg-white border rounded-md shadow-lg p-2"
-                >
-                  <div className="flex justify-between items-center mb-2 pb-2 border-b">
-                    <button
-                      type="button"
-                      onClick={() => setDepartmentFilter([])}
-                      className="text-xs text-blue-600 hover:underline"
-                    >清空</button>
-                    <span className="text-xs text-gray-500">已选 {departmentFilter.length}</span>
-                  </div>
-                  {departments.length === 0 && (
-                    <div className="text-xs text-gray-400 py-2 text-center">暂无部门数据</div>
-                  )}
-                  {departments.map(dept => {
-                    const checked = departmentFilter.includes(dept)
-                    return (
-                      <label
-                        key={dept}
-                        className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-gray-50 cursor-pointer text-sm"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setDepartmentFilter([...departmentFilter, dept])
-                            } else {
-                              setDepartmentFilter(departmentFilter.filter(d => d !== dept))
-                            }
-                          }}
-                          className="rounded"
-                        />
-                        <span className="truncate">{dept}</span>
-                      </label>
-                    )
-                  })}
-                </div>
-              </div>
+              <MultiSelectFilter
+                label="全部部门"
+                options={departments}
+                selected={departmentFilter}
+                onChange={setDepartmentFilter}
+                emptyText="暂无部门数据"
+              />
+              {/* 承租主体多选下拉框 */}
+              <MultiSelectFilter
+                label="全部承租主体"
+                options={lesseeEntities}
+                selected={lesseeEntityFilter}
+                onChange={setLesseeEntityFilter}
+                emptyText="暂无承租主体"
+              />
+              {/* 承租负责人多选下拉框 */}
+              <MultiSelectFilter
+                label="全部承租负责人"
+                options={lesseeManagers}
+                selected={lesseeManagerFilter}
+                onChange={setLesseeManagerFilter}
+                emptyText="暂无承租负责人"
+              />
               <select
                 className="w-auto text-sm"
                 value={statusFilter}
@@ -1894,6 +1972,16 @@ export default function Index() {
                         placeholder="如：张三"
                       />
                     </div>
+                    <div>
+                      <label className="block text-sm font-medium text-secondary-700 mb-1">所属主机编码</label>
+                      <input
+                        type="text"
+                        className="input"
+                        value={formData.parent_asset_code}
+                        onChange={(e) => setFormData({ ...formData, parent_asset_code: e.target.value })}
+                        placeholder="外设填写主机资产编码；主机留空"
+                      />
+                    </div>
                   </>
                 )}
                 <div>
@@ -2107,6 +2195,16 @@ export default function Index() {
                         value={formData.lessee_manager}
                         onChange={(e) => setFormData({ ...formData, lessee_manager: e.target.value })}
                         placeholder="如：张三"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">所属主机编码</label>
+                      <input
+                        type="text"
+                        className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        value={formData.parent_asset_code}
+                        onChange={(e) => setFormData({ ...formData, parent_asset_code: e.target.value })}
+                        placeholder="外设填写主机资产编码；主机留空"
                       />
                     </div>
                   </>

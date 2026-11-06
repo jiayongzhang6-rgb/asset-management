@@ -22,10 +22,12 @@ END $$;
 
 GRANT EXECUTE ON FUNCTION execute_sql(text) TO anon, authenticated;
 
--- 2. 确保扩展列存在（category=分类, lessee_entity=承租主体, lessee_manager=承租负责人）
+-- 2. 确保扩展列存在
+--    category=分类, lessee_entity=承租主体, lessee_manager=承租负责人, parent_asset_code=所属主机
 ALTER TABLE assets ADD COLUMN IF NOT EXISTS category VARCHAR(50) DEFAULT '';
 ALTER TABLE assets ADD COLUMN IF NOT EXISTS lessee_entity VARCHAR(100) DEFAULT '';
 ALTER TABLE assets ADD COLUMN IF NOT EXISTS lessee_manager VARCHAR(50) DEFAULT '';
+ALTER TABLE assets ADD COLUMN IF NOT EXISTS parent_asset_code VARCHAR(50) DEFAULT '';
 
 -- 3. AI 估值持久化列
 ALTER TABLE assets ADD COLUMN IF NOT EXISTS ai_fixed_value INTEGER;
@@ -52,4 +54,4 @@ NOTIFY pgrst, 'reload schema';
 -- 6. 验证
 SELECT column_name, data_type FROM information_schema.columns
 WHERE table_schema='public' AND table_name='assets'
-AND column_name IN ('category', 'lessee_entity', 'lessee_manager', 'ai_fixed_value', 'ai_current_value', 'ai_reason', 'ai_valuated_at');
+AND column_name IN ('category', 'lessee_entity', 'lessee_manager', 'parent_asset_code', 'ai_fixed_value', 'ai_current_value', 'ai_reason', 'ai_valuated_at');

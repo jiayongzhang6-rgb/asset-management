@@ -39,6 +39,8 @@ export interface Asset {
   department: string
   lessee_entity?: string
   lessee_manager?: string
+  /** 所属主机资产编码：外设（显示器/键鼠等）通过该字段关联到主机；主机本字段为空 */
+  parent_asset_code?: string
   user_name: string
   location: string
   status: AssetStatus | string
@@ -1112,8 +1114,8 @@ export function warmUpCategoryCheck(): void {
 }
 
 // 需要走 execute_sql 通道的扩展字段（PostgREST schema cache 可能看不到这些新列）
-// category=分类, lessee_entity=承租主体, lessee_manager=承租负责人
-const EXTRA_SQL_FIELDS = ['category', 'lessee_entity', 'lessee_manager'] as const
+// category=分类, lessee_entity=承租主体, lessee_manager=承租负责人, parent_asset_code=所属主机
+const EXTRA_SQL_FIELDS = ['category', 'lessee_entity', 'lessee_manager', 'parent_asset_code'] as const
 
 // 在发送给 Supabase 之前，如果扩展列不可用则剥离这些字段
 export async function sanitizeAssetData<T extends Record<string, any>>(data: T): Promise<T> {
@@ -1146,6 +1148,7 @@ async function ensureExtraColumnsViaSQL(): Promise<boolean> {
       ALTER TABLE assets ADD COLUMN IF NOT EXISTS category VARCHAR(50) DEFAULT '';
       ALTER TABLE assets ADD COLUMN IF NOT EXISTS lessee_entity VARCHAR(100) DEFAULT '';
       ALTER TABLE assets ADD COLUMN IF NOT EXISTS lessee_manager VARCHAR(50) DEFAULT '';
+      ALTER TABLE assets ADD COLUMN IF NOT EXISTS parent_asset_code VARCHAR(50) DEFAULT '';
     END $$;`
   })
   if (error) {
@@ -1214,7 +1217,7 @@ export async function fetchAssetExtraFieldsViaSQL(assetCodes: string[]): Promise
       .map(c => `'${c.replace(/'/g, "''")}'`)
       .join(',')
     if (!inList) return out
-    const sql = `SELECT asset_code, category, lessee_entity, lessee_manager FROM assets WHERE asset_code IN (${inList});`
+    const sql = `SELECT asset_code, category, lessee_entity, lessee_manager, parent_asset_code FROM assets WHERE asset_code IN (${inList});`
     const { data, error } = await supabase.rpc('execute_sql', { sql })
 
     // 如果列不存在，自动添加后再读
@@ -1231,7 +1234,8 @@ export async function fetchAssetExtraFieldsViaSQL(assetCodes: string[]): Promise
               out.set(r.asset_code, {
                 category: r.category ?? '',
                 lessee_entity: r.lessee_entity ?? '',
-                lessee_manager: r.lessee_manager ?? ''
+                lessee_manager: r.lessee_manager ?? '',
+                parent_asset_code: r.parent_asset_code ?? ''
               })
             }
           }
@@ -1255,7 +1259,8 @@ export async function fetchAssetExtraFieldsViaSQL(assetCodes: string[]): Promise
         out.set(r.asset_code, {
           category: r.category ?? '',
           lessee_entity: r.lessee_entity ?? '',
-          lessee_manager: r.lessee_manager ?? ''
+          lessee_manager: r.lessee_manager ?? '',
+          parent_asset_code: r.parent_asset_code ?? ''
         })
       }
     }
@@ -1263,6 +1268,72 @@ export async function fetchAssetExtraFieldsViaSQL(assetCodes: string[]): Promise
   } catch (e: any) {
     console.warn('[ExtraFields] 读取异常:', e?.message)
     return out
+  }
+}
+
+/**
+ * 读取扩展字段的去重值（用于筛选下拉框：承租主体 / 承租负责人）。
+ * 通过 execute_sql 直连 DB，避免 PostgREST schema cache 看不到新列。
+ */
+export async function fetchDistinctExtraValues(
+  field: 'lessee_entity' | 'lessee_manager'
+): Promise<string[]> {
+  if (field !== 'lessee_entity' && field !== 'lessee_manager') return []
+  const run = () =>
+    supabase.rpc('execute_sql', {
+      sql: `SELECT DISTINCT ${field} AS v FROM assets WHERE ${field} IS NOT NULL AND ${field} <> '' ORDER BY ${field};`
+    })
+  try {
+    let { data, error } = await run()
+    if (error || !isExecuteSqlSuccess(data)) {
+      // 列可能还不存在 → 自动补列后重试
+      const alterOk = await ensureExtraColumnsViaSQL()
+      if (!alterOk) return []
+      const retry = await run()
+      data = retry.data
+      error = retry.error
+    }
+    if (error || !isExecuteSqlSuccess(data)) return []
+    const rows: any[] = parseExecuteSqlResult(data)
+    return rows
+      .map(r => r?.v)
+      .filter((v: any) => typeof v === 'string' && v.trim() !== '')
+  } catch {
+    return []
+  }
+}
+
+/**
+ * 查询关联到某台主机的所有外设资产（parent_asset_code = 主机编码）。
+ */
+export async function fetchLinkedAssetsByParent(parentCode: string): Promise<Asset[]> {
+  if (!parentCode) return []
+  try {
+    const escaped = String(parentCode).replace(/'/g, "''")
+    let { data, error } = await supabase.rpc('execute_sql', {
+      sql: `SELECT asset_code FROM assets WHERE parent_asset_code = '${escaped}';`
+    })
+    if (error || !isExecuteSqlSuccess(data)) {
+      const alterOk = await ensureExtraColumnsViaSQL()
+      if (!alterOk) return []
+      const retry = await supabase.rpc('execute_sql', {
+        sql: `SELECT asset_code FROM assets WHERE parent_asset_code = '${escaped}';`
+      })
+      if (retry.error || !isExecuteSqlSuccess(retry.data)) return []
+      data = retry.data
+    }
+    const codes = parseExecuteSqlResult(data)
+      .map((r: any) => r?.asset_code)
+      .filter(Boolean)
+    if (codes.length === 0) return []
+    const { data: rows, error: qErr } = await supabase
+      .from('assets_public')
+      .select('*')
+      .in('asset_code', codes)
+    if (qErr) return []
+    return (rows || []) as Asset[]
+  } catch {
+    return []
   }
 }
 
