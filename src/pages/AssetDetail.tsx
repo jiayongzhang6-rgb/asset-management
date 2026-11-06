@@ -1501,7 +1501,6 @@ export default function AssetDetail() {
                     rows={3}
                     value={maintenanceFormData.issue_description}
                     onChange={(e) => setMaintenanceFormData({ ...maintenanceFormData, issue_description: e.target.value })}
-                    required
                   />
                 </div>
                 <div>
@@ -1590,7 +1589,6 @@ export default function AssetDetail() {
                     rows={3}
                     value={maintenanceFormData.issue_description}
                     onChange={(e) => setMaintenanceFormData({ ...maintenanceFormData, issue_description: e.target.value })}
-                    required
                   />
                 </div>
                 <div>

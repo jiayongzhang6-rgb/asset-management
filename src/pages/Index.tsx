@@ -84,6 +84,8 @@ export default function Index() {
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedIds, setSelectedIds] = useState<(string | number)[]>([])
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
+  // 新增资产时待上传的图片
+  const [pendingImages, setPendingImages] = useState<File[]>([])
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
   const [editingAsset, setEditingAsset] = useState<Asset | null>(null)
   const [isBatchStatusDialogOpen, setIsBatchStatusDialogOpen] = useState(false)
@@ -91,11 +93,15 @@ export default function Index() {
   // 批量统一编辑（留空 = 该项不修改）
   const [isBatchEditDialogOpen, setIsBatchEditDialogOpen] = useState(false)
   const [batchEditData, setBatchEditData] = useState({
+    category: '',
     user_name: '',
     department: '',
     lessee_entity: '',
     lessee_manager: '',
-    location: ''
+    parent_asset_code: '',
+    location: '',
+    monthly_rent: '',
+    notes: ''
   })
   const [rentStats, setRentStats] = useState({
     accumulatedPaid: 0
@@ -492,6 +498,56 @@ export default function Index() {
       notes: '',
       monthly_rent: ''
     })
+    setPendingImages([])
+  }
+
+  // 图片压缩（宽度不超过 1024，质量 0.8）
+  const compressImage = (file: File): Promise<Blob> => {
+    return new Promise((resolve) => {
+      const canvas = document.createElement('canvas')
+      const ctx = canvas.getContext('2d')
+      const img = new Image()
+      img.onload = () => {
+        const maxWidth = 1024
+        let width = img.width
+        let height = img.height
+        if (width > maxWidth) {
+          height = (height * maxWidth) / width
+          width = maxWidth
+        }
+        canvas.width = width
+        canvas.height = height
+        ctx?.drawImage(img, 0, 0, width, height)
+        canvas.toBlob((blob) => resolve(blob || file), 'image/jpeg', 0.8)
+      }
+      img.onerror = () => resolve(file)
+      img.src = URL.createObjectURL(file)
+    })
+  }
+
+  // 上传新增资产的图片（最多3张，失败不阻塞资产创建）
+  const uploadAssetImages = async (assetCode: string, files: File[]) => {
+    let ok = 0
+    for (const file of files) {
+      try {
+        const blob = await compressImage(file)
+        const fileName = `${assetCode}_${Date.now()}_${file.name}`
+        const { error: uploadError } = await supabase
+          .storage
+          .from('asset-images')
+          .upload(fileName, blob, { cacheControl: '3600', upsert: false })
+        if (uploadError) throw uploadError
+        const { data: urlData } = supabase.storage.from('asset-images').getPublicUrl(fileName)
+        const { error: dbError } = await supabase
+          .from('asset_images')
+          .insert({ asset_code: assetCode, image_url: urlData.publicUrl, image_name: file.name })
+        if (dbError) throw dbError
+        ok++
+      } catch (e: any) {
+        console.warn('[图片] 上传失败:', file.name, e?.message || e)
+      }
+    }
+    return ok
   }
 
   // 批量刷新 AI 估值（针对筛选后的 allAssets）
@@ -612,11 +668,24 @@ export default function Index() {
         await recordAllHistory(data[0].asset_code, 'create', user.email)
       }
 
+      // 上传新增时选择的图片
+      const imageCount = pendingImages.length
+      let imageOk = 0
+      if (data && data.length > 0 && imageCount > 0) {
+        imageOk = await uploadAssetImages(data[0].asset_code, pendingImages)
+      }
+
       await fetchAssets()
       await fetchDepartmentsAndCategories()
       setIsAddDialogOpen(false)
       resetForm()
-      toast.success('资产添加成功')
+      if (imageCount > 0 && imageOk === 0) {
+        toast.error('资产已添加，但图片上传失败（请检查 Supabase Storage 是否有 asset-images 存储桶）', { duration: 6000 })
+      } else if (imageCount > 0) {
+        toast.success(`资产添加成功，已上传 ${imageOk} 张图片`)
+      } else {
+        toast.success('资产添加成功')
+      }
     } catch (error: any) {
       console.error('Error adding asset:', error)
       toast.error(`资产添加失败: ${error?.message || JSON.stringify(error)}`)
@@ -1080,11 +1149,15 @@ export default function Index() {
       return
     }
     const fieldLabels: Record<string, string> = {
+      category: '分类',
       user_name: '使用人',
       department: '部门',
       lessee_entity: '承租主体',
       lessee_manager: '承租负责人',
-      location: '位置'
+      parent_asset_code: '所属主机编码',
+      location: '位置',
+      monthly_rent: '月租费',
+      notes: '备注'
     }
     const changes: Record<string, string> = {}
     for (const [k, label] of Object.entries(fieldLabels)) {
@@ -1107,10 +1180,15 @@ export default function Index() {
       return
     }
 
-    const payload: Record<string, string> = {}
+    const payload: Record<string, any> = {}
     for (const [k] of Object.entries(fieldLabels)) {
       const v = String((batchEditData as any)[k] ?? '').trim()
       if (v !== '') payload[k] = v
+    }
+    // 月租费必须是数字，避免空字符串写库报错
+    if (payload.monthly_rent !== undefined) {
+      const rent = parseFloat(payload.monthly_rent)
+      payload.monthly_rent = isNaN(rent) ? 0 : rent
     }
 
     let okCount = 0
@@ -1139,7 +1217,7 @@ export default function Index() {
       await fetchDepartmentsAndCategories()
       setSelectedIds([])
       setIsBatchEditDialogOpen(false)
-      setBatchEditData({ user_name: '', department: '', lessee_entity: '', lessee_manager: '', location: '' })
+      setBatchEditData({ category: '', user_name: '', department: '', lessee_entity: '', lessee_manager: '', parent_asset_code: '', location: '', monthly_rent: '', notes: '' })
 
       if (failedCount === 0) {
         toast.success(`已统一修改 ${okCount} 台设备`)
@@ -1197,6 +1275,27 @@ export default function Index() {
       </div>
     )
   }
+
+  // 分类统计：按实际存在的分类动态生成卡片（以后新增分类无需改代码）
+  const categoryStats = (() => {
+    const map = new Map<string, number>()
+    for (const a of allAssets) {
+      const c = (a.category || '').trim() || '未分类'
+      map.set(c, (map.get(c) || 0) + 1)
+    }
+    return Array.from(map.entries()).sort((x, y) => y[1] - x[1])
+  })()
+
+  const CATEGORY_COLORS = [
+    { bg: 'bg-sky-50', text: 'text-sky-600' },
+    { bg: 'bg-violet-50', text: 'text-violet-600' },
+    { bg: 'bg-amber-50', text: 'text-amber-600' },
+    { bg: 'bg-rose-50', text: 'text-rose-600' },
+    { bg: 'bg-teal-50', text: 'text-teal-600' },
+    { bg: 'bg-cyan-50', text: 'text-cyan-600' },
+    { bg: 'bg-lime-50', text: 'text-lime-600' },
+    { bg: 'bg-fuchsia-50', text: 'text-fuchsia-600' }
+  ]
 
   return (
     <div className="min-h-screen">
@@ -1282,32 +1381,24 @@ export default function Index() {
               </div>
             </div>
           </div>
-          <div className="stat-card">
-            <div className="flex items-center gap-3">
-              <div className="stat-icon bg-sky-50 text-sky-600">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 19h18M5 19V5h14v14M9 9h6v6H9V9z" />
-                </svg>
+          {categoryStats.map(([name, count], idx) => {
+            const color = CATEGORY_COLORS[idx % CATEGORY_COLORS.length]
+            return (
+              <div className="stat-card" key={`cat-${name}`}>
+                <div className="flex items-center gap-3">
+                  <div className={`stat-icon ${color.bg} ${color.text}`}>
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4h16v12H4V4zm4 16h8m-4 0v-4m-6 4h12" />
+                    </svg>
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs text-gray-500 font-medium truncate">{name}数量</p>
+                    <p className={`text-xl font-bold ${color.text}`}>{count}</p>
+                  </div>
+                </div>
               </div>
-              <div className="min-w-0">
-                <p className="text-xs text-gray-500 font-medium">笔记本数量</p>
-                <p className="text-xl font-bold text-sky-600">{allAssets.filter(a => a.category === '笔记本').length}</p>
-              </div>
-            </div>
-          </div>
-          <div className="stat-card">
-            <div className="flex items-center gap-3">
-              <div className="stat-icon bg-violet-50 text-violet-600">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4h16v12H4V4zm4 16h8m-4 0v-4m-6 4h12" />
-                </svg>
-              </div>
-              <div className="min-w-0">
-                <p className="text-xs text-gray-500 font-medium">台式机数量</p>
-                <p className="text-xl font-bold text-violet-600">{allAssets.filter(a => a.category === '台式机').length}</p>
-              </div>
-            </div>
-          </div>
+            )
+          })}
           <div className="stat-card">
             <div className="flex items-center gap-3">
               <div className="stat-icon bg-green-50 text-green-600">
@@ -1690,7 +1781,7 @@ export default function Index() {
                 <>
                   <button
                     onClick={() => {
-                      setBatchEditData({ user_name: '', department: '', lessee_entity: '', lessee_manager: '', location: '' })
+                      setBatchEditData({ category: '', user_name: '', department: '', lessee_entity: '', lessee_manager: '', parent_asset_code: '', location: '', monthly_rent: '', notes: '' })
                       setIsBatchEditDialogOpen(true)
                     }}
                     className="btn btn-primary text-sm"
@@ -1950,7 +2041,6 @@ export default function Index() {
                     className="input"
                     value={formData.brand}
                     onChange={(e) => setFormData({ ...formData, brand: e.target.value })}
-                    required
                   />
                 </div>
                 <div>
@@ -1960,7 +2050,6 @@ export default function Index() {
                     className="input"
                     value={formData.model}
                     onChange={(e) => setFormData({ ...formData, model: e.target.value })}
-                    required
                   />
                 </div>
                 <div>
@@ -1969,7 +2058,6 @@ export default function Index() {
                     className="input"
                     value={formData.category}
                     onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                    required
                   >
                     <option value="">请选择分类</option>
                     {categories.map(cat => (
@@ -1984,7 +2072,6 @@ export default function Index() {
                     className="input"
                     value={formData.cpu}
                     onChange={(e) => setFormData({ ...formData, cpu: e.target.value })}
-                    required
                   />
                 </div>
                 <div>
@@ -1994,7 +2081,6 @@ export default function Index() {
                     className="input"
                     value={formData.ram}
                     onChange={(e) => setFormData({ ...formData, ram: e.target.value })}
-                    required
                   />
                 </div>
                 <div>
@@ -2004,7 +2090,6 @@ export default function Index() {
                     className="input"
                     value={formData.storage}
                     onChange={(e) => setFormData({ ...formData, storage: e.target.value })}
-                    required
                   />
                 </div>
                 <div>
@@ -2023,7 +2108,6 @@ export default function Index() {
                     className="input"
                     value={formData.os}
                     onChange={(e) => setFormData({ ...formData, os: e.target.value })}
-                    required
                   />
                 </div>
                 <div>
@@ -2032,7 +2116,6 @@ export default function Index() {
                     className="input"
                     value={formData.status}
                     onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-                    required
                   >
                     <option value="active">使用中</option>
                     <option value="idle">闲置</option>
@@ -2047,7 +2130,6 @@ export default function Index() {
                     className="input"
                     value={formData.department}
                     onChange={(e) => setFormData({ ...formData, department: e.target.value })}
-                    required
                   />
                 </div>
                 {user?.role === 'admin' && (
@@ -2091,7 +2173,6 @@ export default function Index() {
                     className="input"
                     value={formData.user_name}
                     onChange={(e) => setFormData({ ...formData, user_name: e.target.value })}
-                    required
                   />
                 </div>
                 <div>
@@ -2101,7 +2182,6 @@ export default function Index() {
                     className="input"
                     value={formData.location}
                     onChange={(e) => setFormData({ ...formData, location: e.target.value })}
-                    required
                   />
                 </div>
                 {user?.role === 'admin' && (
@@ -2117,6 +2197,38 @@ export default function Index() {
                   />
                 </div>
               )}
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-secondary-700 mb-1">图片（可选，最多 3 张）</label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  className="input"
+                  onChange={(e) => {
+                    const selected = Array.from(e.target.files || []).filter(f => f.type.startsWith('image/'))
+                    if (selected.length > 3) toast.error('最多选择 3 张图片')
+                    setPendingImages(selected.slice(0, 3))
+                    e.target.value = ''
+                  }}
+                />
+                {pendingImages.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    {pendingImages.map((file, i) => (
+                      <span key={i} className="text-xs bg-gray-100 px-2 py-1 rounded flex items-center gap-1">
+                        {file.name}
+                        <button
+                          type="button"
+                          onClick={() => setPendingImages(pendingImages.filter((_, idx) => idx !== i))}
+                          className="text-red-500 hover:text-red-700"
+                        >
+                          ×
+                        </button>
+                      </span>
+                    ))}
+                    <span className="text-xs text-gray-400 self-center">保存时自动压缩上传</span>
+                  </div>
+                )}
               </div>
               <div>
                 <label className="block text-sm font-medium text-secondary-700 mb-1">备注</label>
@@ -2173,7 +2285,6 @@ export default function Index() {
                         className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                         value={formData.brand}
                         onChange={(e) => setFormData({ ...formData, brand: e.target.value })}
-                        required
                       />
                     </div>
                     <div>
@@ -2183,7 +2294,6 @@ export default function Index() {
                         className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                         value={formData.model}
                         onChange={(e) => setFormData({ ...formData, model: e.target.value })}
-                        required
                       />
                     </div>
                     <div>
@@ -2192,7 +2302,6 @@ export default function Index() {
                         className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                         value={formData.category}
                         onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                        required
                       >
                         <option value="">请选择分类</option>
                         {categories.map(cat => (
@@ -2207,7 +2316,6 @@ export default function Index() {
                         className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                         value={formData.cpu}
                         onChange={(e) => setFormData({ ...formData, cpu: e.target.value })}
-                        required
                       />
                     </div>
                     <div>
@@ -2217,7 +2325,6 @@ export default function Index() {
                         className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                         value={formData.ram}
                         onChange={(e) => setFormData({ ...formData, ram: e.target.value })}
-                        required
                       />
                     </div>
                     <div>
@@ -2227,7 +2334,6 @@ export default function Index() {
                         className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                         value={formData.storage}
                         onChange={(e) => setFormData({ ...formData, storage: e.target.value })}
-                        required
                       />
                     </div>
                     <div>
@@ -2246,7 +2352,6 @@ export default function Index() {
                         className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                         value={formData.os}
                         onChange={(e) => setFormData({ ...formData, os: e.target.value })}
-                        required
                       />
                     </div>
                     <div>
@@ -2255,7 +2360,6 @@ export default function Index() {
                         className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                         value={formData.status}
                         onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-                        required
                       >
                         <option value="active">使用中</option>
                         <option value="idle">闲置</option>
@@ -2272,7 +2376,6 @@ export default function Index() {
                     className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                     value={formData.department}
                     onChange={(e) => setFormData({ ...formData, department: e.target.value })}
-                    required
                   />
                 </div>
                 {user?.role === 'admin' && (
@@ -2316,7 +2419,6 @@ export default function Index() {
                     className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                     value={formData.user_name}
                     onChange={(e) => setFormData({ ...formData, user_name: e.target.value })}
-                    required
                   />
                 </div>
                 <div>
@@ -2326,7 +2428,6 @@ export default function Index() {
                     className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                     value={formData.location}
                     onChange={(e) => setFormData({ ...formData, location: e.target.value })}
-                    required
                   />
                 </div>
                 {user?.role === 'admin' && (
@@ -2445,18 +2546,22 @@ export default function Index() {
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {[
-                { key: 'user_name', label: '使用人' },
-                { key: 'department', label: '部门' },
-                { key: 'lessee_entity', label: '承租主体' },
-                { key: 'lessee_manager', label: '承租负责人' },
-                { key: 'location', label: '位置' }
-              ].map(f => (
-                <div key={f.key} className={f.key === 'location' ? 'sm:col-span-2' : ''}>
+                { key: 'category', label: '分类', placeholder: '如 显示器 / 笔记本' },
+                { key: 'user_name', label: '使用人', placeholder: '留空则不修改使用人' },
+                { key: 'department', label: '部门', placeholder: '留空则不修改部门' },
+                { key: 'lessee_entity', label: '承租主体', placeholder: '如：德泽智联（上海）有限公司' },
+                { key: 'lessee_manager', label: '承租负责人', placeholder: '留空则不修改承租负责人' },
+                { key: 'parent_asset_code', label: '所属主机编码', placeholder: '外设填主机编码；留空则不修改' },
+                { key: 'location', label: '位置', placeholder: '留空则不修改位置' },
+                { key: 'monthly_rent', label: '月租费（元）', placeholder: '留空则不修改月租费' },
+                { key: 'notes', label: '备注', placeholder: '留空则不修改备注（填写会覆盖原备注）', full: true }
+              ].map((f: { key: string; label: string; placeholder: string; full?: boolean }) => (
+                <div key={f.key} className={f.full ? 'sm:col-span-2' : ''}>
                   <label className="block text-sm font-medium text-gray-700 mb-1">{f.label}</label>
                   <input
                     type="text"
                     className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder={f.label === '承租主体' ? '如：德泽智联（上海）有限公司' : `留空则不修改${f.label}`}
+                    placeholder={f.placeholder}
                     value={(batchEditData as any)[f.key]}
                     onChange={(e) => setBatchEditData({ ...batchEditData, [f.key]: e.target.value })}
                   />
