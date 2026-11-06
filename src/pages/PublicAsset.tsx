@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
-import { supabase, type Asset, formatMemory, formatStorage, getStatusText, fetchAssetExtraFieldsViaSQL } from '../lib/supabase'
+import { supabase, type Asset, formatMemory, formatStorage, getStatusText, getStatusColor, fetchAssetExtraFieldsViaSQL } from '../lib/supabase'
 
 /**
  * 扫码公开视图（免登录、只读）
@@ -21,16 +21,22 @@ export default function PublicAsset() {
       }
       const cleanedId = id.trim()
       try {
-        const { data, error } = await supabase
-          .from('assets_public')
-          .select('*')
-          .eq('asset_code', cleanedId)
-
-        if (error || !data || data.length === 0) {
+        // 依次尝试 assets_public / assets，任一只读视图可用即可（免登录）
+        let assetData: Asset | null = null
+        for (const table of ['assets_public', 'assets']) {
+          const { data, error } = await supabase
+            .from(table)
+            .select('*')
+            .eq('asset_code', cleanedId)
+          if (!error && data && data.length > 0) {
+            assetData = data[0] as Asset
+            break
+          }
+        }
+        if (!assetData) {
           setNotFound(true)
           return
         }
-        let assetData = data[0] as Asset
         // 补读扩展字段（分类/承租主体/承租负责人），PostgREST schema cache 可能不返回
         try {
           const extraMap = await fetchAssetExtraFieldsViaSQL([assetData.asset_code])

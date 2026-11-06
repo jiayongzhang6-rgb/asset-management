@@ -88,6 +88,15 @@ export default function Index() {
   const [editingAsset, setEditingAsset] = useState<Asset | null>(null)
   const [isBatchStatusDialogOpen, setIsBatchStatusDialogOpen] = useState(false)
   const [batchStatus, setBatchStatus] = useState('active')
+  // 批量统一编辑（留空 = 该项不修改）
+  const [isBatchEditDialogOpen, setIsBatchEditDialogOpen] = useState(false)
+  const [batchEditData, setBatchEditData] = useState({
+    user_name: '',
+    department: '',
+    lessee_entity: '',
+    lessee_manager: '',
+    location: ''
+  })
   const [rentStats, setRentStats] = useState({
     accumulatedPaid: 0
   })
@@ -1064,6 +1073,88 @@ export default function Index() {
     }
   }
 
+  // 批量统一编辑使用人 / 部门 / 承租主体 / 承租负责人 / 位置
+  const handleBatchEditSubmit = async () => {
+    if (selectedIds.length === 0) {
+      toast.error('请选择要修改的资产')
+      return
+    }
+    const fieldLabels: Record<string, string> = {
+      user_name: '使用人',
+      department: '部门',
+      lessee_entity: '承租主体',
+      lessee_manager: '承租负责人',
+      location: '位置'
+    }
+    const changes: Record<string, string> = {}
+    for (const [k, label] of Object.entries(fieldLabels)) {
+      const v = String((batchEditData as any)[k] ?? '').trim()
+      if (v !== '') changes[label] = v
+    }
+    if (Object.keys(changes).length === 0) {
+      toast.error('请至少填写一项要统一修改的内容（留空表示不修改）')
+      return
+    }
+
+    const selectedAssets = assets.filter(a => selectedIds.includes(String(a.id)))
+    if (selectedAssets.length === 0) {
+      toast.error('未找到选中的资产')
+      return
+    }
+
+    const preview = Object.entries(changes).map(([k, v]) => `· ${k} → ${v}`).join('\n')
+    if (!window.confirm(`确定将以下 ${selectedAssets.length} 台设备的字段统一修改吗？\n\n${preview}\n\n（未填写的字段保持不变）`)) {
+      return
+    }
+
+    const payload: Record<string, string> = {}
+    for (const [k] of Object.entries(fieldLabels)) {
+      const v = String((batchEditData as any)[k] ?? '').trim()
+      if (v !== '') payload[k] = v
+    }
+
+    let okCount = 0
+    let failedCount = 0
+    let firstExtraError: string | null = null
+    try {
+      for (const asset of selectedAssets) {
+        const { error, extraError } = await updateAssetRobust(asset.asset_code, payload)
+        if (error) {
+          failedCount++
+          continue
+        }
+        if (extraError) {
+          failedCount++
+          if (!firstExtraError) firstExtraError = extraError
+          continue
+        }
+        okCount++
+        if (user) {
+          const changeText = Object.entries(changes).map(([k, v]) => `${k}: ${v}`).join('\n')
+          await recordAllHistory(asset.asset_code, 'update', user.email, changeText)
+        }
+      }
+
+      await fetchAssets()
+      await fetchDepartmentsAndCategories()
+      setSelectedIds([])
+      setIsBatchEditDialogOpen(false)
+      setBatchEditData({ user_name: '', department: '', lessee_entity: '', lessee_manager: '', location: '' })
+
+      if (failedCount === 0) {
+        toast.success(`已统一修改 ${okCount} 台设备`)
+      } else {
+        toast.error(
+          `成功 ${okCount} 台，失败 ${failedCount} 台${firstExtraError ? `\n原因：${firstExtraError}` : ''}`,
+          { duration: 8000 }
+        )
+      }
+    } catch (e: any) {
+      console.error('Error batch editing assets:', e)
+      toast.error(`批量编辑失败: ${e?.message || JSON.stringify(e)}`)
+    }
+  }
+
   // 单个资产快速状态切换
   const handleQuickStatusChange = async (asset: Asset, newStatus: string) => {
     if (newStatus === asset.status) return
@@ -1597,6 +1688,15 @@ export default function Index() {
               </div>
               {selectedIds.length > 0 && (
                 <>
+                  <button
+                    onClick={() => {
+                      setBatchEditData({ user_name: '', department: '', lessee_entity: '', lessee_manager: '', location: '' })
+                      setIsBatchEditDialogOpen(true)
+                    }}
+                    className="btn btn-primary text-sm"
+                  >
+                    统一编辑 ({selectedIds.length})
+                  </button>
                   <button onClick={() => setIsBatchStatusDialogOpen(true)} className="btn btn-primary text-sm">
                     批量状态 ({selectedIds.length})
                   </button>
@@ -2320,6 +2420,62 @@ export default function Index() {
                   确认修改
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* 批量统一编辑对话框 */}
+      {isBatchEditDialogOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold">统一编辑</h2>
+              <button
+                onClick={() => setIsBatchEditDialogOpen(false)}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <p className="text-sm text-gray-600 mb-4">
+              将对选中的 <span className="font-bold text-blue-600">{selectedIds.length}</span> 台设备统一修改。
+              <span className="text-gray-400">（留空的项保持不变）</span>
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {[
+                { key: 'user_name', label: '使用人' },
+                { key: 'department', label: '部门' },
+                { key: 'lessee_entity', label: '承租主体' },
+                { key: 'lessee_manager', label: '承租负责人' },
+                { key: 'location', label: '位置' }
+              ].map(f => (
+                <div key={f.key} className={f.key === 'location' ? 'sm:col-span-2' : ''}>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{f.label}</label>
+                  <input
+                    type="text"
+                    className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder={f.label === '承租主体' ? '如：德泽智联（上海）有限公司' : `留空则不修改${f.label}`}
+                    value={(batchEditData as any)[f.key]}
+                    onChange={(e) => setBatchEditData({ ...batchEditData, [f.key]: e.target.value })}
+                  />
+                </div>
+              ))}
+            </div>
+            <div className="flex justify-end gap-2 mt-5">
+              <button
+                onClick={() => setIsBatchEditDialogOpen(false)}
+                className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
+              >
+                取消
+              </button>
+              <button
+                onClick={handleBatchEditSubmit}
+                className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+              >
+                确认修改
+              </button>
             </div>
           </div>
         </div>
