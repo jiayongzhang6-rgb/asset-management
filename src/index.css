@@ -183,7 +183,8 @@ select {
 /* ===== 表格 ===== */
 .table-container {
   border-radius: 0.75rem;
-  overflow: hidden;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
   border: 1px solid #e2e8f0;
   background: white;
 }
@@ -468,4 +469,34 @@ td {
 
 .search-wrapper input {
   padding-left: 2.5rem;
+}
+/* ===== 手机端适配 ===== */
+@media (max-width: 640px) {
+  .card {
+    padding: 1rem;
+    border-radius: 0.875rem;
+  }
+
+  .stat-card {
+    padding: 0.875rem;
+  }
+
+  .stat-icon {
+    width: 2.25rem;
+    height: 2.25rem;
+  }
+
+  thead th {
+    padding: 0.5rem 0.625rem;
+  }
+
+  td {
+    padding: 0.5rem 0.625rem;
+    font-size: 0.8125rem;
+  }
+
+  /* 弹窗在小屏下的内边距 */
+  .modal-content {
+    padding: 1rem;
+  }
 }

@@ -708,21 +708,21 @@ export default function AssetDetail() {
     <div className="min-h-screen">
       <div className="watermark" />
       <header className="gradient-header text-white">
-        <div className="container mx-auto px-4 py-4 flex items-center justify-between relative z-10">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center backdrop-blur-sm">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <div className="container mx-auto px-4 py-3 sm:py-4 flex flex-wrap items-center justify-between gap-x-2 gap-y-2 relative z-10">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <div className="w-8 h-8 sm:w-10 sm:h-10 bg-white/20 rounded-xl flex items-center justify-center backdrop-blur-sm shrink-0">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 sm:h-6 sm:w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
               </svg>
             </div>
             <div>
-              <h1 className="text-xl font-bold tracking-tight">德泽智联IT资产管理系统</h1>
-              <p className="text-xs text-white/70">资产详情 · 维修记录 · 使用历史</p>
+              <h1 className="text-base sm:text-xl font-bold tracking-tight">德泽智联IT资产管理系统</h1>
+              <p className="text-xs text-white/70 hidden sm:block">资产详情 · 维修记录 · 使用历史</p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-white/80">{formatUserIdentifier(user?.email)}</span>
-            <button onClick={() => navigate('/')} className="btn btn-ghost !text-white/80 hover:!text-white text-sm px-2 py-1.5">
+          <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap justify-end">
+            <span className="text-sm text-white/80 hidden md:inline">{formatUserIdentifier(user?.email)}</span>
+            <button onClick={() => navigate('/')} className="btn btn-ghost !text-white/80 hover:!text-white text-xs sm:text-sm px-1.5 sm:px-2 py-1.5">
               <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
               </svg>
@@ -730,30 +730,30 @@ export default function AssetDetail() {
             </button>
             {(user?.role === 'admin') && (
               <>
-                <button onClick={() => navigate('/import')} className="btn btn-ghost !text-white/80 hover:!text-white text-sm px-2 py-1.5">
+                <button onClick={() => navigate('/import')} className="btn btn-ghost !text-white/80 hover:!text-white text-xs sm:text-sm px-1.5 sm:px-2 py-1.5">
                   批量导入
                 </button>
-                <button onClick={() => navigate('/history')} className="btn btn-ghost !text-white/80 hover:!text-white text-sm px-2 py-1.5">
+                <button onClick={() => navigate('/history')} className="btn btn-ghost !text-white/80 hover:!text-white text-xs sm:text-sm px-1.5 sm:px-2 py-1.5">
                   操作历史
                 </button>
-                <button onClick={() => navigate('/users')} className="btn btn-ghost !text-white/80 hover:!text-white text-sm px-2 py-1.5">
+                <button onClick={() => navigate('/users')} className="btn btn-ghost !text-white/80 hover:!text-white text-xs sm:text-sm px-1.5 sm:px-2 py-1.5">
                   用户管理
                 </button>
               </>
             )}
-            <div className="w-px h-6 bg-white/20 mx-1" />
-            <button onClick={signOut} className="btn btn-ghost !text-white/80 hover:!text-white hover:!bg-white/10 text-sm px-2 py-1.5">
+            <div className="w-px h-6 bg-white/20 mx-1 hidden sm:block" />
+            <button onClick={signOut} className="btn btn-ghost !text-white/80 hover:!text-white hover:!bg-white/10 text-xs sm:text-sm px-1.5 sm:px-2 py-1.5">
               退出
             </button>
           </div>
         </div>
       </header>
 
-      <main className="relative z-10 container mx-auto px-4 py-6" style={{ minHeight: '80vh' }}>
+      <main className="relative z-10 container mx-auto px-3 sm:px-4 py-4 sm:py-6" style={{ minHeight: '80vh' }}>
         {/* 操作栏 */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
           <div className="flex items-center gap-3">
-            <h2 className="text-2xl font-bold text-gray-900">资产详情</h2>
+            <h2 className="text-xl sm:text-2xl font-bold text-gray-900">资产详情</h2>
             <span className={`badge ${getStatusColor(asset.status)}`}>
               {getStatusText(asset.status)}
             </span>
@@ -815,7 +815,7 @@ export default function AssetDetail() {
 
         {/* 资产信息卡片 */}
         <div className="card mb-6">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-8">
             {/* 基本信息 */}
             <div>
               <div className="flex items-center gap-2 mb-5">

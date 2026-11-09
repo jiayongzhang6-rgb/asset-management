@@ -42,7 +42,7 @@ function MultiSelectFilter({
       {open && (
         <>
           <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-          <div className="absolute z-20 mt-1 w-56 max-h-64 overflow-y-auto bg-white border rounded-md shadow-lg p-2">
+          <div className="absolute z-20 mt-1 w-56 max-w-[80vw] max-h-64 overflow-y-auto bg-white border rounded-md shadow-lg p-2">
             <div className="flex justify-between items-center mb-2 pb-2 border-b">
               <button type="button" onClick={() => onChange([])} className="text-xs text-blue-600 hover:underline">
                 清空
@@ -1301,73 +1301,70 @@ export default function Index() {
     <div className="min-h-screen">
       <div className="watermark" />
       <header className="gradient-header text-white">
-        <div className="container mx-auto px-4 py-4 flex items-center justify-between relative z-10">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center backdrop-blur-sm">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <div className="container mx-auto px-4 py-3 sm:py-4 flex flex-wrap items-center justify-between gap-x-2 gap-y-2 relative z-10">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <div className="w-8 h-8 sm:w-10 sm:h-10 bg-white/20 rounded-xl flex items-center justify-center backdrop-blur-sm shrink-0">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 sm:h-6 sm:w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
               </svg>
             </div>
             <div>
-              <h1 className="text-xl font-bold tracking-tight">德泽智联IT资产管理系统</h1>
-              <p className="text-xs text-white/70">资产管理 · 租费管理 · 统计分析</p>
+              <h1 className="text-base sm:text-xl font-bold tracking-tight">德泽智联IT资产管理系统</h1>
+              <p className="text-xs text-white/70 hidden sm:block">资产管理 · 租费管理 · 统计分析</p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-white/80">{formatUserIdentifier(user?.email)}</span>
+          <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap justify-end">
+            <span className="text-sm text-white/80 hidden md:inline">{formatUserIdentifier(user?.email)}</span>
             {(user?.role === 'admin') && (
               <>
-                <button onClick={() => navigate('/import')} className="btn btn-ghost !text-white !border-white/20 hover:!bg-white/10 text-sm px-3 py-1.5 rounded-lg">
+                <button onClick={() => navigate('/import')} className="btn btn-ghost !text-white !border-white/20 hover:!bg-white/10 text-sm px-2 sm:px-3 py-1.5 rounded-lg" title="批量导入">
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
-                  批量导入
+                  <span className="hidden sm:inline">批量导入</span>
                 </button>
-                <button onClick={handleExportAll} className="btn btn-ghost !text-white !border-white/20 hover:!bg-white/10 text-sm px-3 py-1.5 rounded-lg">
+                <button onClick={handleExportAll} className="btn btn-ghost !text-white !border-white/20 hover:!bg-white/10 text-sm px-2 sm:px-3 py-1.5 rounded-lg" title="导出全部">
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-                  导出全部
+                  <span className="hidden sm:inline">导出全部</span>
                 </button>
-                <button onClick={() => setIsAddDialogOpen(true)} className="btn btn-ghost !text-white !border-white/20 hover:!bg-white/10 text-sm px-3 py-1.5 rounded-lg">
+                <button onClick={() => setIsAddDialogOpen(true)} className="btn btn-ghost !text-white !border-white/20 hover:!bg-white/10 text-sm px-2 sm:px-3 py-1.5 rounded-lg" title="新增设备">
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
-                  新增设备
+                  <span className="hidden sm:inline">新增设备</span>
                 </button>
               </>
             )}
-            <div className="w-px h-6 bg-white/20 mx-1" />
+            <div className="w-px h-6 bg-white/20 mx-1 hidden sm:block" />
             {user?.role === 'admin' && (
-              <button onClick={() => navigate('/users')} className="btn btn-ghost !text-white/80 hover:!text-white text-sm px-2 py-1.5">
+              <button onClick={() => navigate('/users')} className="btn btn-ghost !text-white/80 hover:!text-white text-xs sm:text-sm px-1.5 sm:px-2 py-1.5">
                 用户管理
               </button>
             )}
             {user?.role === 'admin' && (
               <>
-                <button onClick={() => navigate('/history')} className="btn btn-ghost !text-white/80 hover:!text-white text-sm px-2 py-1.5">
+                <button onClick={() => navigate('/history')} className="btn btn-ghost !text-white/80 hover:!text-white text-xs sm:text-sm px-1.5 sm:px-2 py-1.5">
                   操作历史
                 </button>
-                <button onClick={() => navigate('/rent')} className="btn btn-ghost !text-white/80 hover:!text-white text-sm px-2 py-1.5">
+                <button onClick={() => navigate('/rent')} className="btn btn-ghost !text-white/80 hover:!text-white text-xs sm:text-sm px-1.5 sm:px-2 py-1.5">
                   月租明细
                 </button>
-                <button onClick={() => navigate('/settlement')} className="btn btn-ghost !text-white/80 hover:!text-white text-sm px-2 py-1.5">
+                <button onClick={() => navigate('/settlement')} className="btn btn-ghost !text-white/80 hover:!text-white text-xs sm:text-sm px-1.5 sm:px-2 py-1.5">
                   租赁结算
                 </button>
-                <button onClick={() => navigate('/ai-valuation')} className="btn btn-ghost !text-white/80 hover:!text-white text-sm px-2 py-1.5" title="AI 大模型估值配置">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 inline-block mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-                  </svg>
+                <button onClick={() => navigate('/ai-valuation')} className="btn btn-ghost !text-white/80 hover:!text-white text-xs sm:text-sm px-1.5 sm:px-2 py-1.5" title="AI 大模型估值配置">
                   AI估值
                 </button>
               </>
             )}
-            <button onClick={() => navigate('/change-password')} className="btn btn-ghost !text-white/80 hover:!text-white text-sm px-2 py-1.5">
+            <button onClick={() => navigate('/change-password')} className="btn btn-ghost !text-white/80 hover:!text-white text-xs sm:text-sm px-1.5 sm:px-2 py-1.5">
               修改密码
             </button>
-            <button onClick={signOut} className="btn btn-ghost !text-white/80 hover:!text-white hover:!bg-white/10 text-sm px-2 py-1.5">
+            <button onClick={signOut} className="btn btn-ghost !text-white/80 hover:!text-white hover:!bg-white/10 text-xs sm:text-sm px-1.5 sm:px-2 py-1.5">
               退出
             </button>
           </div>
         </div>
       </header>
 
-      <main className="relative z-10 container mx-auto px-4 py-6" style={{ minHeight: '80vh' }}>
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 mb-6">
+      <main className="relative z-10 container mx-auto px-3 sm:px-4 py-4 sm:py-6" style={{ minHeight: '80vh' }}>
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 sm:gap-4 mb-4 sm:mb-6">
           <div className="stat-card">
             <div className="flex items-center gap-3">
               <div className="stat-icon bg-blue-50 text-blue-600">
@@ -1716,7 +1713,7 @@ export default function Index() {
 
         <div className="card mb-6">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
-            <div className="search-wrapper flex-grow max-w-md">
+            <div className="search-wrapper flex-grow w-full md:max-w-md">
               <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
               </svg>
@@ -1871,17 +1868,17 @@ export default function Index() {
                     />
                   </th>
                   <th>资产编码</th>
-                  <th>分类</th>
-                  <th>CPU</th>
-                  <th>内存</th>
-                  <th>硬盘</th>
-                  <th>显卡</th>
+                  <th className="hidden md:table-cell">分类</th>
+                  <th className="hidden lg:table-cell">CPU</th>
+                  <th className="hidden lg:table-cell">内存</th>
+                  <th className="hidden lg:table-cell">硬盘</th>
+                  <th className="hidden xl:table-cell">显卡</th>
                   <th>使用人</th>
-                  <th>部门</th>
-                  <th>位置</th>
+                  <th className="hidden md:table-cell">部门</th>
+                  <th className="hidden lg:table-cell">位置</th>
                   <th>品牌/型号</th>
                   <th>状态</th>
-                  <th className="text-right">月租费</th>
+                  <th className="text-right hidden md:table-cell">月租费</th>
                   <th>操作</th>
                 </tr>
               </thead>
@@ -1927,16 +1924,16 @@ export default function Index() {
                       <td>
                         <span className="text-sm font-medium text-blue-600">{asset.asset_code}</span>
                       </td>
-                      <td><span className="text-sm">{asset.category || '-'}</span></td>
-                      <td>
+                      <td className="hidden md:table-cell"><span className="text-sm">{asset.category || '-'}</span></td>
+                      <td className="hidden lg:table-cell">
                         <span className="text-sm text-gray-700" title={asset.cpu}>{asset.cpu.length > 20 ? asset.cpu.slice(0, 20) + '…' : asset.cpu}</span>
                       </td>
-                      <td><span className="text-sm font-medium">{formatMemory(asset.ram)}</span></td>
-                      <td><span className="text-sm font-medium">{formatStorage(asset.storage)}</span></td>
-                      <td><span className="text-sm text-gray-700">{asset.gpu || '-'}</span></td>
+                      <td className="hidden lg:table-cell"><span className="text-sm font-medium">{formatMemory(asset.ram)}</span></td>
+                      <td className="hidden lg:table-cell"><span className="text-sm font-medium">{formatStorage(asset.storage)}</span></td>
+                      <td className="hidden xl:table-cell"><span className="text-sm text-gray-700">{asset.gpu || '-'}</span></td>
                       <td><span className="text-sm font-medium">{asset.user_name}</span></td>
-                      <td><span className="text-sm">{asset.department}</span></td>
-                      <td><span className="text-sm">{asset.location}</span></td>
+                      <td className="hidden md:table-cell"><span className="text-sm">{asset.department}</span></td>
+                      <td className="hidden lg:table-cell"><span className="text-sm">{asset.location}</span></td>
                       <td>
                         <span className="text-sm text-gray-700">{asset.brand} <span className="text-gray-400">{asset.model}</span></span>
                       </td>
@@ -1953,7 +1950,7 @@ export default function Index() {
                           <option value="retired">已报废</option>
                         </select>
                       </td>
-                      <td className="text-right">
+                      <td className="text-right hidden md:table-cell">
                         <span className="text-sm font-medium">{asset.monthly_rent ? `¥${asset.monthly_rent}` : '-'}</span>
                       </td>
                       <td className="whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
@@ -2022,7 +2019,7 @@ export default function Index() {
       {/* 添加资产对话框 */}
       {isAddDialogOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-lg shadow-xl p-4 sm:p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xl font-bold">新增资产</h2>
               <button
@@ -2264,7 +2261,7 @@ export default function Index() {
       {/* 编辑资产对话框 */}
       {isEditDialogOpen && editingAsset && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-lg shadow-xl p-4 sm:p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xl font-bold">编辑资产</h2>
               <button
@@ -2480,7 +2477,7 @@ export default function Index() {
       {/* 批量修改状态对话框 */}
       {isBatchStatusDialogOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl p-6 max-w-md w-full">
+          <div className="bg-white rounded-lg shadow-xl p-4 sm:p-6 max-w-md w-full max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xl font-bold">批量修改状态</h2>
               <button
@@ -2530,7 +2527,7 @@ export default function Index() {
       {/* 批量统一编辑对话框 */}
       {isBatchEditDialogOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-lg shadow-xl p-4 sm:p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xl font-bold">统一编辑</h2>
               <button
