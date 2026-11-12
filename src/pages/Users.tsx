@@ -39,17 +39,30 @@ export default function Users() {
     }
   }
 
+  // 敏感操作（重置密码/删除用户）需管理员再次输入自己的密码，
+  // 数据库 RPC 会核对（2026-11-11「管理员密码锁」）。取消或未输入返回 null。
+  const askAdminPassword = (action: string): string | null => {
+    const pwd = window.prompt(`请输入你的管理员密码，以确认${action}：`)
+    if (!pwd) {
+      toast.error('已取消：未输入管理员密码')
+      return null
+    }
+    return pwd
+  }
+
   const handleDeleteUser = async (userId: number) => {
     if (window.confirm('确定要删除这个用户吗？')) {
+      const adminPassword = askAdminPassword('删除用户')
+      if (!adminPassword || !user?.email) return
       try {
-        // 走 RPC（SECURITY DEFINER），绕过 RLS 的「禁止删除」策略
-        const result = await deleteUserRpc(userId)
-        if (!result.ok) throw new Error('用户删除失败')
+        // 走 RPC（SECURITY DEFINER + 管理员密码锁），绕过 RLS 的「禁止删除」策略
+        const result = await deleteUserRpc(user.email, adminPassword, userId)
+        if (!result.ok) throw new Error(result.reason === 'bad_password' ? '管理员密码不正确' : '用户删除失败')
         await fetchUsers()
         toast.success('用户删除成功')
       } catch (error) {
         console.error('Error deleting user:', error)
-        toast.error('用户删除失败')
+        toast.error(error instanceof Error && error.message === '管理员密码不正确' ? '管理员密码不正确' : '用户删除失败')
       }
     }
   }
@@ -62,15 +75,17 @@ export default function Users() {
         // 优先走新 RPC（更新 auth.users 的加密密码，已迁移账号生效）
         const res = await adminResetAuthPassword(email, tempPassword)
         if (!res.ok) {
-          // 回退旧 RPC（尚未迁移到 Supabase Auth 的账号）
-          const r2 = await resetPasswordRpc(email, tempPassword)
-          if (!r2.ok) throw new Error('密码重置失败')
+          // 回退旧 RPC（尚未迁移到 Supabase Auth 的账号）——需管理员密码确认
+          const adminPassword = askAdminPassword('重置密码')
+          if (!adminPassword || !user?.email) return
+          const r2 = await resetPasswordRpc(user.email, adminPassword, email, tempPassword)
+          if (!r2.ok) throw new Error(r2.reason === 'bad_password' ? '管理员密码不正确' : '密码重置失败')
         }
 
         toast(`密码重置成功！\n用户: ${formatUserIdentifier(email)}\n临时密码: ${tempPassword}`, { duration: 10000 })
       } catch (error) {
         console.error('Error resetting password:', error)
-        toast.error('密码重置失败')
+        toast.error(error instanceof Error && error.message === '管理员密码不正确' ? '管理员密码不正确' : '密码重置失败')
       }
     }
   }

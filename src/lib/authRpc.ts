@@ -28,10 +28,12 @@ export async function registerUserRpc(email: string, password: string): Promise<
   return (data ?? { ok: false }) as AuthRpcResult
 }
 
-export async function resetPasswordRpc(email: string, temp: string): Promise<{ ok: boolean }> {
-  const { data, error } = await supabase.rpc('reset_password', { p_email: email, p_password: temp })
+export async function resetPasswordRpc(adminEmail: string, adminPassword: string, email: string, temp: string): Promise<{ ok: boolean; reason?: string }> {
+  // 2026-11-11 加「管理员密码锁」：RPC 需带管理员邮箱+密码，数据库核对后才执行
+  // （同时修正旧实现的参数名错误：原传 p_password，函数形参实为 p_temp）
+  const { data, error } = await supabase.rpc('reset_password', { p_admin_email: adminEmail, p_admin_password: adminPassword, p_email: email, p_temp: temp })
   if (error) throw error
-  return (data ?? { ok: false }) as { ok: boolean }
+  return (data ?? { ok: false }) as { ok: boolean; reason?: string }
 }
 
 export async function changePasswordRpc(email: string, oldP: string, newP: string): Promise<{ ok: boolean }> {
@@ -40,10 +42,11 @@ export async function changePasswordRpc(email: string, oldP: string, newP: strin
   return (data ?? { ok: false }) as { ok: boolean }
 }
 
-export async function deleteUserRpc(id: number): Promise<{ ok: boolean }> {
-  const { data, error } = await supabase.rpc('delete_user', { p_id: id })
+export async function deleteUserRpc(adminEmail: string, adminPassword: string, id: number): Promise<{ ok: boolean; reason?: string }> {
+  // 2026-11-11 加「管理员密码锁」：同 resetPasswordRpc
+  const { data, error } = await supabase.rpc('delete_user', { p_admin_email: adminEmail, p_admin_password: adminPassword, p_id: id })
   if (error) throw error
-  return (data ?? { ok: false }) as { ok: boolean }
+  return (data ?? { ok: false }) as { ok: boolean; reason?: string }
 }
 
 // ---------- 新增：Supabase Auth 封装 ----------
