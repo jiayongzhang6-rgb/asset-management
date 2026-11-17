@@ -84,6 +84,8 @@ export default function Index() {
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedIds, setSelectedIds] = useState<(string | number)[]>([])
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
+  // 复制新增时，作为模板的源资产编码（null = 普通新增）
+  const [copySourceCode, setCopySourceCode] = useState<string | null>(null)
   // 新增资产时待上传的图片
   const [pendingImages, setPendingImages] = useState<File[]>([])
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
@@ -678,6 +680,7 @@ export default function Index() {
       await fetchAssets()
       await fetchDepartmentsAndCategories()
       setIsAddDialogOpen(false)
+      setCopySourceCode(null)
       resetForm()
       if (imageCount > 0 && imageOk === 0) {
         toast.error('资产已添加，但图片上传失败（请检查 Supabase Storage 是否有 asset-images 存储桶）', { duration: 6000 })
@@ -797,6 +800,39 @@ export default function Index() {
     }
     setFormData(commonFields)
     setIsEditDialogOpen(true)
+  }
+
+  // 普通新增：清空表单
+  const handleOpenAddDialog = () => {
+    setCopySourceCode(null)
+    resetForm()
+    setIsAddDialogOpen(true)
+  }
+
+  // 复制设备：带入源设备配置，使用人/所属主机/备注不复制
+  const handleCopy = (asset: Asset) => {
+    setCopySourceCode(asset.asset_code)
+    setPendingImages([])
+    setFormData({
+      brand: asset.brand || '',
+      model: asset.model || '',
+      cpu: asset.cpu || '',
+      ram: asset.ram || '',
+      storage: asset.storage || '',
+      gpu: asset.gpu || '',
+      os: asset.os || '',
+      category: asset.category || '',
+      department: asset.department || '',
+      lessee_entity: asset.lessee_entity || '',
+      lessee_manager: asset.lessee_manager || '',
+      parent_asset_code: '',
+      user_name: '',
+      location: asset.location || '',
+      status: 'active',
+      notes: '',
+      monthly_rent: asset.monthly_rent != null ? String(asset.monthly_rent) : ''
+    })
+    setIsAddDialogOpen(true)
   }
 
   const handleDelete = async (id: string | number) => {
@@ -1325,7 +1361,7 @@ export default function Index() {
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
                   <span className="hidden sm:inline">导出全部</span>
                 </button>
-                <button onClick={() => setIsAddDialogOpen(true)} className="btn btn-ghost !text-white !border-white/20 hover:!bg-white/10 text-sm px-2 sm:px-3 py-1.5 rounded-lg" title="新增设备">
+                <button onClick={handleOpenAddDialog} className="btn btn-ghost !text-white !border-white/20 hover:!bg-white/10 text-sm px-2 sm:px-3 py-1.5 rounded-lg" title="新增设备">
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
                   <span className="hidden sm:inline">新增设备</span>
                 </button>
@@ -1957,6 +1993,11 @@ export default function Index() {
                         <button onClick={() => handleEdit(asset)} className="btn btn-ghost text-blue-600 hover:text-blue-800 text-xs !px-2 !py-1">
                           编辑
                         </button>
+                        {user?.role === 'admin' && (
+                          <button onClick={() => handleCopy(asset)} className="btn btn-ghost text-blue-600 hover:text-blue-800 text-xs !px-2 !py-1">
+                            复制
+                          </button>
+                        )}
                         <button onClick={() => navigate(`/asset/${asset.asset_code}`)} className="btn btn-ghost text-gray-600 hover:text-gray-800 text-xs !px-2 !py-1">
                           详情
                         </button>
@@ -2021,9 +2062,14 @@ export default function Index() {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg shadow-xl p-4 sm:p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-bold">新增资产</h2>
+              <div>
+                <h2 className="text-xl font-bold">{copySourceCode ? '复制新增资产' : '新增资产'}</h2>
+                {copySourceCode && (
+                  <p className="text-xs text-gray-500 mt-1">已带入 {copySourceCode} 的配置，保存时自动生成新编码</p>
+                )}
+              </div>
               <button
-                onClick={() => setIsAddDialogOpen(false)}
+                onClick={() => { setIsAddDialogOpen(false); setCopySourceCode(null) }}
                 className="text-gray-500 hover:text-gray-700"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
