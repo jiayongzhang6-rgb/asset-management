@@ -1951,10 +1951,10 @@ export default function Index() {
                   displayRows.map(({ asset, isChild }) => (
                     <tr
                       key={asset.id}
-                      className={`cursor-pointer transition-all ${isChild ? 'bg-slate-50/80' : ''}`}
+                      className={`cursor-pointer transition-all ${isChild ? 'bg-slate-50/80 text-xs' : ''}`}
                       onClick={() => navigate(`/asset/${asset.asset_code}`)}
                     >
-                      <td className="w-10" onClick={(e) => e.stopPropagation()}>
+                      <td className={`w-10 ${isChild ? 'pl-4' : ''}`} onClick={(e) => e.stopPropagation()}>
                         <input
                           type="checkbox"
                           checked={selectedIds.includes(String(asset.id))}
@@ -1967,32 +1967,32 @@ export default function Index() {
                       </td>
                       <td>
                         {isChild ? (
-                          <span className="flex items-center gap-1.5 pl-3">
-                            <span className="text-gray-400">└</span>
-                            <span className="text-sm font-medium text-blue-600">{asset.asset_code}</span>
+                          <span className="flex items-center gap-1.5 pl-3 text-xs">
+                            <span className="text-gray-300">└</span>
+                            <span className="font-medium text-blue-500">{asset.asset_code}</span>
                           </span>
                         ) : (
                           <span className="text-sm font-medium text-blue-600">{asset.asset_code}</span>
                         )}
                       </td>
-                      <td className="hidden md:table-cell"><span className="text-sm">{asset.category || '-'}</span></td>
+                      <td className="hidden md:table-cell"><span className={isChild ? 'text-xs text-gray-500' : 'text-sm'}>{asset.category || '-'}</span></td>
                       <td className="hidden lg:table-cell">
-                        <span className="text-sm text-gray-700" title={asset.cpu}>{asset.cpu.length > 20 ? asset.cpu.slice(0, 20) + '…' : asset.cpu}</span>
+                        <span className={`${isChild ? 'text-xs text-gray-400' : 'text-sm text-gray-700'}`} title={asset.cpu}>{asset.cpu.length > 20 ? asset.cpu.slice(0, 20) + '…' : asset.cpu}</span>
                       </td>
-                      <td className="hidden lg:table-cell"><span className="text-sm font-medium">{formatMemory(asset.ram)}</span></td>
-                      <td className="hidden lg:table-cell"><span className="text-sm font-medium">{formatStorage(asset.storage)}</span></td>
-                      <td className="hidden xl:table-cell"><span className="text-sm text-gray-700">{asset.gpu || '-'}</span></td>
-                      <td><span className="text-sm font-medium">{asset.user_name}</span></td>
-                      <td className="hidden md:table-cell"><span className="text-sm">{asset.department}</span></td>
-                      <td className="hidden lg:table-cell"><span className="text-sm">{asset.location}</span></td>
+                      <td className="hidden lg:table-cell"><span className={`${isChild ? 'text-xs text-gray-400' : 'text-sm font-medium'}`}>{formatMemory(asset.ram)}</span></td>
+                      <td className="hidden lg:table-cell"><span className={`${isChild ? 'text-xs text-gray-400' : 'text-sm font-medium'}`}>{formatStorage(asset.storage)}</span></td>
+                      <td className="hidden xl:table-cell"><span className={isChild ? 'text-xs text-gray-400' : 'text-sm text-gray-700'}>{asset.gpu || '-'}</span></td>
+                      <td><span className={isChild ? 'text-xs text-gray-500' : 'text-sm font-medium'}>{asset.user_name}</span></td>
+                      <td className="hidden md:table-cell"><span className={isChild ? 'text-xs text-gray-500' : 'text-sm'}>{asset.department}</span></td>
+                      <td className="hidden lg:table-cell"><span className={isChild ? 'text-xs text-gray-400' : 'text-sm'}>{asset.location}</span></td>
                       <td>
-                        <span className="text-sm text-gray-700">{asset.brand} <span className="text-gray-400">{asset.model}</span></span>
+                        <span className={isChild ? 'text-xs text-gray-500' : 'text-sm text-gray-700'}>{asset.brand} <span className="text-gray-400">{asset.model}</span></span>
                       </td>
                       <td onClick={(e) => e.stopPropagation()}>
                         <select
                           value={asset.status}
                           onChange={(e) => handleQuickStatusChange(asset, e.target.value)}
-                          className={`badge border-0 cursor-pointer text-xs font-semibold ${getStatusColor(asset.status)}`}
+                          className={`badge border-0 cursor-pointer font-semibold ${isChild ? 'text-[11px] opacity-80' : 'text-xs'} ${getStatusColor(asset.status)}`}
                           style={{ padding: '0.15rem 0.625rem' }}
                         >
                           <option value="active">使用中</option>
@@ -2002,18 +2002,18 @@ export default function Index() {
                         </select>
                       </td>
                       <td className="text-right hidden md:table-cell">
-                        <span className="text-sm font-medium">{asset.monthly_rent ? `¥${asset.monthly_rent}` : '-'}</span>
+                        <span className={isChild ? 'text-xs text-gray-400' : 'text-sm font-medium'}>{asset.monthly_rent ? `¥${asset.monthly_rent}` : '-'}</span>
                       </td>
                       <td className="whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                        <button onClick={() => handleEdit(asset)} className="btn btn-ghost text-blue-600 hover:text-blue-800 text-xs !px-2 !py-1">
+                        <button onClick={() => handleEdit(asset)} className={`btn btn-ghost hover:text-blue-800 !px-2 !py-1 ${isChild ? 'text-[11px] text-gray-500' : 'text-xs text-blue-600'}`}>
                           编辑
                         </button>
                         {user?.role === 'admin' && (
-                          <button onClick={() => handleCopy(asset)} className="btn btn-ghost text-blue-600 hover:text-blue-800 text-xs !px-2 !py-1">
+                          <button onClick={() => handleCopy(asset)} className={`btn btn-ghost hover:text-blue-800 !px-2 !py-1 ${isChild ? 'text-[11px] text-gray-500' : 'text-xs text-blue-600'}`}>
                             复制
                           </button>
                         )}
-                        <button onClick={() => navigate(`/asset/${asset.asset_code}`)} className="btn btn-ghost text-gray-600 hover:text-gray-800 text-xs !px-2 !py-1">
+                        <button onClick={() => navigate(`/asset/${asset.asset_code}`)} className={`btn btn-ghost hover:text-gray-800 !px-2 !py-1 ${isChild ? 'text-[11px] text-gray-500' : 'text-xs text-gray-600'}`}>
                           详情
                         </button>
                       </td>
@@ -2070,7 +2070,7 @@ export default function Index() {
             </div>
           </div>
         </div>
-        <div className="text-center text-xs text-gray-400 mt-4">版本 v20261118-3 · 支持主机-外设嵌套显示</div>
+        <div className="text-center text-xs text-gray-400 mt-4">版本 v20261118-4 · 支持主机-外设嵌套显示</div>
       </main>
 
       {/* 添加资产对话框 */}
