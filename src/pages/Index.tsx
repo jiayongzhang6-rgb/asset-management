@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../App'
 import toast from 'react-hot-toast'
 import * as XLSX from 'xlsx'
-import { supabase, type Asset, initDatabase, formatUserIdentifier, formatMemory, formatStorage, getStatusText, getStatusColor, recordAllHistory, generateUniqueAssetCode, sanitizeAssetData, isCategorySupportedSync, saveAssetSnapshot, formatHardwareSpec, estimateAssetValue, estimateAssetValueWithAI, batchEstimateAssetValueWithAI, getAIValuationConfig, type AIValResult, restoreAIValuationsFromCache, syncResolveAIValuation, fetchAssetExtraFieldsViaSQL, fetchDistinctExtraValues, updateAssetRobust, insertAssetRobust, isAIForceDisabled, getAIDailyUsage } from '../lib/supabase'
+import { supabase, type Asset, initDatabase, formatUserIdentifier, formatMemory, formatStorage, getStatusText, getStatusColor, recordAllHistory, generateUniqueAssetCode, sanitizeAssetData, isCategorySupportedSync, saveAssetSnapshot, formatHardwareSpec, estimateAssetValue, estimateAssetValueWithAI, batchEstimateAssetValueWithAI, getAIValuationConfig, type AIValResult, restoreAIValuationsFromCache, syncResolveAIValuation, fetchAssetExtraFieldsViaSQL, fetchDistinctExtraValues, fetchAssetParentLinks, updateAssetRobust, insertAssetRobust, isAIForceDisabled, getAIDailyUsage } from '../lib/supabase'
 import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js'
 import { Pie } from 'react-chartjs-2'
 
@@ -148,6 +148,8 @@ export default function Index() {
   })
   // 全部资产数据（用于汇总统计）
   const [allAssets, setAllAssets] = useState<Asset[]>([])
+  // 主机编码 -> 其关联的外设列表（用于列表嵌套显示）
+  const [linkedChildren, setLinkedChildren] = useState<Map<string, Asset[]>>(new Map())
   // 所有部门列表（不受筛选影响）
   const [departments, setDepartments] = useState<string[]>([])
   // 所有分类列表（不受筛选影响）
@@ -332,6 +334,17 @@ export default function Index() {
         }
       }
 
+      // 补读所属主机映射（REST 优先，execute_sql 不可用时也能嵌套显示）
+      try {
+        const parentMap = await fetchAssetParentLinks()
+        if (parentMap.size > 0) {
+          filteredAllData = filteredAllData.map(a => ({
+            ...a,
+            parent_asset_code: a.parent_asset_code || parentMap.get(a.asset_code) || ''
+          }))
+        }
+      } catch { /* ignore */ }
+
       // ===== 承租主体 / 承租负责人 筛选（前端过滤） =====
       // 这两列不在 PostgREST schema cache 中，无法用后端 .eq/.or 过滤，故在前端处理
       if (lesseeEntityFilter.length > 0) {
@@ -342,62 +355,24 @@ export default function Index() {
       }
       setAllAssets(filteredAllData)
 
-      // 2. 获取分页数据
+      // 2. 主机-外设嵌套 + 本地分页
+      // 被关联的设备不单独占行，显示在其主机下方；若主机不在当前筛选结果中，子设备仍单独显示
       const offset = (page - 1) * pageSize
-      const lesseeFilterActive = lesseeEntityFilter.length > 0 || lesseeManagerFilter.length > 0
-
-      if (lesseeFilterActive) {
-        // 承租筛选激活时，全量数据已在内存中 → 本地分页，保证统计与分页一致
-        setAssets(filteredAllData.slice(offset, offset + pageSize))
-        setTotalAssets(filteredAllData.length)
-      } else {
-        let query = supabase.from('assets_public').select('*', { count: 'exact' })
-        if (searchTerm) {
-          query = query.or(`asset_code.ilike.%${searchTerm}%,brand.ilike.%${searchTerm}%,model.ilike.%${searchTerm}%,department.ilike.%${searchTerm}%,user_name.ilike.%${searchTerm}%`)
+      const codeSet = new Set(filteredAllData.map(a => a.asset_code))
+      const childMap = new Map<string, Asset[]>()
+      const topLevel: Asset[] = []
+      for (const a of filteredAllData) {
+        const parent = (a.parent_asset_code || '').trim()
+        if (parent && parent !== a.asset_code && codeSet.has(parent)) {
+          if (!childMap.has(parent)) childMap.set(parent, [])
+          childMap.get(parent)!.push(a)
+        } else {
+          topLevel.push(a)
         }
-        if (statusFilter !== 'all') {
-          query = query.eq('status', statusFilter)
-        }
-        if (departmentFilter.length > 0) {
-          const deptOr = departmentFilter.map(d => `department.eq.${d.replace(/,/g, '%2C')}`).join(',')
-          query = query.or(deptOr)
-        }
-        if (advancedFilters.category && catSupported) {
-          query = query.eq('category', advancedFilters.category)
-        }
-        if (advancedFilters.brand) {
-          query = query.ilike('brand', `%${advancedFilters.brand}%`)
-        }
-        const { data, error, count } = await query.range(offset, offset + pageSize - 1)
-        if (error) throw error
-
-        // 前端过滤：内存、存储 + （后端不支持 category 时在此补上）
-        let pageData = data || []
-        if (advancedFilters.category && !catSupported) {
-          pageData = pageData.filter((a: any) => a.category === advancedFilters.category)
-        }
-        if (advancedFilters.minMemory) {
-          const minMem = parseFloat(advancedFilters.minMemory)
-          if (!isNaN(minMem)) {
-            pageData = pageData.filter(a => {
-              const val = parseFloat(a.ram)
-              return !isNaN(val) && val >= minMem
-            })
-          }
-        }
-        if (advancedFilters.minStorage) {
-          const minStor = parseFloat(advancedFilters.minStorage)
-          if (!isNaN(minStor)) {
-            pageData = pageData.filter(a => {
-              const val = parseFloat(a.storage)
-              return !isNaN(val) && val >= minStor
-            })
-          }
-        }
-
-        setAssets(pageData.map(mergeExtra))
-        setTotalAssets(count || 0)
       }
+      setLinkedChildren(childMap)
+      setAssets(topLevel.slice(offset, offset + pageSize))
+      setTotalAssets(topLevel.length)
       console.log('Index: Assets fetched successfully')
     } catch (error) {
       console.error('Error fetching assets:', error)
@@ -1312,6 +1287,15 @@ export default function Index() {
     )
   }
 
+  // 列表展示行：主机行后紧跟其关联的外设子行
+  const displayRows: { asset: Asset; isChild: boolean }[] = assets.flatMap(a => {
+    const rows: { asset: Asset; isChild: boolean }[] = [{ asset: a, isChild: false }]
+    for (const c of linkedChildren.get(a.asset_code) || []) {
+      rows.push({ asset: c, isChild: true })
+    }
+    return rows
+  })
+
   // 分类统计：按实际存在的分类动态生成卡片（以后新增分类无需改代码）
   const categoryStats = (() => {
     const map = new Map<string, number>()
@@ -1940,10 +1924,10 @@ export default function Index() {
                     </td>
                   </tr>
                 ) : (
-                  assets.map((asset) => (
-                    <tr 
-                      key={asset.id} 
-                      className="cursor-pointer transition-all"
+                  displayRows.map(({ asset, isChild }) => (
+                    <tr
+                      key={asset.id}
+                      className={`cursor-pointer transition-all ${isChild ? 'bg-slate-50/80' : ''}`}
                       onClick={() => navigate(`/asset/${asset.asset_code}`)}
                     >
                       <td className="w-10" onClick={(e) => e.stopPropagation()}>
@@ -1958,7 +1942,14 @@ export default function Index() {
                         />
                       </td>
                       <td>
-                        <span className="text-sm font-medium text-blue-600">{asset.asset_code}</span>
+                        {isChild ? (
+                          <span className="flex items-center gap-1.5 pl-3">
+                            <span className="text-gray-400">└</span>
+                            <span className="text-sm font-medium text-blue-600">{asset.asset_code}</span>
+                          </span>
+                        ) : (
+                          <span className="text-sm font-medium text-blue-600">{asset.asset_code}</span>
+                        )}
                       </td>
                       <td className="hidden md:table-cell"><span className="text-sm">{asset.category || '-'}</span></td>
                       <td className="hidden lg:table-cell">
