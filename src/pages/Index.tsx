@@ -690,6 +690,11 @@ export default function Index() {
           updateData.monthly_rent = isNaN(rentValue) ? 0 : rentValue
         }
 
+        // 所属主机未修改时不写入，避免空值覆盖已有关联关系
+        if ('parent_asset_code' in updateData && (updateData.parent_asset_code || '') === (editingAsset.parent_asset_code || '')) {
+          delete updateData.parent_asset_code
+        }
+
         // 构建变更明细（基于原始 updateData，category 由 updateAssetRobust 内部处理）
         const asset = editingAsset
         const changes: string[] = []

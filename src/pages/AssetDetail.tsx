@@ -125,7 +125,7 @@ export default function AssetDetail() {
         toast.error(`无法获取资产数据: ${error.message}`)
       } else if (data && data.length > 0) {
         let assetData = data[0]
-        // 补读扩展字段（category/承租主体/承租负责人，PostgREST schema cache 可能不返回）
+        // 补读扩展字段（category/承租主体/承租负责人/所属主机，PostgREST schema cache 可能不返回）
         try {
           const extraMap = await fetchAssetExtraFieldsViaSQL([assetData.asset_code])
           const extra = extraMap.get(assetData.asset_code)
@@ -134,10 +134,19 @@ export default function AssetDetail() {
               ...assetData,
               category: extra.category ?? assetData.category,
               lessee_entity: extra.lessee_entity ?? '',
-              lessee_manager: extra.lessee_manager ?? ''
+              lessee_manager: extra.lessee_manager ?? '',
+              parent_asset_code: extra.parent_asset_code ?? ''
             }
           }
         } catch { /* ignore */ }
+        // 所属主机再兜底一次（REST 通道），保证编辑时不会把已有关系当成空
+        if (!assetData.parent_asset_code) {
+          try {
+            const parentMap = await fetchAssetParentLinks()
+            const parent = parentMap.get(assetData.asset_code)
+            if (parent) assetData = { ...assetData, parent_asset_code: parent }
+          } catch { /* ignore */ }
+        }
         console.log('AssetDetail: Asset fetched successfully:', assetData)
         setAsset(assetData)
         setFormData({
@@ -308,7 +317,9 @@ export default function AssetDetail() {
         if (ok) {
           okCount++
           if (user?.email) {
+            // 外设和主机两侧都记录，主机详情页也能看到关联历史
             await recordAllHistory(code, 'update', user.email, `关联到主机: ${asset.asset_code}`)
+            await recordAllHistory(asset.asset_code, 'update', user.email, `关联外设: ${code}`)
           }
         } else {
           failMsgs.push(`${code}: ${error || '未知原因'}`)
@@ -336,6 +347,7 @@ export default function AssetDetail() {
       if (!ok) throw new Error(error || '解除失败')
       if (user?.email && asset) {
         await recordAllHistory(code, 'update', user.email, `解除与主机 ${asset.asset_code} 的关联`)
+        await recordAllHistory(asset.asset_code, 'update', user.email, `解除外设关联: ${code}`)
       }
       await fetchLinked()
       toast.success('已解除关联')
@@ -376,6 +388,12 @@ export default function AssetDetail() {
     if ('monthly_rent' in updateData) {
       const rentValue = parseFloat(updateData.monthly_rent)
       updateData.monthly_rent = isNaN(rentValue) ? 0 : rentValue
+    }
+
+    // 所属主机没有被用户修改时不写入：
+    // 防止读取缺失导致的空值在保存其他字段时把已有关联关系冲掉
+    if ('parent_asset_code' in updateData && (updateData.parent_asset_code || '') === (asset.parent_asset_code || '')) {
+      delete updateData.parent_asset_code
     }
 
     // 构建变更明细（category 由 updateAssetRobust 内部双通道处理）
