@@ -373,6 +373,7 @@ export default function Index() {
       setLinkedChildren(childMap)
       setAssets(topLevel.slice(offset, offset + pageSize))
       setTotalAssets(topLevel.length)
+      console.log(`[Index] 嵌套统计: 顶层设备 ${topLevel.length}，有外设的主机 ${childMap.size}，全部 ${filteredAllData.length}`)
       console.log('Index: Assets fetched successfully')
     } catch (error) {
       console.error('Error fetching assets:', error)
@@ -2051,6 +2052,7 @@ export default function Index() {
             </div>
           </div>
         </div>
+        <div className="text-center text-xs text-gray-400 mt-4">版本 v20261118-3 · 支持主机-外设嵌套显示</div>
       </main>
 
       {/* 添加资产对话框 */}
