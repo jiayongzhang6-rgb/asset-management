@@ -1308,6 +1308,18 @@ export async function fetchDistinctExtraValues(
  */
 export async function fetchLinkedAssetsByParent(parentCode: string): Promise<Asset[]> {
   if (!parentCode) return []
+  // 1) REST 通道：先查 assets 基表，再试 assets_public 视图
+  for (const table of ['assets', 'assets_public']) {
+    try {
+      const { data, error } = await supabase
+        .from(table)
+        .select('*')
+        .eq('parent_asset_code', parentCode)
+      if (!error) return (data || []) as Asset[]
+      console.warn(`[Link] REST 查询关联设备失败（${table}）:`, error.message)
+    } catch { /* 继续尝试下一通道 */ }
+  }
+  // 2) execute_sql 通道：先取编码，再查完整行
   try {
     const escaped = String(parentCode).replace(/'/g, "''")
     let { data, error } = await supabase.rpc('execute_sql', {
@@ -1345,12 +1357,14 @@ export async function setAssetParentCode(assetCode: string, parentCode: string):
   if (!assetCode) return { ok: false, error: '缺少资产编码' }
   let restErr = ''
   try {
-    const { error } = await supabase
+    // select 校验：RLS 拦截时 REST 会"成功但 0 行"，必须确认确实更新到了行
+    const { data, error } = await supabase
       .from('assets')
       .update({ parent_asset_code: parentCode })
       .eq('asset_code', assetCode)
-    if (!error) return { ok: true }
-    restErr = error.message || ''
+      .select('asset_code')
+    if (!error && data && data.length > 0) return { ok: true }
+    restErr = error?.message || '更新未命中任何行（可能无权限）'
     console.warn('[Link] REST 更新失败，尝试 execute_sql:', restErr)
   } catch (e: any) {
     restErr = e?.message || ''
@@ -1370,6 +1384,22 @@ export async function setAssetParentCode(assetCode: string, parentCode: string):
  */
 export async function fetchAssetParentLinks(): Promise<Map<string, string>> {
   const map = new Map<string, string>()
+  // 1) REST 通道（基表优先，视图可能没有该列）
+  for (const table of ['assets', 'assets_public']) {
+    try {
+      const { data, error } = await supabase
+        .from(table)
+        .select('asset_code,parent_asset_code')
+        .not('parent_asset_code', 'is', null)
+        .neq('parent_asset_code', '')
+      if (error) continue
+      for (const r of data || []) {
+        if (r?.asset_code && r?.parent_asset_code) map.set(r.asset_code, r.parent_asset_code)
+      }
+      return map
+    } catch { /* 继续 */ }
+  }
+  // 2) execute_sql 通道
   try {
     const { data, error } = await supabase.rpc('execute_sql', {
       sql: `SELECT asset_code, parent_asset_code FROM assets WHERE parent_asset_code IS NOT NULL AND parent_asset_code <> '';`
