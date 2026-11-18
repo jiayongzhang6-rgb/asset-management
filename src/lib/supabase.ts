@@ -1338,6 +1338,51 @@ export async function fetchLinkedAssetsByParent(parentCode: string): Promise<Ass
 }
 
 /**
+ * 设置资产的所属主机（关联/解除外设）。
+ * 优先走 REST（schema cache 可见时最直接），失败再走 execute_sql 双通道。
+ */
+export async function setAssetParentCode(assetCode: string, parentCode: string): Promise<{ ok: boolean; error?: string }> {
+  if (!assetCode) return { ok: false, error: '缺少资产编码' }
+  let restErr = ''
+  try {
+    const { error } = await supabase
+      .from('assets')
+      .update({ parent_asset_code: parentCode })
+      .eq('asset_code', assetCode)
+    if (!error) return { ok: true }
+    restErr = error.message || ''
+    console.warn('[Link] REST 更新失败，尝试 execute_sql:', restErr)
+  } catch (e: any) {
+    restErr = e?.message || ''
+    console.warn('[Link] REST 异常:', restErr)
+  }
+  const ok = await updateAssetExtraFieldsViaSQL(assetCode, { parent_asset_code: parentCode })
+  if (ok) return { ok: true }
+  return {
+    ok: false,
+    error: `扩展列 parent_asset_code 写入失败${restErr ? `（${restErr}）` : ''}，请在 Supabase SQL Editor 执行 sql/init-all.sql`
+  }
+}
+
+/**
+ * 读取所有资产的 所属主机 映射（asset_code -> parent_asset_code），
+ * 用于关联选择器中标记"已关联到其他主机"的设备。
+ */
+export async function fetchAssetParentLinks(): Promise<Map<string, string>> {
+  const map = new Map<string, string>()
+  try {
+    const { data, error } = await supabase.rpc('execute_sql', {
+      sql: `SELECT asset_code, parent_asset_code FROM assets WHERE parent_asset_code IS NOT NULL AND parent_asset_code <> '';`
+    })
+    if (error || !isExecuteSqlSuccess(data)) return map
+    for (const r of parseExecuteSqlResult(data)) {
+      if (r?.asset_code && r?.parent_asset_code) map.set(r.asset_code, r.parent_asset_code)
+    }
+  } catch { /* ignore */ }
+  return map
+}
+
+/**
  * 健壮的资产更新：完全规避 PostgREST schema cache 看不到扩展列（category/lessee_*）的问题。
  *
  * 策略（双通道，完全不依赖错误信息关键字匹配）：

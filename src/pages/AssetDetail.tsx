@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '../App'
 import toast from 'react-hot-toast'
-import { supabase, type Asset, type MaintenanceRecord, type AssetImage, type UsageHistoryRecord, formatUserIdentifier, formatMemory, formatStorage, getStatusText, getStatusColor, getOperationTypeText, getOperationTypeColor, recordAllHistory, getBeijingTime, updateAssetRobust, saveAssetSnapshot, fetchAssetExtraFieldsViaSQL, fetchLinkedAssetsByParent, updateAssetExtraFieldsViaSQL } from '../lib/supabase'
+import { supabase, type Asset, type MaintenanceRecord, type AssetImage, type UsageHistoryRecord, formatUserIdentifier, formatMemory, formatStorage, getStatusText, getStatusColor, getOperationTypeText, getOperationTypeColor, recordAllHistory, getBeijingTime, updateAssetRobust, saveAssetSnapshot, fetchAssetExtraFieldsViaSQL, fetchLinkedAssetsByParent, setAssetParentCode, fetchAssetParentLinks } from '../lib/supabase'
 
 const categories = ['笔记本', '台式机', '显示器', '外设', '服务器', '网络设备', '其他']
 
@@ -23,8 +23,14 @@ export default function AssetDetail() {
   const [assetImages, setAssetImages] = useState<AssetImage[]>([])
   // 关联设备（外设：显示器/键鼠等，parent_asset_code = 本机编码）
   const [linkedAssets, setLinkedAssets] = useState<Asset[]>([])
-  const [linkCodeInput, setLinkCodeInput] = useState('')
   const [linking, setLinking] = useState(false)
+  // 关联选择弹窗
+  const [isLinkDialogOpen, setIsLinkDialogOpen] = useState(false)
+  const [linkCandidates, setLinkCandidates] = useState<Asset[]>([])
+  const [linkParentMap, setLinkParentMap] = useState<Map<string, string>>(new Map())
+  const [linkSearch, setLinkSearch] = useState('')
+  const [linkSelected, setLinkSelected] = useState<string[]>([])
+  const [linkLoading, setLinkLoading] = useState(false)
   const [isImageUploadDialogOpen, setIsImageUploadDialogOpen] = useState(false)
   const [uploading, setUploading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -255,46 +261,68 @@ export default function AssetDetail() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [asset])
 
-  // 关联一台已有资产到当前主机
-  const handleLinkAsset = async () => {
-    if (!user?.role || user.role !== 'admin') {
-      toast.error('只有管理员可以关联设备')
-      return
-    }
+  // 打开关联选择弹窗：加载候选设备列表 + 各设备的所属主机
+  const openLinkDialog = async () => {
     if (!asset) return
-    const code = linkCodeInput.trim()
-    if (!code) {
-      toast.error('请输入要关联的资产编码')
-      return
+    setIsLinkDialogOpen(true)
+    setLinkSearch('')
+    setLinkSelected([])
+    setLinkLoading(true)
+    try {
+      const [{ data, error }, parentMap] = await Promise.all([
+        supabase
+          .from('assets_public')
+          .select('asset_code,brand,model,category,status,user_name,department')
+          .order('asset_code', { ascending: true }),
+        fetchAssetParentLinks()
+      ])
+      if (error) throw error
+      // 排除本机 + 已关联到本机的设备
+      const linkedCodes = new Set(linkedAssets.map(a => a.asset_code))
+      setLinkCandidates(((data || []) as Asset[]).filter(a => a.asset_code !== asset.asset_code && !linkedCodes.has(a.asset_code)))
+      setLinkParentMap(parentMap)
+    } catch (e: any) {
+      toast.error(`加载设备列表失败: ${e?.message || e}`)
+    } finally {
+      setLinkLoading(false)
     }
-    if (code === asset.asset_code) {
-      toast.error('不能关联自身')
-      return
-    }
-    if (linkedAssets.some(a => a.asset_code === code)) {
-      toast.error('该资产已关联到本机')
+  }
+
+  const toggleLinkSelect = (code: string) => {
+    setLinkSelected(prev => prev.includes(code) ? prev.filter(c => c !== code) : [...prev, code])
+  }
+
+  // 批量关联所选设备到本机
+  const handleLinkSelected = async () => {
+    if (!asset) return
+    if (linkSelected.length === 0) {
+      toast.error('请先勾选要关联的设备')
       return
     }
     setLinking(true)
+    let okCount = 0
+    const failMsgs: string[] = []
     try {
-      const { data, error } = await supabase
-        .from('assets_public')
-        .select('*')
-        .eq('asset_code', code)
-      if (error) throw error
-      if (!data || data.length === 0) throw new Error('未找到该资产编码，请确认已先在资产列表中创建')
-
-      const ok = await updateAssetExtraFieldsViaSQL(code, { parent_asset_code: asset.asset_code })
-      if (!ok) throw new Error('关联失败：数据库扩展列不可用，请联系管理员执行 sql/init-all.sql')
-
-      if (user?.email) {
-        await recordAllHistory(code, 'update', user.email, `关联到主机: ${asset.asset_code}`)
+      for (const code of linkSelected) {
+        const { ok, error } = await setAssetParentCode(code, asset.asset_code)
+        if (ok) {
+          okCount++
+          if (user?.email) {
+            await recordAllHistory(code, 'update', user.email, `关联到主机: ${asset.asset_code}`)
+          }
+        } else {
+          failMsgs.push(`${code}: ${error || '未知原因'}`)
+        }
       }
-      setLinkCodeInput('')
       await fetchLinked()
-      toast.success('关联成功')
-    } catch (e: any) {
-      toast.error(`关联失败: ${e?.message || e}`)
+      if (failMsgs.length === 0) {
+        toast.success(`已关联 ${okCount} 台设备`)
+        setIsLinkDialogOpen(false)
+        setLinkSelected([])
+      } else {
+        toast.error(`${okCount} 台成功，${failMsgs.length} 台失败：${failMsgs[0]}`, { duration: 8000 })
+        if (okCount > 0) setLinkSelected([])
+      }
     } finally {
       setLinking(false)
     }
@@ -304,8 +332,8 @@ export default function AssetDetail() {
   const handleUnlinkAsset = async (code: string) => {
     if (!window.confirm(`确定解除 ${code} 与本机的关联吗？`)) return
     try {
-      const ok = await updateAssetExtraFieldsViaSQL(code, { parent_asset_code: '' })
-      if (!ok) throw new Error('解除失败：数据库扩展列不可用')
+      const { ok, error } = await setAssetParentCode(code, '')
+      if (!ok) throw new Error(error || '解除失败')
       if (user?.email && asset) {
         await recordAllHistory(code, 'update', user.email, `解除与主机 ${asset.asset_code} 的关联`)
       }
@@ -315,6 +343,14 @@ export default function AssetDetail() {
       toast.error(`解除失败: ${e?.message || e}`)
     }
   }
+
+  // 关联选择弹窗中的搜索过滤
+  const filteredLinkCandidates = linkCandidates.filter(a => {
+    const q = linkSearch.trim().toLowerCase()
+    if (!q) return true
+    return [a.asset_code, a.brand, a.model, a.user_name, a.category]
+      .some(v => (v || '').toLowerCase().includes(q))
+  })
 
  const handleEditSubmit = async (e: React.FormEvent) => {
   e.preventDefault()
@@ -954,28 +990,20 @@ export default function AssetDetail() {
               <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">{linkedAssets.length}</span>
             </div>
             {user?.role === 'admin' && (
-              <div className="flex items-center gap-2">
-                <input
-                  type="text"
-                  className="input !w-44 text-sm"
-                  placeholder="输入外设资产编码"
-                  value={linkCodeInput}
-                  onChange={(e) => setLinkCodeInput(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleLinkAsset() } }}
-                />
-                <button
-                  type="button"
-                  onClick={handleLinkAsset}
-                  disabled={linking}
-                  className="btn btn-primary text-sm !py-2"
-                >
-                  {linking ? '关联中...' : '关联'}
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={openLinkDialog}
+                className="btn btn-primary text-sm !py-2"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                选择设备关联
+              </button>
             )}
           </div>
           <p className="text-xs text-gray-400 mb-3">
-            显示器、键鼠及其他外设请先在资产列表中新增（系统会分配固定编码），再在此填写其编码进行关联。
+            点击"选择设备关联"，在列表中勾选显示器、键鼠等外设即可关联到本机，无需手动输入编码。
           </p>
           {linkedAssets.length === 0 ? (
             <div className="text-center py-8 bg-gray-50 rounded-lg border-2 border-dashed border-gray-200">
@@ -1230,6 +1258,89 @@ export default function AssetDetail() {
           </div>
         </div>
       </main>
+
+      {/* 关联设备选择对话框 */}
+      {isLinkDialogOpen && (
+        <div className="modal-overlay" onClick={() => setIsLinkDialogOpen(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h2 className="text-xl font-bold text-gray-900">选择要关联的设备</h2>
+                <p className="text-xs text-gray-500 mt-1">勾选后关联到 {asset?.asset_code}，已关联其他主机的设备不可选</p>
+              </div>
+              <button
+                onClick={() => setIsLinkDialogOpen(false)}
+                className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors shrink-0"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <input
+              type="text"
+              className="input mb-3"
+              placeholder="搜索编码 / 品牌 / 型号 / 使用人"
+              value={linkSearch}
+              onChange={(e) => setLinkSearch(e.target.value)}
+            />
+            <div className="max-h-[50vh] overflow-y-auto border border-gray-100 rounded-lg divide-y divide-gray-50">
+              {linkLoading ? (
+                <div className="py-10 text-center text-sm text-gray-400">加载中...</div>
+              ) : filteredLinkCandidates.length === 0 ? (
+                <div className="py-10 text-center text-sm text-gray-400">没有可关联的设备</div>
+              ) : filteredLinkCandidates.map(a => {
+                const linkedTo = linkParentMap.get(a.asset_code)
+                const disabled = !!linkedTo && linkedTo !== asset?.asset_code
+                const checked = linkSelected.includes(a.asset_code)
+                return (
+                  <label
+                    key={a.asset_code}
+                    className={`flex items-center gap-3 px-3 py-2.5 ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:bg-gray-50'}`}
+                  >
+                    <input
+                      type="checkbox"
+                      className="rounded shrink-0"
+                      disabled={disabled}
+                      checked={checked}
+                      onChange={() => toggleLinkSelect(a.asset_code)}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-mono text-sm text-blue-600">{a.asset_code}</span>
+                        {a.category && <span className="text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">{a.category}</span>}
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs ${getStatusColor(a.status)}`}>
+                          {getStatusText(a.status)}
+                        </span>
+                        {disabled && <span className="text-xs text-amber-600">已关联 {linkedTo}</span>}
+                      </div>
+                      <div className="text-sm text-gray-700 truncate">
+                        {a.brand || '-'} {a.model || ''}{a.user_name ? ` · ${a.user_name}` : ''}
+                      </div>
+                    </div>
+                  </label>
+                )
+              })}
+            </div>
+            <div className="flex items-center justify-between mt-4 gap-2 flex-wrap">
+              <span className="text-sm text-gray-500">已选 {linkSelected.length} 台</span>
+              <div className="flex gap-2">
+                <button type="button" className="btn btn-ghost text-sm" onClick={() => setIsLinkDialogOpen(false)}>
+                  取消
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-primary text-sm"
+                  disabled={linking || linkSelected.length === 0}
+                  onClick={handleLinkSelected}
+                >
+                  {linking ? '关联中...' : `关联所选 (${linkSelected.length})`}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 编辑资产对话框 */}
       {isEditDialogOpen && (
