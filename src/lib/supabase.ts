@@ -1350,6 +1350,24 @@ export async function fetchLinkedAssetsByParent(parentCode: string): Promise<Ass
 }
 
 /**
+ * 批量查询多台主机名下的全部外设（不受列表筛选条件影响）。
+ * 用于首页筛选时，主机在结果中但其外设被过滤掉的场景。
+ */
+export async function fetchChildrenOfParents(parentCodes: string[]): Promise<Asset[]> {
+  if (!parentCodes || parentCodes.length === 0) return []
+  for (const table of ['assets', 'assets_public']) {
+    try {
+      const { data, error } = await supabase
+        .from(table)
+        .select('*')
+        .in('parent_asset_code', parentCodes)
+      if (!error) return (data || []) as Asset[]
+    } catch { /* 尝试下一通道 */ }
+  }
+  return []
+}
+
+/**
  * 设置资产的所属主机（关联/解除外设）。
  * 优先走 REST（schema cache 可见时最直接），失败再走 execute_sql 双通道。
  */

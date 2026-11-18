@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../App'
 import toast from 'react-hot-toast'
 import * as XLSX from 'xlsx'
-import { supabase, type Asset, initDatabase, formatUserIdentifier, formatMemory, formatStorage, getStatusText, getStatusColor, recordAllHistory, generateUniqueAssetCode, sanitizeAssetData, isCategorySupportedSync, saveAssetSnapshot, formatHardwareSpec, estimateAssetValue, estimateAssetValueWithAI, batchEstimateAssetValueWithAI, getAIValuationConfig, type AIValResult, restoreAIValuationsFromCache, syncResolveAIValuation, fetchAssetExtraFieldsViaSQL, fetchDistinctExtraValues, fetchAssetParentLinks, updateAssetRobust, insertAssetRobust, isAIForceDisabled, getAIDailyUsage } from '../lib/supabase'
+import { supabase, type Asset, initDatabase, formatUserIdentifier, formatMemory, formatStorage, getStatusText, getStatusColor, recordAllHistory, generateUniqueAssetCode, sanitizeAssetData, isCategorySupportedSync, saveAssetSnapshot, formatHardwareSpec, estimateAssetValue, estimateAssetValueWithAI, batchEstimateAssetValueWithAI, getAIValuationConfig, type AIValResult, restoreAIValuationsFromCache, syncResolveAIValuation, fetchAssetExtraFieldsViaSQL, fetchDistinctExtraValues, fetchAssetParentLinks, fetchChildrenOfParents, updateAssetRobust, insertAssetRobust, isAIForceDisabled, getAIDailyUsage } from '../lib/supabase'
 import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js'
 import { Pie } from 'react-chartjs-2'
 
@@ -371,7 +371,25 @@ export default function Index() {
         }
       }
       setLinkedChildren(childMap)
-      setAssets(topLevel.slice(offset, offset + pageSize))
+      // 筛选状态下，外设可能因不匹配筛选条件（如未填部门）而不在结果中：
+      // 对当前页的主机补抓其名下全部外设，保证主机在、外设就在
+      const pageHosts = topLevel.slice(offset, offset + pageSize)
+      if (pageHosts.length > 0) {
+        try {
+          const extraChildren = await fetchChildrenOfParents(pageHosts.map(h => h.asset_code))
+          for (const c of extraChildren) {
+            const parent = (c.parent_asset_code || '').trim()
+            if (!parent) continue
+            const arr = childMap.get(parent) || []
+            if (!arr.some(x => x.asset_code === c.asset_code)) {
+              arr.push(c)
+              childMap.set(parent, arr)
+            }
+          }
+          if (extraChildren.length > 0) setLinkedChildren(new Map(childMap))
+        } catch { /* ignore */ }
+      }
+      setAssets(pageHosts)
       setTotalAssets(topLevel.length)
       console.log(`[Index] 嵌套统计: 顶层设备 ${topLevel.length}，有外设的主机 ${childMap.size}，全部 ${filteredAllData.length}`)
       console.log('Index: Assets fetched successfully')
