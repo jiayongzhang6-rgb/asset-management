@@ -1176,41 +1176,65 @@ export async function updateAssetExtraFieldsViaSQL(assetCode: string, fields: Re
     const updateSql = `UPDATE assets SET ${setClause} WHERE asset_code = '${escapedCode}';`
     console.log('[ExtraFields] 调用 execute_sql UPDATE:', updateSql)
     const { data, error } = await supabase.rpc('execute_sql', { sql: updateSql })
-    console.log('[ExtraFields] RPC UPDATE 返回 data=', JSON.stringify(data), 'error=', error?.message || error)
+    console.log('[ExtraFields] RPC UPDATE 返回:', 'data=', JSON.stringify(data), '| error=', error?.message || null)
 
-    // 如果 RPC 本身报错（PostgreSQL 错误，如列不存在），检查是否是列缺失问题
-    const missingCol = error && /column|does not exist/i.test(error.message || '')
-    if (error && !missingCol) {
-      console.warn('[ExtraFields] execute_sql RPC 调用失败:', error.message)
-      return false
+    // 如果 RPC 本身报错（PostgreSQL 错误），直接失败
+    if (error) {
+      const missingCol = /column|does not exist/i.test(error.message || '')
+      if (missingCol) {
+        // 列不存在 → 尝试自动添加后重试
+        const alterOk = await ensureExtraColumnsViaSQL()
+        if (!alterOk) return false
+        const { error: retryErr } = await supabase.rpc('execute_sql', { sql: updateSql })
+        if (retryErr) { console.warn('[ExtraFields] 重试更新失败:', retryErr.message); return false }
+        console.log('[ExtraFields] 已自动添加扩展列并更新成功')
+      } else {
+        console.warn('[ExtraFields] execute_sql RPC 调用失败:', error.message)
+        return false
+      }
     }
 
-    // 列不存在 或 execute_sql 返回了错误对象 → 尝试自动添加列后重试
-    const needAddColumn = missingCol || !isExecuteSqlSuccess(data)
-    if (needAddColumn) {
-      const reason = error?.message || (data as any)?.error || '未知'
-      console.warn('[ExtraFields] 扩展列不可用，尝试自动添加:', reason)
-      const alterOk = await ensureExtraColumnsViaSQL()
-      if (!alterOk) return false // execute_sql 函数本身可能不存在
-      const { error: retryErr } = await supabase.rpc('execute_sql', { sql: updateSql })
-      if (retryErr) { console.warn('[ExtraFields] 重试更新失败:', retryErr.message); return false }
-      console.log('[ExtraFields] 已自动添加扩展列并更新成功')
-    }
+    // 刷新 PostgREST schema cache，让后续 REST 查询也能看到扩展字段
+    try {
+      await supabase.rpc('execute_sql', { sql: "NOTIFY pgrst, 'reload schema';" })
+      console.log('[ExtraFields] 已刷新 schema cache')
+    } catch { /* 忽略，schema cache 刷新失败不影响写入 */ }
 
-    // ======== 写入后读回校验 ========
+    // ======== 写入后读回校验（直接解析 RPC 原始返回，不依赖 parseExecuteSqlResult 的猜测）========
     try {
       const verifySql = `SELECT ${keys.join(', ')} FROM assets WHERE asset_code = '${escapedCode}' LIMIT 1;`
+      console.log('[ExtraFields] 读回校验 SELECT:', verifySql)
       const { data: vData, error: vErr } = await supabase.rpc('execute_sql', { sql: verifySql })
-      console.log('[ExtraFields] 读回校验 vData=', JSON.stringify(vData), 'vErr=', vErr?.message || vErr)
-      if (!vErr && Array.isArray(vData) && vData.length > 0) {
-        const row = vData[0] as Record<string, any>
-        for (const k of keys) {
-          const want = String(fields[k] ?? '').trim()
-          const got = String(row?.[k] ?? '').trim()
-          if (want !== got) {
-            console.warn(`[ExtraFields] 读回校验失败 ${assetCode}.${k}: 期望 "${want}" 实际 "${got}"`)
-            return false
+      console.log('[ExtraFields] 读回校验原始返回 type=', typeof vData, 'data=', JSON.stringify(vData), 'error=', vErr?.message || null)
+
+      if (vErr) {
+        console.warn('[ExtraFields] 读回校验 SELECT 报错:', vErr.message)
+      } else {
+        // 尝试多种格式解析行数据
+        let rows: any[] = []
+        if (Array.isArray(vData)) {
+          rows = vData
+        } else if (vData && typeof vData === 'object') {
+          if (Array.isArray((vData as any).rows)) rows = (vData as any).rows
+          else if (Array.isArray((vData as any).data)) rows = (vData as any).data
+          else if (!('status' in vData)) rows = [vData]
+        }
+        console.log('[ExtraFields] 读回校验 rows=', JSON.stringify(rows))
+
+        if (rows.length > 0) {
+          const row = rows[0] as Record<string, any>
+          for (const k of keys) {
+            const want = String(fields[k] ?? '').trim()
+            const got = String(row?.[k] ?? '').trim()
+            console.log(`[ExtraFields] 校验 ${assetCode}.${k}: 期望 "${want}" 实际 "${got}"`)
+            if (want !== got) {
+              console.warn(`[ExtraFields] 读回校验失败！期望 "${want}" 实际 "${got}"`)
+              return false
+            }
           }
+          console.log('[ExtraFields] ✅ 读回校验全部通过')
+        } else {
+          console.warn('[ExtraFields] 读回校验: SELECT 返回 0 行，无法校验写入值')
         }
       }
     } catch (ve: any) {
@@ -1676,7 +1700,10 @@ export function resetAIColumnsCheck(): void {
 function parseExecuteSqlResult(data: any): any[] {
   if (data == null) return []
   if (typeof data === 'object' && !Array.isArray(data) && 'error' in data) {
-    // execute_sql 异常捕获的错误对象 → 不是行数据
+    return []
+  }
+  // 新版本 execute_sql 对 UPDATE/DDL 返回 {"status":"ok"} — 这不是行数据
+  if (typeof data === 'object' && !Array.isArray(data) && (data.status === 'ok' || (Object.keys(data).length === 1 && 'status' in data))) {
     return []
   }
   if (Array.isArray(data)) return data
@@ -1691,7 +1718,8 @@ function parseExecuteSqlResult(data: any): any[] {
   if (typeof data === 'object') {
     if (Array.isArray(data.rows)) return data.rows
     if (Array.isArray(data.data)) return data.data
-    return [data]
+    // 不再把任意对象都包成一行，只包看起来像行数据的
+    if (Object.keys(data).length > 1 && !('status' in data)) return [data]
   }
   return []
 }
