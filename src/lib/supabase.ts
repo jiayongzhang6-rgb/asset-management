@@ -307,20 +307,60 @@ export async function batchUpdateRent(
   return { success, failed, errors }
 }
 
+type SettlementAsset = {
+  id: number | string
+  asset_code: string
+  department: string
+  user_name: string
+  monthly_rent: number
+  status: string
+  brand: string
+  model: string
+}
+
+/**
+ * 读取租金统计资产。主机的默认租金已含基础外设，因此只按各资产自身月租费逐台相加；
+ * 额外显示器等外设只要填写了月租费就会独立计入，不会重复计算主机租金。
+ * 外设未填部门/使用人时继承所属主机，避免关联外设落到“未分配”或统计遗漏。
+ */
+async function fetchSettlementAssets(includeIdle: boolean): Promise<SettlementAsset[]> {
+  const query = supabase
+    .from('assets_public')
+    .select('id, asset_code, department, user_name, monthly_rent, status, brand, model')
+    .neq('status', 'retired')
+
+  const { data, error } = await query
+  if (error) throw error
+
+  const assets = data || []
+  const parentLinks = await fetchAssetParentLinks()
+  const assetMap = new Map(assets.map(a => [a.asset_code, a]))
+
+  return assets
+    .filter(a => includeIdle || a.status !== 'idle')
+    .map(a => {
+      const parentCode = parentLinks.get(a.asset_code)
+      const parent = parentCode ? assetMap.get(parentCode) : undefined
+      return {
+        id: a.id,
+        asset_code: a.asset_code,
+        department: a.department || parent?.department || '未分配',
+        user_name: a.user_name || parent?.user_name || '',
+        monthly_rent: Number(a.monthly_rent) || 0,
+        status: a.status,
+        brand: a.brand || '',
+        model: a.model || ''
+      }
+    })
+}
+
 // 获取按部门统计的租金数据（实时，从 assets 表读取）
 export async function getDepartmentRentStats(): Promise<DepartmentRentStat[]> {
   try {
-    const { data, error } = await supabase
-      .from('assets_public')
-      .select('asset_code, department, user_name, monthly_rent, status, brand, model')
-      .neq('status', 'retired')
-      .order('department')
-
-    if (error) throw error
-
+    const data = await fetchSettlementAssets(true)
     const deptMap = new Map<string, DepartmentRentStat>()
 
-    for (const a of data || []) {
+    for (const a of data) {
       const dept = a.department || '未分配'
       if (!deptMap.has(dept)) {
         deptMap.set(dept, {
@@ -334,15 +374,14 @@ export async function getDepartmentRentStats(): Promise<DepartmentRentStat[]> {
       }
       const stat = deptMap.get(dept)!
       stat.assetCount++
-      const rent = Number(a.monthly_rent) || 0
-      stat.totalRent += rent
+      stat.totalRent += a.monthly_rent
       stat.assets.push({
         asset_code: a.asset_code,
-        user_name: a.user_name || '',
-        monthly_rent: rent,
+        user_name: a.user_name,
+        monthly_rent: a.monthly_rent,
         status: a.status,
-        brand: a.brand || '',
-        model: a.model || ''
+        brand: a.brand,
+        model: a.model
       })
     }
 
@@ -377,112 +416,84 @@ export async function generateMonthlySettlement(
     if (checkErr) throw checkErr
 
     if (existing && existing.length > 0) {
-      // 已有记录，更新租金为最新值
-      // 按当前 includeIdle 策略同步：不统计闲置时，删除闲置设备的结算记录
-      const { data: assets, error: assetErr } = await supabase
-        .from('assets_public')
-        .select('asset_code, monthly_rent, department, user_name, status')
-        .neq('status', 'retired')
+      // 已生成过：以当前资产清单为准全量同步。
+      // 除了更新租金，还要补入后新增/后关联的显示器等外设，并移除不再符合口径的记录。
+      const assets = await fetchSettlementAssets(includeIdle)
+      const eligibleCodes = new Set(assets.map(a => a.asset_code))
+      const { data: currentRecords, error: currentErr } = await supabase
+        .from('rent_records')
+        .select('asset_code')
+        .eq('year', year)
+        .eq('month', month)
+      if (currentErr) throw currentErr
 
-      if (assetErr) throw assetErr
+      const currentCodes = new Set((currentRecords || []).map(r => r.asset_code))
+      const removedCodes = [...currentCodes].filter(code => !eligibleCodes.has(code))
+      const missingAssets = assets.filter(a => !currentCodes.has(a.asset_code))
 
-      const assetMap = new Map((assets || []).map(a => [a.asset_code, a]))
-      let updatedCount = 0
-
-      // 若不包含闲置，先删除已存在的闲置设备结算记录
-      if (!includeIdle) {
-        const idleCodes = (assets || [])
-          .filter(a => a.status === 'idle')
-          .map(a => a.asset_code)
-          .filter(Boolean)
-        if (idleCodes.length > 0) {
-          // 分批删除（避免 IN 列表过长）
-          const batchSize = 200
-          for (let i = 0; i < idleCodes.length; i += batchSize) {
-            const batch = idleCodes.slice(i, i + batchSize)
-            await supabase
-              .from('rent_records')
-              .delete()
-              .in('asset_code', batch)
-              .eq('year', year)
-              .eq('month', month)
-          }
-        }
-      } else {
-        // 包含闲置：把之前可能被删除的闲置设备补回来
-        const idleAssets = (assets || []).filter(a => a.status === 'idle')
-        if (idleAssets.length > 0) {
-          const toInsert = idleAssets.map(a => ({
-            asset_code: a.asset_code,
-            asset_id: String(a.id),
-            department: a.department || '未分配',
-            user_name: a.user_name || '',
-            monthly_rent: Number(a.monthly_rent) || 0,
-            year,
-            month,
-            status: 'unpaid' as const,
-            paid_date: null
-          }))
-          // 先查已存在的，避免重复
-          const existingCodes = idleAssets.map(a => a.asset_code)
-          const { data: existingIdle } = await supabase
-            .from('rent_records')
-            .select('asset_code')
-            .eq('year', year)
-            .eq('month', month)
-            .in('asset_code', existingCodes)
-          const existSet = new Set((existingIdle || []).map(r => r.asset_code))
-          const newOnes = toInsert.filter(r => !existSet.has(r.asset_code))
-          if (newOnes.length > 0) {
-            await supabase.from('rent_records').insert(newOnes)
-          }
-        }
-      }
-
-      for (const [code, a] of assetMap) {
-        // 不统计闲置时跳过闲置设备
-        if (!includeIdle && a.status === 'idle') continue
-        const { error: upErr } = await supabase
+      const batchSize = 200
+      for (let i = 0; i < removedCodes.length; i += batchSize) {
+        const { error } = await supabase
           .from('rent_records')
-          .update({
-            monthly_rent: Number(a.monthly_rent) || 0,
-            department: a.department,
-            user_name: a.user_name,
-            updated_at: new Date().toISOString()
-          })
-          .eq('asset_code', code)
+          .delete()
+          .in('asset_code', removedCodes.slice(i, i + batchSize))
           .eq('year', year)
           .eq('month', month)
-
-        if (!upErr) updatedCount++
+        if (error) throw error
       }
 
+      for (let i = 0; i < assets.length; i += batchSize) {
+        const batch = assets.slice(i, i + batchSize)
+        for (const a of batch) {
+          const { error } = await supabase
+            .from('rent_records')
+            .update({
+              monthly_rent: a.monthly_rent,
+              department: a.department,
+              user_name: a.user_name,
+              updated_at: new Date().toISOString()
+            })
+            .eq('asset_code', a.asset_code)
+            .eq('year', year)
+            .eq('month', month)
+          if (error) throw error
+        }
+      }
+
+      for (let i = 0; i < missingAssets.length; i += batchSize) {
+        const newRecords = missingAssets.slice(i, i + batchSize).map(a => ({
+          asset_code: a.asset_code,
+          asset_id: String(a.id),
+          department: a.department,
+          user_name: a.user_name,
+          monthly_rent: a.monthly_rent,
+          year,
+          month,
+          status: 'unpaid' as const,
+          paid_date: null
+        }))
+        const { error } = await supabase.from('rent_records').insert(newRecords)
+        if (error) throw error
+      }
+
+      const deptSet = new Set(assets.map(a => a.department))
+      const totalRent = assets.reduce((sum, a) => sum + a.monthly_rent, 0)
       return {
         success: true,
-        message: `结算单已更新（${updatedCount} 条记录已同步最新租金${!includeIdle ? '，已剔除闲置设备' : '，已包含闲置设备'}）`,
-        details: { departments: 0, totalRecords: updatedCount, totalRent: 0, errors: [] }
+        message: `结算单已同步：共 ${assets.length} 条，新增 ${missingAssets.length} 条，移除 ${removedCodes.length} 条，总计 ¥${totalRent.toFixed(2)}`,
+        details: { departments: deptSet.size, totalRecords: assets.length, totalRent, errors: [] }
       }
     }
 
-    // 2. 首次生成：获取所有非报废资产
-    let query = supabase
-      .from('assets_public')
-      .select('id, asset_code, department, user_name, monthly_rent, status')
-      .neq('status', 'retired')
-    if (!includeIdle) {
-      query = query.neq('status', 'idle')
-    }
+    // 2. 首次生成：按同一口径读取主机和独立计费外设
+    const assets = await fetchSettlementAssets(includeIdle)
 
-    const { data: assets, error: assetErr } = await query
-
-    if (assetErr) throw assetErr
-
-    const newRecords = (assets || []).map(a => ({
+    const newRecords = assets.map(a => ({
       asset_code: a.asset_code,
       asset_id: String(a.id),
-      department: a.department || '未分配',
-      user_name: a.user_name || '',
-      monthly_rent: Number(a.monthly_rent) || 0,
+      department: a.department,
+      user_name: a.user_name,
+      monthly_rent: a.monthly_rent,
       year,
       month,
       status: 'unpaid' as const,

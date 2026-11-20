@@ -353,9 +353,28 @@ export default function Index() {
       if (lesseeManagerFilter.length > 0) {
         filteredAllData = filteredAllData.filter(a => lesseeManagerFilter.includes(a.lessee_manager || ''))
       }
+      // 主机-外设嵌套 + 本地分页。
+      // 先为筛选结果中的全部主机补齐外设，再生成统计数据：
+      // 这样额外显示器的月租费也会进入“当月租金/月租合计”，不会因自身未填部门等条件而被漏掉。
+      const filteredCodeSet = new Set(filteredAllData.map(a => a.asset_code))
+      const filteredHosts = filteredAllData.filter(a => {
+        const parent = (a.parent_asset_code || '').trim()
+        return !parent || parent === a.asset_code || !filteredCodeSet.has(parent)
+      })
+      if (filteredHosts.length > 0) {
+        try {
+          const linked = await fetchChildrenOfParents(filteredHosts.map(h => h.asset_code))
+          const knownCodes = new Set(filteredAllData.map(a => a.asset_code))
+          for (const child of linked) {
+            if (!knownCodes.has(child.asset_code)) {
+              filteredAllData.push(child)
+              knownCodes.add(child.asset_code)
+            }
+          }
+        } catch { /* 外设补抓失败时保留原筛选结果 */ }
+      }
       setAllAssets(filteredAllData)
 
-      // 2. 主机-外设嵌套 + 本地分页
       // 被关联的设备不单独占行，显示在其主机下方；若主机不在当前筛选结果中，子设备仍单独显示
       const offset = (page - 1) * pageSize
       const codeSet = new Set(filteredAllData.map(a => a.asset_code))
@@ -371,25 +390,7 @@ export default function Index() {
         }
       }
       setLinkedChildren(childMap)
-      // 筛选状态下，外设可能因不匹配筛选条件（如未填部门）而不在结果中：
-      // 对当前页的主机补抓其名下全部外设，保证主机在、外设就在
-      const pageHosts = topLevel.slice(offset, offset + pageSize)
-      if (pageHosts.length > 0) {
-        try {
-          const extraChildren = await fetchChildrenOfParents(pageHosts.map(h => h.asset_code))
-          for (const c of extraChildren) {
-            const parent = (c.parent_asset_code || '').trim()
-            if (!parent) continue
-            const arr = childMap.get(parent) || []
-            if (!arr.some(x => x.asset_code === c.asset_code)) {
-              arr.push(c)
-              childMap.set(parent, arr)
-            }
-          }
-          if (extraChildren.length > 0) setLinkedChildren(new Map(childMap))
-        } catch { /* ignore */ }
-      }
-      setAssets(pageHosts)
+      setAssets(topLevel.slice(offset, offset + pageSize))
       setTotalAssets(topLevel.length)
       console.log(`[Index] 嵌套统计: 顶层设备 ${topLevel.length}，有外设的主机 ${childMap.size}，全部 ${filteredAllData.length}`)
       console.log('Index: Assets fetched successfully')
