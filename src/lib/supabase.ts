@@ -1174,7 +1174,9 @@ export async function updateAssetExtraFieldsViaSQL(assetCode: string, fields: Re
       .map(k => `${k} = '${String(fields[k] ?? '').replace(/'/g, "''")}'`)
       .join(', ')
     const updateSql = `UPDATE assets SET ${setClause} WHERE asset_code = '${escapedCode}';`
+    console.log('[ExtraFields] 调用 execute_sql UPDATE:', updateSql)
     const { data, error } = await supabase.rpc('execute_sql', { sql: updateSql })
+    console.log('[ExtraFields] RPC UPDATE 返回 data=', JSON.stringify(data), 'error=', error?.message || error)
 
     // 如果 RPC 本身报错（PostgreSQL 错误，如列不存在），检查是否是列缺失问题
     const missingCol = error && /column|does not exist/i.test(error.message || '')
@@ -1196,11 +1198,10 @@ export async function updateAssetExtraFieldsViaSQL(assetCode: string, fields: Re
     }
 
     // ======== 写入后读回校验 ========
-    // 早期版本 execute_sql 函数的 EXECUTE ... INTO result 对 UPDATE 会报错，
-    // 新版本已修复，但仍建议读回确认值确实落库。
     try {
       const verifySql = `SELECT ${keys.join(', ')} FROM assets WHERE asset_code = '${escapedCode}' LIMIT 1;`
       const { data: vData, error: vErr } = await supabase.rpc('execute_sql', { sql: verifySql })
+      console.log('[ExtraFields] 读回校验 vData=', JSON.stringify(vData), 'vErr=', vErr?.message || vErr)
       if (!vErr && Array.isArray(vData) && vData.length > 0) {
         const row = vData[0] as Record<string, any>
         for (const k of keys) {
@@ -1213,10 +1214,9 @@ export async function updateAssetExtraFieldsViaSQL(assetCode: string, fields: Re
         }
       }
     } catch (ve: any) {
-      console.warn('[ExtraFields] 读回校验异常（不影响写入）:', ve?.message)
+      console.warn('[ExtraFields] 读回校验异常:', ve?.message)
     }
 
-    // 刷新运行时检测缓存，让后续 REST API 也能识别 category
     resetCategoryCheck()
     return true
   } catch (e: any) {
