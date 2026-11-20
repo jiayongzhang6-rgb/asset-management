@@ -1194,31 +1194,14 @@ export default function Index() {
       monthly_rent: '月租费',
       notes: '备注'
     }
-    const changes: Record<string, string> = {}
-    for (const [k, label] of Object.entries(fieldLabels)) {
-      const v = String((batchEditData as any)[k] ?? '').trim()
-      if (v !== '') changes[label] = v
-    }
-    if (Object.keys(changes).length === 0) {
-      toast.error('请至少填写一项要统一修改的内容（留空表示不修改）')
-      return
-    }
-
-    const selectedAssets = assets.filter(a => selectedIds.includes(String(a.id)))
-    if (selectedAssets.length === 0) {
-      toast.error('未找到选中的资产')
-      return
-    }
-
-    const preview = Object.entries(changes).map(([k, v]) => `· ${k} → ${v}`).join('\n')
-    if (!window.confirm(`确定将以下 ${selectedAssets.length} 台设备的字段统一修改吗？\n\n${preview}\n\n（未填写的字段保持不变）`)) {
-      return
-    }
-
     const payload: Record<string, any> = {}
     for (const [k] of Object.entries(fieldLabels)) {
       const v = String((batchEditData as any)[k] ?? '').trim()
       if (v !== '') payload[k] = v
+    }
+    if (Object.keys(payload).length === 0) {
+      toast.error('请至少填写一项要统一修改的内容（留空表示不修改）')
+      return
     }
     // 月租费必须是数字，避免空字符串写库报错
     if (payload.monthly_rent !== undefined) {
@@ -1226,25 +1209,53 @@ export default function Index() {
       payload.monthly_rent = isNaN(rent) ? 0 : rent
     }
 
-    let okCount = 0
-    let failedCount = 0
+    // 从 allAssets 取完整资产列表（跨页勾选也能覆盖），用 asset_code 匹配避免 id 类型不一致
+    const selectedCodeSet = new Set(
+      selectedIds.map(id => {
+        const found = allAssets.find(a => String(a.id) === String(id))
+        return found?.asset_code
+      }).filter(Boolean) as string[]
+    )
+    if (selectedCodeSet.size === 0) {
+      toast.error('未找到选中的资产')
+      return
+    }
+
+    const preview = Object.entries(payload)
+      .map(([k, v]) => `· ${fieldLabels[k] || k} → ${v}`)
+      .join('\n')
+    if (!window.confirm(`确定将以下 ${selectedCodeSet.size} 台设备的字段统一修改吗？\n\n${preview}\n\n（未填写的字段保持不变）`)) {
+      return
+    }
+
+    const changeText = Object.entries(payload)
+      .map(([k, v]) => `${fieldLabels[k] || k}: ${v}`)
+      .join('\n')
+
+    let okCount = 0          // 完全成功（所有写入通道都通）
+    let partialCount = 0     // 部分成功（基础字段写入，扩展字段未保存）
+    let failedCount = 0      // 完全失败
     let firstExtraError: string | null = null
+    let firstRestError: string | null = null
+
     try {
-      for (const asset of selectedAssets) {
-        const { error, extraError } = await updateAssetRobust(asset.asset_code, payload)
+      for (const assetCode of selectedCodeSet) {
+        const { error, extraError } = await updateAssetRobust(assetCode, payload)
         if (error) {
           failedCount++
+          if (!firstRestError) firstRestError = error?.message || String(error)
           continue
+        }
+        // 基础字段已写入 → 写历史（不管扩展字段是否成功）
+        if (user) {
+          const suffix = extraError ? '（扩展字段未保存）' : ''
+          await recordAllHistory(assetCode, 'update', user.email, changeText + suffix)
         }
         if (extraError) {
-          failedCount++
+          partialCount++
           if (!firstExtraError) firstExtraError = extraError
-          continue
-        }
-        okCount++
-        if (user) {
-          const changeText = Object.entries(changes).map(([k, v]) => `${k}: ${v}`).join('\n')
-          await recordAllHistory(asset.asset_code, 'update', user.email, changeText)
+        } else {
+          okCount++
         }
       }
 
@@ -1254,13 +1265,21 @@ export default function Index() {
       setIsBatchEditDialogOpen(false)
       setBatchEditData({ category: '', user_name: '', department: '', lessee_entity: '', lessee_manager: '', parent_asset_code: '', location: '', monthly_rent: '', notes: '' })
 
-      if (failedCount === 0) {
-        toast.success(`已统一修改 ${okCount} 台设备`)
+      const parts: string[] = []
+      if (okCount) parts.push(`完全成功 ${okCount} 台`)
+      if (partialCount) parts.push(`部分成功 ${partialCount} 台（扩展字段未保存）`)
+      if (failedCount) parts.push(`完全失败 ${failedCount} 台`)
+      const msg = parts.join('，')
+      const detailParts: string[] = []
+      if (firstExtraError) detailParts.push(firstExtraError)
+      if (firstRestError) detailParts.push(`REST错误: ${firstRestError}`)
+
+      if (failedCount === 0 && partialCount === 0) {
+        toast.success(msg)
+      } else if (okCount === 0 && failedCount === 0) {
+        toast.warn(msg + '\n' + detailParts.join('\n'), { duration: 8000 })
       } else {
-        toast.error(
-          `成功 ${okCount} 台，失败 ${failedCount} 台${firstExtraError ? `\n原因：${firstExtraError}` : ''}`,
-          { duration: 8000 }
-        )
+        toast.error(msg + '\n' + detailParts.join('\n'), { duration: 8000 })
       }
     } catch (e: any) {
       console.error('Error batch editing assets:', e)
