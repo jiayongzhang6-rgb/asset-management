@@ -5,35 +5,40 @@
 -- ============================================================
 
 -- 1. 创建 execute_sql RPC 函数（绕过 PostgREST schema cache 直接操作数据库）
---    注意：旧版函数用了 `EXECUTE sql INTO result`，对 UPDATE/DELETE/INSERT 会抛异常，
---    导致扩展字段写入永远"假失败"。本次根据语句类型分支：
---      SELECT → EXECUTE INTO result（返回查询结果）
---      其他  → EXECUTE（不带 INTO，避免 0 行/多行异常）
-CREATE OR REPLACE FUNCTION execute_sql(sql text) RETURNS json
+--    历史坑位（都已修）：
+--      a) `EXECUTE sql INTO result` 对 UPDATE/DELETE/INSERT 会抛
+--         "query has no destination for result data"
+--      b) SELECT 多列多行时，把整行当文本转 json 会抛
+--         "invalid input syntax for type json"（单列单行恰好能过，极具迷惑性）
+--    正确做法：SELECT 用 json_agg 包成 [{...},{...}] 对象数组；其余语句直接 EXECUTE。
+DROP FUNCTION IF EXISTS public.execute_sql(text);
+
+CREATE FUNCTION public.execute_sql(sql text) RETURNS json
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp
 AS $$
-DECLARE result json;
+DECLARE
+  result json;
+  stmt text := btrim(sql);
 BEGIN
-  IF sql !~* '^\s*(SELECT|INSERT|UPDATE|DELETE|ALTER|CREATE|DROP|NOTIFY|DO)\b' THEN
-    RAISE EXCEPTION 'Only read/write/DDL/NOTIFY statements are allowed';
-  END IF;
-  IF sql ~* 'pg_catalog|pg_sleep|COPY|TRUNCATE' THEN
-    RAISE EXCEPTION 'Forbidden statement detected';
+  IF stmt ~* 'pg_catalog|pg_sleep|COPY\s|TRUNCATE' THEN
+    RAISE EXCEPTION 'Forbidden statement';
   END IF;
 
-  IF sql ~* '^\s*SELECT\b' THEN
-    -- SELECT：正常返回查询结果
-    EXECUTE sql INTO result;
+  -- 去掉结尾分号，便于嵌入子查询
+  stmt := btrim(rtrim(stmt, ';'));
+
+  IF substring(stmt FROM 1 FOR 6) ILIKE 'SELECT' OR substring(stmt FROM 1 FOR 4) ILIKE 'WITH' THEN
+    -- 返回对象数组：[{"col":val,...}, ...]
+    EXECUTE format('SELECT COALESCE(json_agg(t), ''[]''::json) FROM (%s) t', stmt) INTO result;
   ELSE
-    -- UPDATE/DELETE/INSERT/ALTER/...：直接执行，不带 INTO
-    EXECUTE sql;
+    EXECUTE stmt;
     result := json_build_object('status', 'ok');
   END IF;
 
   RETURN result;
 END $$;
 
-GRANT EXECUTE ON FUNCTION execute_sql(text) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.execute_sql(text) TO anon, authenticated;
 
 -- 2. 确保扩展列存在
 --    category=分类, lessee_entity=承租主体, lessee_manager=承租负责人, parent_asset_code=所属主机

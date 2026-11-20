@@ -1265,9 +1265,8 @@ export async function fetchAssetExtraFieldsViaSQL(assetCodes: string[]): Promise
       .join(',')
     if (!inList) return out
     const sql = `SELECT asset_code, category, lessee_entity, lessee_manager, parent_asset_code FROM assets WHERE asset_code IN (${inList});`
-    console.log('[ExtraFields] 读取扩展字段 SQL:', sql)
     const { data, error } = await supabase.rpc('execute_sql', { sql })
-    console.log('[ExtraFields] 读取 RPC 原始返回:', 'type=', typeof data, 'data=', JSON.stringify(data), 'error=', error?.message || null)
+    console.log('[ExtraFields] 读取', assetCodes.length, '台扩展字段 →', error ? `错误: ${error.message}` : `返回 ${Array.isArray(data) ? data.length : typeof data} 行`)
 
     // 如果列不存在，自动添加后再读
     const missingCol = error && /column|does not exist/i.test(error.message || '')
