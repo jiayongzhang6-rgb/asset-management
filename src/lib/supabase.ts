@@ -1162,6 +1162,7 @@ async function ensureExtraColumnsViaSQL(): Promise<boolean> {
 /**
  * 通过 execute_sql RPC 更新单个资产的扩展字段（category/lessee_entity/lessee_manager），
  * 绕过 PostgREST schema cache。列不存在时自动添加后重试。
+ * 写入后立即 SELECT 校验值是否真的落库，避免"假成功"。
  */
 export async function updateAssetExtraFieldsViaSQL(assetCode: string, fields: Record<string, string>): Promise<boolean> {
   if (!assetCode) return false
@@ -1193,6 +1194,28 @@ export async function updateAssetExtraFieldsViaSQL(assetCode: string, fields: Re
       if (retryErr) { console.warn('[ExtraFields] 重试更新失败:', retryErr.message); return false }
       console.log('[ExtraFields] 已自动添加扩展列并更新成功')
     }
+
+    // ======== 写入后读回校验 ========
+    // 早期版本 execute_sql 函数的 EXECUTE ... INTO result 对 UPDATE 会报错，
+    // 新版本已修复，但仍建议读回确认值确实落库。
+    try {
+      const verifySql = `SELECT ${keys.join(', ')} FROM assets WHERE asset_code = '${escapedCode}' LIMIT 1;`
+      const { data: vData, error: vErr } = await supabase.rpc('execute_sql', { sql: verifySql })
+      if (!vErr && Array.isArray(vData) && vData.length > 0) {
+        const row = vData[0] as Record<string, any>
+        for (const k of keys) {
+          const want = String(fields[k] ?? '').trim()
+          const got = String(row?.[k] ?? '').trim()
+          if (want !== got) {
+            console.warn(`[ExtraFields] 读回校验失败 ${assetCode}.${k}: 期望 "${want}" 实际 "${got}"`)
+            return false
+          }
+        }
+      }
+    } catch (ve: any) {
+      console.warn('[ExtraFields] 读回校验异常（不影响写入）:', ve?.message)
+    }
+
     // 刷新运行时检测缓存，让后续 REST API 也能识别 category
     resetCategoryCheck()
     return true
@@ -1463,14 +1486,21 @@ export async function updateAssetRobust(
     }
   }
 
-  // 1：先用 REST API 更新除扩展字段外的所有字段
-  const { error: restErr } = await supabase
+  // 1：先用 REST API 更新除扩展字段外的所有字段，用 select 校验确实更新到了行
+  const { data: restResult, error: restErr } = await supabase
     .from('assets')
     .update(rest)
     .eq('asset_code', assetCode)
+    .select('asset_code')
   if (restErr) {
     console.error('[ExtraFields] REST 更新基础字段失败:', restErr.message)
     return { error: restErr }
+  }
+  if (!restResult || restResult.length === 0) {
+    // 没有任何行被更新：asset_code 不存在 或 权限拦截
+    const msg = `REST 更新返回 0 行（${assetCode}）：资产编码不存在或无权限更新`
+    console.warn('[ExtraFields]', msg)
+    return { error: new Error(msg) }
   }
 
   // 2：用 execute_sql RPC 一次性写所有扩展字段（绕过 PostgREST schema cache）
@@ -1479,24 +1509,33 @@ export async function updateAssetRobust(
     if (!sqlOk) {
       // SQL 通道失败 → 尝试兜底 REST 写入（schema cache 可能已被其他操作刷新）
       let fallbackOk = false
+      let fallbackReason = ''
       try {
-        const { error: fallbackErr } = await supabase
+        const { data: fData, error: fallbackErr } = await supabase
           .from('assets')
           .update({ ...extraFields, updated_at: payload.updated_at })
           .eq('asset_code', assetCode)
-        if (!fallbackErr) {
+          .select('asset_code')
+        if (!fallbackErr && fData && fData.length > 0) {
           fallbackOk = true
+        } else if (fallbackErr) {
+          fallbackReason = fallbackErr.message
+          console.warn('[ExtraFields] 兜底 REST 写入也失败:', fallbackReason)
         } else {
-          console.warn('[ExtraFields] 兜底 REST 写入也失败:', fallbackErr.message)
+          fallbackReason = 'REST 返回 0 行'
+          console.warn('[ExtraFields] 兜底 REST 写入返回 0 行')
         }
       } catch (e: any) {
-        console.warn('[ExtraFields] 兜底 REST 异常:', e?.message)
+        fallbackReason = e?.message || String(e)
+        console.warn('[ExtraFields] 兜底 REST 异常:', fallbackReason)
       }
       if (!fallbackOk) {
-        // SQL 通道和兜底都失败 → 扩展字段未保存。返回明确的错误信息让前端提示用户。
+        // SQL 通道和兜底都失败 → 扩展字段未保存。
+        // 可能原因：旧版 execute_sql 函数的 EXECUTE...INTO result 对 UPDATE/DELETE 会报错，
+        // 请重跑 init-all.sql 升级函数定义。
         return {
           error: null, // 其他字段已成功更新，主流程不报错
-          extraError: '分类/承租信息未保存：数据库缺少 execute_sql 函数或扩展列不可用。请在 Supabase Dashboard 的 SQL Editor 中执行 sql/init-all.sql 脚本。'
+          extraError: `扩展字段未保存（${Object.keys(extraFields).join(', ')}）：SQL通道失败+REST兜底失败(${fallbackReason || '未知'})。请在 Supabase SQL Editor 重新执行项目根目录的 sql/init-all.sql，升级 execute_sql 函数（旧版有 INTO 写入 bug）。`
         }
       }
     }

@@ -5,6 +5,10 @@
 -- ============================================================
 
 -- 1. 创建 execute_sql RPC 函数（绕过 PostgREST schema cache 直接操作数据库）
+--    注意：旧版函数用了 `EXECUTE sql INTO result`，对 UPDATE/DELETE/INSERT 会抛异常，
+--    导致扩展字段写入永远"假失败"。本次根据语句类型分支：
+--      SELECT → EXECUTE INTO result（返回查询结果）
+--      其他  → EXECUTE（不带 INTO，避免 0 行/多行异常）
 CREATE OR REPLACE FUNCTION execute_sql(sql text) RETURNS json
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp
 AS $$
@@ -16,7 +20,16 @@ BEGIN
   IF sql ~* 'pg_catalog|pg_sleep|COPY|TRUNCATE' THEN
     RAISE EXCEPTION 'Forbidden statement detected';
   END IF;
-  EXECUTE sql INTO result;
+
+  IF sql ~* '^\s*SELECT\b' THEN
+    -- SELECT：正常返回查询结果
+    EXECUTE sql INTO result;
+  ELSE
+    -- UPDATE/DELETE/INSERT/ALTER/...：直接执行，不带 INTO
+    EXECUTE sql;
+    result := json_build_object('status', 'ok');
+  END IF;
+
   RETURN result;
 END $$;
 
