@@ -12,6 +12,29 @@ ChartJS.register(ArcElement, Tooltip, Legend)
 
 const categories = ['笔记本', '台式机', '显示器', '外设', '服务器', '网络设备', '其他']
 
+// 列表排序方式
+type AssetSortKey = 'default' | 'code_asc' | 'code_desc' | 'dept_asc' | 'dept_desc'
+
+const compareByAssetCode = (a: Asset, b: Asset) =>
+  String(a.asset_code || '').localeCompare(String(b.asset_code || ''), 'zh-CN', { numeric: true })
+
+function sortAssetList(list: Asset[], sortKey: AssetSortKey): Asset[] {
+  if (sortKey === 'default') return list
+  const sorted = [...list]
+  if (sortKey === 'code_asc') {
+    sorted.sort(compareByAssetCode)
+  } else if (sortKey === 'code_desc') {
+    sorted.sort((a, b) => compareByAssetCode(b, a))
+  } else {
+    const dir = sortKey === 'dept_asc' ? 1 : -1
+    sorted.sort((a, b) => {
+      const deptCmp = String(a.department || '').localeCompare(String(b.department || ''), 'zh-CN')
+      return deptCmp === 0 ? compareByAssetCode(a, b) : deptCmp * dir
+    })
+  }
+  return sorted
+}
+
 // 通用多选筛选下拉框（部门 / 承租主体 / 承租负责人复用）
 function MultiSelectFilter({
   label,
@@ -130,6 +153,8 @@ export default function Index() {
   // 分页相关状态
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(50) // 默认50条一页
+  // 列表排序方式（默认沿用数据库返回顺序）
+  const [sortBy, setSortBy] = useState<AssetSortKey>('default')
   const [totalAssets, setTotalAssets] = useState(0)
   // 筛选相关状态
   const [statusFilter, setStatusFilter] = useState('all') // all, active, idle, maintenance, retired
@@ -389,9 +414,15 @@ export default function Index() {
           topLevel.push(a)
         }
       }
-      setLinkedChildren(childMap)
-      setAssets(topLevel.slice(offset, offset + pageSize))
-      setTotalAssets(topLevel.length)
+      // 按编号 / 部门排序：关联外设始终跟随其主机，并单独按编号升序排列
+      const sortedChildren = new Map<string, Asset[]>()
+      for (const [hostCode, children] of childMap) {
+        sortedChildren.set(hostCode, [...children].sort(compareByAssetCode))
+      }
+      setLinkedChildren(sortedChildren)
+      const sortedTopLevel = sortAssetList(topLevel, sortBy)
+      setAssets(sortedTopLevel.slice(offset, offset + pageSize))
+      setTotalAssets(sortedTopLevel.length)
       console.log(`[Index] 嵌套统计: 顶层设备 ${topLevel.length}，有外设的主机 ${childMap.size}，全部 ${filteredAllData.length}`)
       console.log('Index: Assets fetched successfully')
     } catch (error) {
@@ -445,7 +476,7 @@ export default function Index() {
 
   useEffect(() => {
     fetchAssets()
-  }, [page, pageSize, statusFilter, departmentFilter, lesseeEntityFilter, lesseeManagerFilter, advancedFilters])
+  }, [page, pageSize, sortBy, statusFilter, departmentFilter, lesseeEntityFilter, lesseeManagerFilter, advancedFilters])
 
   // 处理从详情页传来的编辑请求
   useEffect(() => {
@@ -1824,6 +1855,21 @@ export default function Index() {
                 <option value="idle">闲置</option>
                 <option value="maintenance">维修中</option>
                 <option value="retired">已报废</option>
+              </select>
+              <select
+                className="w-auto text-sm"
+                value={sortBy}
+                onChange={(e) => {
+                  setSortBy(e.target.value as AssetSortKey)
+                  setPage(1)
+                }}
+                title="列表排序方式"
+              >
+                <option value="default">默认排序</option>
+                <option value="code_asc">按编号 ↑</option>
+                <option value="code_desc">按编号 ↓</option>
+                <option value="dept_asc">按部门 ↑</option>
+                <option value="dept_desc">按部门 ↓</option>
               </select>
               <button
                 onClick={() => setShowAdvancedSearch(!showAdvancedSearch)}
