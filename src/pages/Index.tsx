@@ -165,8 +165,13 @@ export default function Index() {
   const [lesseeManagers, setLesseeManagers] = useState<string[]>([]) // 承租负责人可选项
   // 高级筛选
   const [showAdvancedSearch, setShowAdvancedSearch] = useState(false)
-  const [advancedFilters, setAdvancedFilters] = useState({
-    category: '',
+  const [advancedFilters, setAdvancedFilters] = useState<{
+    category: string[]
+    brand: string
+    minMemory: string
+    minStorage: string
+  }>({
+    category: [],
     brand: '',
     minMemory: '',
     minStorage: ''
@@ -301,8 +306,8 @@ export default function Index() {
       }
       // 只有 category 列在 schema cache 中可用时才走后端筛选；否则转到前端过滤
       const catSupported = isCategorySupportedSync()
-      if (advancedFilters.category && catSupported) {
-        allQuery = allQuery.eq('category', advancedFilters.category)
+      if (advancedFilters.category.length > 0 && catSupported) {
+        allQuery = allQuery.in('category', advancedFilters.category)
       }
       if (advancedFilters.brand) {
         allQuery = allQuery.ilike('brand', `%${advancedFilters.brand}%`)
@@ -311,8 +316,8 @@ export default function Index() {
       filteredAllData = allData || []
 
       // 前端过滤：内存、存储 + （后端不支持 category 时在此补上）
-      if (advancedFilters.category && !catSupported) {
-        filteredAllData = filteredAllData.filter(a => a.category === advancedFilters.category)
+      if (advancedFilters.category.length > 0 && !catSupported) {
+        filteredAllData = filteredAllData.filter(a => advancedFilters.category.includes(a.category))
       }
       if (advancedFilters.minMemory) {
         const minMem = parseFloat(advancedFilters.minMemory)
@@ -1917,17 +1922,14 @@ export default function Index() {
             <div className="mb-4 p-4 bg-gradient-to-r from-gray-50 to-blue-50 border border-blue-100 rounded-xl slide-down">
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1">分类</label>
-                  <select
-                    className="w-full text-sm"
-                    value={advancedFilters.category}
-                    onChange={(e) => setAdvancedFilters({ ...advancedFilters, category: e.target.value })}
-                  >
-                    <option value="">全部</option>
-                    {categoriesFilter.map(cat => (
-                      <option key={cat} value={cat}>{cat}</option>
-                    ))}
-                  </select>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">分类（可多选）</label>
+                  <MultiSelectFilter
+                    label="全部分类"
+                    options={categoriesFilter}
+                    selected={advancedFilters.category}
+                    onChange={(next) => setAdvancedFilters(prev => ({ ...prev, category: next }))}
+                    emptyText="暂无分类数据"
+                  />
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-gray-600 mb-1">品牌</label>
